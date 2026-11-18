@@ -69,8 +69,9 @@ ALandscape* UHGLandscapeBuilder::ImportLandscapeFromRaw16(const FString& RawFile
 		return nullptr;
 	}
 
-	Landscape->bCanHaveLayersContent = false;
+	// UE 5.8: edit layers are always on; Import() creates the default edit layer when given none.
 	Landscape->LandscapeMaterial = Material;
+	Landscape->StaticLightingLOD = FMath::DivideAndRoundUp(FMath::CeilLogTwo((Size * Size) / (2048 * 2048) + 1), (uint32)2);
 	Landscape->SetActorRelativeScale3D(Scale);
 
 	TMap<FGuid, TArray<uint16>> HeightDataPerLayer;
@@ -79,7 +80,8 @@ ALandscape* UHGLandscapeBuilder::ImportLandscapeFromRaw16(const FString& RawFile
 	MaterialLayerDataPerLayer.Add(FGuid(), TArray<FLandscapeImportLayerInfo>());
 
 	Landscape->Import(FGuid::NewGuid(), 0, 0, Size - 1, Size - 1, SectionsPerComponent, SectionSizeQuads,
-		HeightDataPerLayer, *FullPath, MaterialLayerDataPerLayer, ELandscapeImportAlphamapType::Additive);
+		HeightDataPerLayer, *FullPath, MaterialLayerDataPerLayer, ELandscapeImportAlphamapType::Additive,
+		TArrayView<const FLandscapeLayer>());
 
 	if (ULandscapeInfo* Info = Landscape->GetLandscapeInfo())
 	{
