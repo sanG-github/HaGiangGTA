@@ -40,3 +40,6 @@ Thumbs.db
 __pycache__/
 *.pyc
 *.log
+
+# ---- local python env for offline generators ----
+.venv/

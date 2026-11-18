@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 425,
+  "active_work_seconds": 1532,
   "cooldown_wait_seconds": 0,
-  "state": "stopped",
-  "segment_started_at": null,
-  "current_branch": "main",
+  "state": "running",
+  "segment_started_at": 1794975050,
+  "current_branch": "checkpoint/02-1hr-heightmap-bike",
   "current_checkpoint": "cp-02-1hr",
-  "last_completed_step": "CP01 merged into main (tag cp-01-10min)",
-  "next_pending_step": "CP02: heightmap 4033x4033 + landscape spline + bike/boat",
+  "last_completed_step": "CP02 review",
+  "next_pending_step": "commit CP02",
   "pause_reason": null,
   "history": [
     {
@@ -33,6 +33,33 @@
       "t": 1794973600,
       "event": "stop",
       "active": 425
+    },
+    {
+      "t": 1794973943,
+      "event": "start",
+      "active": 425,
+      "checkpoint": "cp-02-1hr"
+    },
+    {
+      "t": 1794974447,
+      "event": "step",
+      "active": 929,
+      "done": "heightmap generator + preview verified",
+      "next": "CP02 C++ gameplay"
+    },
+    {
+      "t": 1794974985,
+      "event": "step",
+      "active": 1467,
+      "done": "CP02 C++ + build_cp02.py written",
+      "next": "review + commit CP02"
+    },
+    {
+      "t": 1794975050,
+      "event": "step",
+      "active": 1532,
+      "done": "CP02 review",
+      "next": "commit CP02"
     }
   ]
 }

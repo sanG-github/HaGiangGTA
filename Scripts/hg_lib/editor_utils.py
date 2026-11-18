@@ -221,3 +221,49 @@ def spawn_basic_sky(tag: str, folder: str = "Lighting", sun_pitch: float = -35.0
     fog_comp = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
     fog_comp.set_editor_property("fog_density", fog_density)
     return sun
+
+
+# ---------------------------------------------------------------------------
+# Project paths / generated data (CP02+)
+# ---------------------------------------------------------------------------
+
+def project_dir() -> str:
+    import os
+    return os.path.normpath(unreal.Paths.convert_relative_path_to_full(unreal.Paths.project_dir()))
+
+
+def ensure_generated_heightmap() -> dict:
+    """Return the parsed HaGiang_layout.json, running gen_heightmap.py first if the
+    generated files are missing (needs a Python with numpy + pillow; the script
+    tries <project>/.venv first, then python3 on PATH)."""
+    import json
+    import os
+    import shutil
+    import subprocess
+
+    root = project_dir()
+    out_dir = os.path.join(root, "Generated", "Heightmaps")
+    layout_path = os.path.join(out_dir, "HaGiang_layout.json")
+    r16_path = os.path.join(out_dir, "HaGiang_4033.r16")
+    if not (os.path.isfile(layout_path) and os.path.isfile(r16_path)):
+        gen = os.path.join(root, "Scripts", "Tools", "gen_heightmap.py")
+        candidates = [os.path.join(root, ".venv", "bin", "python"),
+                      os.path.join(root, ".venv", "Scripts", "python.exe"),
+                      shutil.which("python3") or "", shutil.which("python") or ""]
+        python = next((c for c in candidates if c and os.path.isfile(c)), None)
+        if python is None:
+            raise RuntimeError("No external Python found to run gen_heightmap.py "
+                               "(create .venv: python3 -m venv .venv && .venv/bin/pip install -r Scripts/Tools/requirements.txt)")
+        log(f"Generating heightmap with {python} ...")
+        result = subprocess.run([python, gen], cwd=root, capture_output=True, text=True)
+        log(result.stdout[-2000:])
+        if result.returncode != 0:
+            raise RuntimeError(f"gen_heightmap.py failed:\n{result.stderr[-3000:]}")
+    with open(layout_path, "r", encoding="utf-8") as f:
+        layout = json.load(f)
+    layout["_r16_abs"] = r16_path
+    return layout
+
+
+def vec(v) -> unreal.Vector:
+    return unreal.Vector(float(v[0]), float(v[1]), float(v[2]))
