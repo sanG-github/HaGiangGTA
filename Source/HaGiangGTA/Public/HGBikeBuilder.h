@@ -34,8 +34,10 @@ namespace HGBikes
 	HAGIANGGTA_API UStaticMesh* Wheel(bool bFront, bool bScooter = false);
 	/** Body of Model; LoadSeed picks the load of LocalLoaded / the bags of EasyRiderWin. */
 	HAGIANGGTA_API UStaticMesh* Body(EHGBikeModel Model, int32 LoadSeed = 0);
-	/** Vietnamese flag cloth, pivot on the pole (cloth along +X... flies backwards along -X). */
+	/** Vietnamese flag cloth, pivot at the pole top; the cloth flies back along -X (flap it with yaw / roll). */
 	HAGIANGGTA_API UStaticMesh* Flag();
+	/** Flag pole from the rack up to FlagMount(Model). */
+	HAGIANGGTA_API UStaticMesh* FlagPole(EHGBikeModel Model);
 
 	HAGIANGGTA_API bool IsStepThrough(EHGBikeModel Model);
 	HAGIANGGTA_API FVector HeadLampLens(EHGBikeModel Model);

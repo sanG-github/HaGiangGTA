@@ -457,6 +457,37 @@ def chevron():
     return g.finish()
 
 
+def vertex_color() -> unreal.Material:
+    """People and bikes (C++ FHGMeshKit, merged low-poly meshes): base colour from the vertex colour; UV0.x is
+    the surface class (0 cloth/skin .. 1 chrome: roughness 0.85 -> 0.22, metallic above 0.7), UV0.y = 1 marks
+    painted panels tinted by the MID parameter "Tint" (bike body colour)."""
+    g = Graph("M_HG_VertexColor")
+    vc = g.node(unreal.MaterialExpressionVertexColor)
+    tc = g.node(unreal.MaterialExpressionTextureCoordinate)
+    u = g.mask(tc, r=True)
+    v = g.mask(tc, g=True)
+    rgb = g.mask(vc, r=True, g=True, b=True)
+    tinted = g.mul(rgb, g.color("Tint", (0.55, 0.02, 0.02)))
+    base = g.lerp(rgb, tinted, v)
+    g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.lerp(0.85, 0.22, u), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.saturate(g.mul(g.sub(u, 0.7), 3.3)), unreal.MaterialProperty.MP_METALLIC)
+    g.out(g.lerp(0.35, 0.5, u), unreal.MaterialProperty.MP_SPECULAR)
+    return g.finish()
+
+
+def lamp() -> unreal.Material:
+    """Head / tail / police lamp lenses: unlit emissive Color x Intensity (MID-driven: brake light, flashers).
+    Meshes using it have no shadow and no Lumen / distance-field contribution (FHGMeshKit::AddLamp)."""
+    g = Graph("M_HG_Lamp")
+    try:
+        g.mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_UNLIT)
+    except Exception as exc:
+        hg.warn(f"M_HG_Lamp unlit: {exc}")
+    g.out(g.mul(g.color("Color", (1.0, 0.05, 0.02)), g.scalar("Intensity", 2.0)), unreal.MaterialProperty.MP_EMISSIVE_COLOR)
+    return g.finish()
+
+
 def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
     hm = (layout or {}).get("heightmap", {})
     half_cm = hm.get("half_m", 2016.0) * 100.0
@@ -490,5 +521,7 @@ def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
         "monument": bark(tex, "M_HG_MonumentStone", (0.46, 0.44, 0.4)),
         "roof_green": metal("M_HG_RoofGreen", (0.06, 0.24, 0.13), 0.55),
         "roof_blue": metal("M_HG_RoofBlue", (0.07, 0.17, 0.34), 0.55),
+        "vertex_color": vertex_color(),
+        "lamp": lamp(),
         "ranges": foliage(tex, "M_HG_DistantRanges", (0.05, 0.08, 0.05), (0.09, 0.12, 0.08), 0.95, two_sided=True),
     }

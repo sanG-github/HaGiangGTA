@@ -37,4 +37,7 @@ private:
 	float TargetRoadDistance = 0.f;
 	float RetargetTimer = 0.f;
 	float FlashTime = 0.f;
+	/** Emissive light-bar lamps on the rear rack (the point lights are only a faint glow). */
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> LampRed;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> LampBlue;
 };

@@ -60,7 +60,7 @@ namespace
 		K.Tube(FVector(0.f, -9.5f, 0.f), FVector(0.f, 9.5f, 0.f), 1.2f, 1.2f, 6, true);   // axle
 	}
 
-	void BuildBody(FHGMeshKit& K)
+	void BuildWin(FHGMeshKit& K)
 	{
 		const FVector F = HGBikes::FrontAxle();
 		const FVector R = HGBikes::RearAxle();
@@ -232,18 +232,401 @@ namespace
 		K.Tube(FVector(18.f, 12.f, 34.f), FVector(30.f, 13.f, 30.f), 0.8f, 0.8f, 5, true);         // brake pedal
 		K.Tube(FVector(-4.f, -11.f, 29.f), FVector(-28.f, -14.f, 27.f), 1.1f, 1.1f, 5, true);      // kickstand (up)
 	}
+
+	// ---------------------------------------------------------------------------------------------------
+	// Step-through / underbone bikes (Wave, Dream, Sirius)
+	// ---------------------------------------------------------------------------------------------------
+	struct FStepStyle
+	{
+		float CowlLen = 12.f;      // handlebar cowl
+		float ShieldPitch = -22.f; // leg shield rake
+		float RearRise = 0.f;      // up-sweep of the rear body (deg)
+		bool bBoxy = false;        // Dream
+		bool bSport = false;       // Sirius: stripes, tank cover, slimmer
+		FLC Trim = FLC(0.7f, 0.7f, 0.68f);
+	};
+
+	void BuildStepThrough(FHGMeshKit& K, const FStepStyle& St)
+	{
+		const FVector F = HGBikes::FrontAxle();
+		const FVector R = HGBikes::RearAxle();
+		// Fork under a body-colour front fender.
+		for (const float Y : { -6.f, 6.f })
+		{
+			K.Paint(Chrome, HGSurf::Chrome);
+			K.Tube(FVector(47.f, Y, 92.f), FVector(F.X + 0.5f, Y, F.Z + 3.f), 1.8f, 1.8f, 8, true);
+			K.Paint(Black, HGSurf::Satin);
+			K.Tube(FVector(55.f, Y, 62.f), FVector(F.X + 0.5f, Y, F.Z + 3.f), 2.6f, 2.4f, 8, true);
+		}
+		K.Paint(FLC::White, HGSurf::Gloss, true);
+		Arc(K, F, 33.f, 15.f, 125.f, 12.f, 1.2f, 9);
+		// Leg shield + inner panel, floorboard, underbone.
+		K.Box(FVector(43.f, 0.f, 64.f), FVector(5.f, St.bBoxy ? 36.f : 32.f, 46.f), FRotator(St.ShieldPitch, 0.f, 0.f));
+		K.Ellipsoid(FVector(45.f, 0.f, 64.f), FVector(4.f, St.bBoxy ? 18.f : 16.f, 23.f), FRotator(St.ShieldPitch, 0.f, 0.f), 10, 5);
+		K.Paint(FLC(0.05f, 0.05f, 0.055f), HGSurf::Satin);
+		K.Box(FVector(39.f, 0.f, 62.f), FVector(2.f, 28.f, 40.f), FRotator(St.ShieldPitch, 0.f, 0.f));
+		K.Paint(Rubber);
+		K.Box(FVector(18.f, 0.f, 33.f), FVector(32.f, 27.f, 3.f));
+		K.Paint(Black, HGSurf::Satin);
+		K.Tube(FVector(42.f, 0.f, 55.f), FVector(4.f, 0.f, 30.f), 2.4f, 2.4f, 8, true);
+		// Handlebar cowl with the headlamp; bars and grips at the Win's grip points.
+		K.Paint(FLC::White, HGSurf::Gloss, true);
+		if (St.bBoxy)
+		{
+			K.Box(FVector(48.f, 0.f, 100.f), FVector(20.f, 22.f, 12.f), FRotator(-8.f, 0.f, 0.f));
+		}
+		else
+		{
+			K.Ellipsoid(FVector(47.f, 0.f, 100.f), FVector(St.CowlLen, St.bSport ? 19.f : 22.f, 7.5f), FRotator(-10.f, 0.f, 0.f), 14, 6);
+		}
+		K.Paint(Black, HGSurf::Satin);
+		K.Ellipsoid(FVector(44.f, 0.f, 106.f), FVector(6.f, 9.f, 2.5f), FRotator(-15.f, 0.f, 0.f), 10, 4, 0.f);
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Paint(Chrome, HGSurf::Chrome);
+			K.Tube(FVector(43.f, 18.f * S, 103.f), FVector(42.f, 26.f * S, 103.f), 1.3f, 1.3f, 6, false);
+			K.Tube(FVector(43.f, 24.f * S, 104.f), FVector(49.f, 31.f * S, 103.f), 0.55f, 0.45f, 4, false);
+			K.Tube(FVector(44.f, 15.f * S, 104.f), FVector(41.f, 22.f * S, 121.f), 0.55f, 0.55f, 4, false);
+			K.Paint(Black, HGSurf::Satin);
+			K.Tube(FVector(42.f, 25.f * S, 103.f), FVector(41.f, 35.f * S, 103.f), 1.9f, 1.9f, 8, true);
+			K.Ellipsoid(FVector(40.5f, 22.f * S, 123.5f), FVector(1.6f, 4.5f, 3.4f), FRotator::ZeroRotator, 8, 4);
+			K.Paint(Amber, HGSurf::Gloss);
+			K.Ellipsoid(FVector(52.f, 17.f * S, 99.f), FVector(3.f, 2.5f, 2.f), FRotator::ZeroRotator, 8, 4);
+		}
+		// Rear body under the seat (tinted), side stripes.
+		const FRotator Rise(St.RearRise, 0.f, 0.f);
+		K.Paint(FLC::White, HGSurf::Gloss, true);
+		if (St.bBoxy)
+		{
+			K.Box(FVector(-38.f, 0.f, 64.f), FVector(70.f, 27.f, 24.f), Rise);
+		}
+		K.Ellipsoid(FVector(-38.f, 0.f, 66.f), FVector(St.bBoxy ? 38.f : 40.f, St.bSport ? 12.5f : 14.f, St.bBoxy ? 13.f : 15.f), Rise, 16, 8);
+		K.Ellipsoid(FVector(-8.f, 0.f, 50.f), FVector(22.f, 12.f, 16.f), FRotator(-20.f, 0.f, 0.f), 12, 6);
+		if (St.bSport)
+		{
+			K.Ellipsoid(FVector(14.f, 0.f, 62.f), FVector(16.f, 10.f, 9.f), FRotator(-12.f, 0.f, 0.f), 12, 6);
+		}
+		K.Paint(St.Trim, HGSurf::Gloss);
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Box(FVector(-40.f, (St.bSport ? 12.6f : 14.f) * S, 68.f), FVector(48.f, 0.6f, St.bSport ? 2.4f : 1.6f), Rise + FRotator(St.bSport ? 6.f : 0.f, 0.f, 0.f));
+		}
+		// Seat (top ~85 cm like the Win: the rider / passenger anchors don't move).
+		K.Paint(FLC(0.02f, 0.018f, 0.016f), HGSurf::Satin);
+		K.Box(FVector(-30.f, 0.f, 80.f), FVector(66.f, 23.f, 5.f), Rise);
+		K.Ellipsoid(FVector(-30.f, 0.f, 82.f), FVector(34.f, 11.8f, 3.2f), Rise, 14, 5, 0.f);
+		// Grab rail / small rack, tail housing, plate, indicators, fender.
+		K.Paint(Chrome, HGSurf::Chrome);
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Tube(FVector(-58.f, 12.f * S, 84.f), FVector(-82.f, 10.f * S, 84.f), 1.f, 1.f, 6, false);
+		}
+		K.Tube(FVector(-82.f, -10.f, 84.f), FVector(-82.f, 10.f, 84.f), 1.f, 1.f, 6, false);
+		if (St.bBoxy)
+		{
+			K.Paint(Black, HGSurf::Satin);
+			for (const float X : { -66.f, -74.f })
+			{
+				K.Tube(FVector(X, -11.f, 84.f), FVector(X, 11.f, 84.f), 0.8f, 0.8f, 5, false);
+			}
+		}
+		K.Paint(FLC::White, HGSurf::Gloss, true);
+		K.Box(FVector(-80.f, 0.f, 73.f), FVector(12.f, 18.f, 10.f), Rise);
+		K.Paint(Black, HGSurf::Satin);
+		Arc(K, R, 33.f, 40.f, 165.f, 11.f, 0.9f, 9);
+		K.Paint(FLC(0.8f, 0.8f, 0.77f), HGSurf::Satin);
+		K.Box(FVector(-88.f, 0.f, 58.f), FVector(1.f, 19.f, 13.f), FRotator(8.f, 0.f, 0.f));
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Paint(Amber, HGSurf::Gloss);
+			K.Ellipsoid(FVector(-85.f, 11.f * S, 72.f), FVector(2.8f, 2.2f, 2.2f), FRotator::ZeroRotator, 8, 4);
+			K.Paint(Black, HGSurf::Satin);
+			K.Tube(FVector(-4.f, 9.f * S, 35.f), FVector(R.X, 9.f * S, R.Z), 2.f, 1.7f, 8, true);
+			K.Paint(St.bSport ? FLC(0.6f, 0.05f, 0.03f) : Chrome, St.bSport ? HGSurf::Gloss : HGSurf::Chrome);
+			K.Tube(FVector(-56.f, 11.f * S, 33.f), FVector(-52.f, 11.f * S, 66.f), 2.6f, 2.6f, 8, true);
+			K.Paint(Black, HGSurf::Matte);
+			K.Tube(FVector(20.f, 9.f * S, 33.f), FVector(20.f, 20.f * S, 33.f), 1.4f, 1.4f, 6, true);
+			K.Tube(FVector(-30.f, 10.f * S, 38.f), FVector(-30.f, 19.f * S, 38.f), 1.2f, 1.2f, 6, true);
+		}
+		// Horizontal Cub engine + exhaust.
+		K.Paint(Alloy, HGSurf::Satin);
+		K.Box(FVector(0.f, 0.f, 34.f), FVector(28.f, 16.f, 20.f));
+		K.Ellipsoid(FVector(-2.f, -8.5f, 34.f), FVector(12.f, 2.5f, 9.f), FRotator::ZeroRotator, 12, 5);
+		K.Paint(DarkAlloy, HGSurf::Satin);
+		K.Box(FVector(18.f, 0.f, 38.f), FVector(16.f, 11.f, 11.f), FRotator(8.f, 0.f, 0.f));
+		K.Paint(Black, HGSurf::Satin);
+		K.Box(FVector(-30.f, -12.f, 34.f), FVector(52.f, 1.4f, 7.f));
+		K.Paint(Chrome, HGSurf::Chrome);
+		K.Tube(FVector(24.f, 4.f, 34.f), FVector(10.f, 12.f, 22.f), 2.f, 2.f, 8, false);
+		K.Tube(FVector(10.f, 12.f, 22.f), FVector(-18.f, 13.f, 26.f), 2.f, 2.f, 8, false);
+		K.Paint(FLC(0.03f, 0.03f, 0.03f), HGSurf::Satin);
+		K.Tube(FVector(-18.f, 13.f, 27.f), FVector(-70.f, 13.f, 38.f), 4.f, 5.f, 12, true);
+		K.Paint(Chrome, HGSurf::Chrome);
+		K.Box(FVector(-40.f, 18.f, 32.f), FVector(28.f, 1.f, 7.f), FRotator(-12.f, 0.f, 0.f));
+		K.Tube(FVector(-4.f, -11.f, 29.f), FVector(-26.f, -13.f, 27.f), 1.f, 1.f, 5, true);
+	}
+
+	// ---------------------------------------------------------------------------------------------------
+	// Luggage and loads
+	// ---------------------------------------------------------------------------------------------------
+	const FLC Brocade[5] = { FLC(0.6f, 0.03f, 0.05f), FLC(0.75f, 0.48f, 0.02f), FLC(0.04f, 0.3f, 0.1f), FLC(0.7f, 0.12f, 0.35f), FLC(0.03f, 0.08f, 0.38f) };
+
+	void Straps(FHGMeshKit& K, float X0, float X1, float Z, float HalfW)
+	{
+		K.Paint(FLC(0.02f, 0.02f, 0.02f));
+		for (const float X : { X0, X1 })
+		{
+			K.Box(FVector(X, 0.f, Z), FVector(2.f, HalfW * 2.f + 1.f, 1.f));
+			for (const float S : { -1.f, 1.f })
+			{
+				K.Box(FVector(X, (HalfW + 0.5f) * S, Z - 8.f), FVector(2.f, 1.f, 16.f));
+			}
+		}
+	}
+
+	void BuildEasyRiderLuggage(FHGMeshKit& K, int32 Seed)
+	{
+		// Side frames off the rack with rolled dry bags; two backpacks and a tho cam bag strapped on top.
+		K.Paint(Black, HGSurf::Satin);
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Tube(FVector(-62.f, 11.f * S, 86.f), FVector(-64.f, 22.f * S, 60.f), 1.f, 1.f, 5, false);
+			K.Tube(FVector(-92.f, 11.f * S, 86.f), FVector(-90.f, 22.f * S, 60.f), 1.f, 1.f, 5, false);
+			K.Tube(FVector(-64.f, 22.f * S, 60.f), FVector(-90.f, 22.f * S, 60.f), 1.f, 1.f, 5, false);
+		}
+		for (const float S : { -1.f, 1.f })
+		{
+			const FLC Bag = ((S < 0.f) == bool(Seed & 1)) ? FLC(0.75f, 0.3f, 0.03f) : FLC(0.04f, 0.12f, 0.4f);
+			K.Paint(Bag, HGSurf::Satin);
+			K.Tube(FVector(-60.f, 25.f * S, 70.f), FVector(-94.f, 25.f * S, 70.f), 9.f, 9.f, 10, true);
+			K.Paint(Bag * 0.55f, HGSurf::Satin);
+			K.Tube(FVector(-94.f, 25.f * S, 70.f), FVector(-97.f, 25.f * S, 72.f), 6.f, 4.f, 8, true);
+		}
+		const FLC Packs[3] = { FLC(0.06f, 0.1f, 0.2f), FLC(0.12f, 0.15f, 0.07f), FLC(0.32f, 0.08f, 0.03f) };
+		K.Paint(Packs[Seed % 3], HGSurf::Satin);
+		K.Box(FVector(-79.f, 0.f, 101.f), FVector(30.f, 32.f, 28.f));
+		K.Ellipsoid(FVector(-79.f, 0.f, 115.f), FVector(15.f, 16.f, 5.f), FRotator::ZeroRotator, 10, 4, 0.f);
+		K.Paint(Packs[(Seed + 1) % 3], HGSurf::Satin);
+		K.Box(FVector(-80.f, 0.f, 124.f), FVector(26.f, 26.f, 18.f), FRotator(0.f, 10.f, 0.f));
+		for (int32 i = 0; i < 4; ++i)
+		{
+			K.Paint(Brocade[(Seed + i) % 5]);
+			K.Box(FVector(-80.f, 0.f, 134.f + i * 2.2f), FVector(16.f, 20.f, 2.2f));
+		}
+		Straps(K, -70.f, -90.f, 116.f, 16.f);
+	}
+
+	void BuildLocalLoad(FHGMeshKit& K, int32 Seed)
+	{
+		switch (Seed % 3)
+		{
+		case 0:
+		{
+			// Cut grass for the buffalo, bundled higher than the rider's shoulders.
+			K.Paint(FLC(0.09f, 0.2f, 0.035f));
+			K.Ellipsoid(FVector(-80.f, 0.f, 108.f), FVector(32.f, 36.f, 24.f), FRotator::ZeroRotator, 12, 6);
+			K.Paint(FLC(0.16f, 0.26f, 0.06f));
+			K.Ellipsoid(FVector(-78.f, -4.f, 126.f), FVector(26.f, 30.f, 16.f), FRotator(0.f, 20.f, 0.f), 12, 6);
+			K.Paint(FLC(0.3f, 0.26f, 0.1f));
+			for (int32 i = 0; i < 10; ++i)
+			{
+				const float A = i * 0.63f;
+				K.Box(FVector(-80.f + 26.f * FMath::Cos(A), 32.f * FMath::Sin(A), 104.f + (i % 3) * 6.f), FVector(16.f, 1.5f, 1.f),
+					FRotator(10.f * (i % 3), FMath::RadiansToDegrees(A) + 90.f, 0.f));
+			}
+			Straps(K, -70.f, -92.f, 132.f, 26.f);
+			break;
+		}
+		case 1:
+		{
+			// Firewood: split logs along the rack, tied with rope.
+			for (int32 i = 0; i < 14; ++i)
+			{
+				const int32 Row = i / 5, Col = i % 5;
+				K.Paint(FLC(0.2f + 0.05f * (i % 3), 0.13f + 0.03f * (i % 2), 0.07f));
+				const float Y = -20.f + Col * 10.f, Z = 92.f + Row * 8.f;
+				K.Tube(FVector(-40.f - (i % 2) * 4.f, Y, Z), FVector(-124.f + (i % 3) * 5.f, Y + (i % 2) * 2.f, Z), 4.f, 3.6f, 6, true);
+			}
+			K.Paint(FLC(0.45f, 0.38f, 0.2f));
+			for (const float X : { -60.f, -105.f })
+			{
+				K.Torus(FTransform(FRotator(0.f, 90.f, 0.f), FVector(X, 0.f, 100.f)), 24.f, 0.8f, 12, 4);
+			}
+			break;
+		}
+		default:
+		{
+			// Pig in a bamboo basket lying across the rack, off to market.
+			K.Paint(FLC(0.4f, 0.29f, 0.14f), HGSurf::Satin);
+			K.Frustum(FTransform(FRotator(0.f, 0.f, -90.f), FVector(-80.f, -30.f, 108.f)), FVector2D(19.f), FVector2D(19.f), 60.f, 18, false, 0.05f);
+			K.Paint(FLC(0.3f, 0.2f, 0.1f));
+			for (const float Y : { -24.f, 0.f, 24.f })
+			{
+				K.Torus(FTransform(FVector(-80.f, Y, 108.f)), 20.f, 1.f, 16, 4);
+			}
+			K.Paint(FLC(0.72f, 0.46f, 0.42f));
+			K.Ellipsoid(FVector(-80.f, 31.f, 106.f), FVector(10.f, 7.f, 9.f), FRotator::ZeroRotator, 10, 6);
+			K.Paint(FLC(0.6f, 0.36f, 0.33f));
+			K.Tube(FVector(-80.f, 37.f, 105.f), FVector(-80.f, 40.f, 105.f), 4.f, 3.6f, 8, true);
+			K.Paint(FLC(0.1f, 0.06f, 0.06f));
+			K.Ellipsoid(FVector(-78.5f, 40.2f, 106.f), FVector(0.7f, 0.3f, 0.7f), FRotator::ZeroRotator, 4, 3);
+			K.Ellipsoid(FVector(-81.5f, 40.2f, 106.f), FVector(0.7f, 0.3f, 0.7f), FRotator::ZeroRotator, 4, 3);
+			Straps(K, -66.f, -94.f, 128.f, 20.f);
+			break;
+		}
+		}
+	}
 }
 
 namespace HGBikes
 {
-	UStaticMesh* Wheel(bool bFront)
+	bool IsStepThrough(EHGBikeModel Model)
 	{
-		return FHGMeshKit::Cached(bFront ? FName(TEXT("SM_HGWinWheelFront")) : FName(TEXT("SM_HGWinWheelRear")),
-			[bFront](FHGMeshKit& K) { BuildWheel(K, bFront); });
+		return Model == EHGBikeModel::Wave || Model == EHGBikeModel::Dream || Model == EHGBikeModel::Sirius;
 	}
 
-	UStaticMesh* Body()
+	UStaticMesh* Wheel(bool bFront, bool bScooter)
 	{
-		return FHGMeshKit::Cached(TEXT("SM_HGWinBody"), [](FHGMeshKit& K) { BuildBody(K); });
+		const FName Key = *FString::Printf(TEXT("SM_HGBikeWheel_%d_%d"), bFront ? 1 : 0, bScooter ? 1 : 0);
+		return FHGMeshKit::Cached(Key, [bFront, bScooter](FHGMeshKit& K) { BuildWheel(K, bFront || bScooter); });
+	}
+
+	UStaticMesh* Body(EHGBikeModel Model, int32 LoadSeed)
+	{
+		LoadSeed = FMath::Abs(LoadSeed);
+		const int32 KeySeed = Model == EHGBikeModel::LocalLoaded ? LoadSeed % 3 : (Model == EHGBikeModel::EasyRiderWin ? LoadSeed % 6 : 0);
+		const FName Key = *FString::Printf(TEXT("SM_HGBike_%d_%d"), int32(Model), KeySeed);
+		return FHGMeshKit::Cached(Key, [Model, KeySeed](FHGMeshKit& K)
+		{
+			FStepStyle St;
+			switch (Model)
+			{
+			case EHGBikeModel::Wave:
+				BuildStepThrough(K, St);
+				break;
+			case EHGBikeModel::Dream:
+				St.bBoxy = true;
+				St.ShieldPitch = -14.f;
+				St.Trim = FLC(0.75f, 0.72f, 0.6f);
+				BuildStepThrough(K, St);
+				break;
+			case EHGBikeModel::Sirius:
+				St.bSport = true;
+				St.CowlLen = 14.f;
+				St.ShieldPitch = -28.f;
+				St.RearRise = -6.f;
+				St.Trim = FLC(0.85f, 0.85f, 0.85f);
+				BuildStepThrough(K, St);
+				break;
+			case EHGBikeModel::EasyRiderWin:
+				BuildWin(K);
+				BuildEasyRiderLuggage(K, KeySeed);
+				break;
+			case EHGBikeModel::LocalLoaded:
+				BuildWin(K);
+				BuildLocalLoad(K, KeySeed);
+				break;
+			default:
+				BuildWin(K);
+				break;
+			}
+		});
+	}
+
+	UStaticMesh* FlagPole(EHGBikeModel Model)
+	{
+		const FVector Top = FlagMount(Model);
+		return FHGMeshKit::Cached(*FString::Printf(TEXT("SM_HGFlagPole_%d"), IsStepThrough(Model) ? 1 : 0), [Top](FHGMeshKit& K)
+		{
+			K.Paint(Black, HGSurf::Satin);
+			K.Tube(FVector(Top.X, Top.Y, 84.f), Top + FVector(0.f, 0.f, 2.f), 0.6f, 0.45f, 5, true);
+		});
+	}
+
+	UStaticMesh* Flag()
+	{
+		return FHGMeshKit::Cached(TEXT("SM_HGFlagVN"), [](FHGMeshKit& K)
+		{
+			// Red flag with the yellow star, 36 x 24 cm, flying back along -X from the pole.
+			K.Paint(FLC(0.7f, 0.02f, 0.02f), HGSurf::Satin);
+			K.Box(FVector(-18.f, 0.f, -12.f), FVector(36.f, 0.6f, 24.f));
+			K.Paint(FLC(1.f, 0.8f, 0.f), HGSurf::Satin);
+			for (int32 i = 0; i < 5; ++i)
+			{
+				const float A = FMath::DegreesToRadians(90.f + 72.f * i);
+				const FVector Dir(FMath::Cos(A), 0.f, FMath::Sin(A));
+				K.Box(FVector(-18.f, 0.f, -12.f) + Dir * 2.8f, FVector(5.6f, 0.8f, 2.2f), FRotator(FMath::RadiansToDegrees(A), 0.f, 0.f));
+			}
+			K.Box(FVector(-18.f, 0.f, -12.f), FVector(3.6f, 0.8f, 3.6f));
+		});
+	}
+
+	FVector HeadLampLens(EHGBikeModel Model)
+	{
+		return IsStepThrough(Model) ? FVector(58.5f, 0.f, 99.f) : FVector(79.f, 0.f, 88.f);
+	}
+
+	FVector HeadLampSize(EHGBikeModel Model)
+	{
+		return Model == EHGBikeModel::Dream ? FVector(2.f, 12.f, 8.f) : (IsStepThrough(Model) ? FVector(3.f, 14.f, 6.f) : FVector(3.f, 16.5f, 16.5f));
+	}
+
+	FVector TailLampLens(EHGBikeModel Model)
+	{
+		return IsStepThrough(Model) ? FVector(-86.4f, 0.f, 73.f) : FVector(-97.4f, 0.f, 79.f);
+	}
+
+	FVector PlateLocation(EHGBikeModel Model)
+	{
+		return IsStepThrough(Model) ? FVector(-89.f, 0.f, 57.f) : FVector(-96.f, 0.f, 62.f);
+	}
+
+	FVector FlagMount(EHGBikeModel Model)
+	{
+		return IsStepThrough(Model) ? FVector(-80.f, -10.f, 150.f) : FVector(-97.f, -11.f, 165.f);
+	}
+
+	FLinearColor Paint(EHGBikeModel Model, int32 Seed)
+	{
+		Seed = FMath::Abs(Seed);
+		switch (Model)
+		{
+		case EHGBikeModel::Wave:
+		{
+			const FLC C[4] = { FLC(0.04f, 0.12f, 0.45f), FLC(0.5f, 0.02f, 0.02f), FLC(0.02f, 0.02f, 0.02f), FLC(0.55f, 0.55f, 0.55f) };
+			return C[Seed % 4];
+		}
+		case EHGBikeModel::Dream:
+		{
+			const FLC C[3] = { FLC(0.22f, 0.04f, 0.04f), FLC(0.18f, 0.1f, 0.05f), FLC(0.35f, 0.3f, 0.22f) };
+			return C[Seed % 3];
+		}
+		case EHGBikeModel::Sirius:
+		{
+			const FLC C[3] = { FLC(0.02f, 0.02f, 0.02f), FLC(0.5f, 0.02f, 0.02f), FLC(0.02f, 0.12f, 0.5f) };
+			return C[Seed % 3];
+		}
+		case EHGBikeModel::LocalLoaded:
+		{
+			const FLC C[3] = { FLC(0.2f, 0.03f, 0.03f), FLC(0.06f, 0.06f, 0.07f), FLC(0.15f, 0.12f, 0.08f) };
+			return C[Seed % 3];
+		}
+		default:
+		{
+			const FLC C[5] = { FLC(0.55f, 0.02f, 0.02f), FLC(0.02f, 0.02f, 0.02f), FLC(0.05f, 0.15f, 0.45f), FLC(0.6f, 0.4f, 0.02f), FLC(0.06f, 0.2f, 0.07f) };
+			return C[Seed % 5];
+		}
+		}
+	}
+
+	EHGBikeModel RandomModel(int32 Seed)
+	{
+		const int32 R = int32((uint32(Seed) * 2654435761u) >> 8) % 100;
+		if (R < 30) return EHGBikeModel::Win;
+		if (R < 50) return EHGBikeModel::Wave;
+		if (R < 60) return EHGBikeModel::Dream;
+		if (R < 75) return EHGBikeModel::Sirius;
+		if (R < 90) return EHGBikeModel::EasyRiderWin;
+		return EHGBikeModel::LocalLoaded;
 	}
 }
