@@ -538,3 +538,23 @@ for every landmark building (max 0.0 m under a corner now) - 116 checks, 0 FAIL.
 Perf lock protocol (also for agent B): `until mkdir /tmp/hg_perf.lock 2>/dev/null; do sleep 30; done` before any
 build (Build.sh), CP05 rebuild (ci_run_checkpoint.py) or -hgperf run; `rmdir /tmp/hg_perf.lock` right after.
 Functional playtests don't take it but must not overlap a perf run. Every reported FPS is the median of two runs.
+
+Round 4 additions (coordinator): B's Round 3B (57b14cc) merged (89faabe), Generated/ regenerated (gen_heightmap,
+gen_scatter, gen_assets, gen_ranges, gen_farterrain, gen_signs), CP05 rebuilt, validate_layout 116 checks 0 FAIL.
+Cano chase camera 12 m behind / 3 m up (was 19 m). Harness: the window guard never resizes while a screenshot is
+pending or within 1 s of one (B's SIGSEGV in the readback), and -hgperf / the playtest quit only after the last
+screenshot's readback (a one-camera -hgperfonly run froze its game thread at quit until the 15 min timeout).
+Every Unreal launch in the scripts already passes -nocrashreports. Boat-tour guests are now HGPeople passengers on
+the kit cano's hull frame (standing NPCs went through B's new roof).
+
+Results (machine load-contaminated by orphaned CrashReportClient processes: read FPS as relative only).
+- Playtests, traffic per session: r4play1 (first U-turn code) 7 dead stops / 2 re-placements; r4play2 0 / 1;
+  r4play3 2 / 6. Round 3: 0-14 dead stops, 5-13 re-placements. Remaining causes: bikes on the inside kerb
+  (chevrons) of the 267 m / 661 m hairpins, two squeeze-past unsticks, two bikes 15-24 m off the road at 13.5 km
+  in far LOD, a cow herd on the road at 3.24 km. Longest U-turn wait 34-236 s.
+- Missions 3/3 PASS, boat hire PASS, boat tour PASS (bend 190 s, back 180 s, +300,000 VND), list + grip tyres PASS
+  (Ta Lang concrete top speed 48 -> 58 km/h), pause menu PASS, restart at a viewpoint PASS.
+- -hgperf, 2 runs (locked): min 63 / 59 FPS; TuSan_boat 67 / 68, MomDa 69 / 59, ThamMa drone 63 / 71.
+- Water GI tier A/B at TuSan_boat, 2 runs each: 64 / 65 FPS without, 65 / 65 with, GPU 14.3 ms both ways - the
+  view is draw-thread bound (~14.8 ms), so it buys nothing; now opt-in (-hgwatergi=1). 70+ there needs draw-thread
+  work (crew / dressing draw calls), not GI.

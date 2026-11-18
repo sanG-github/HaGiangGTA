@@ -1332,14 +1332,16 @@ void AHGGtaGameMode::UpdateWaterGITier(float DeltaSeconds)
 	// Down in the Tu San gorge on the river the frame is mostly water, sheer walls and sky: Lumen's screen probes
 	// (4.3 of 10.8 ms GPU there) can be coarser without a visible change - the walls are flat-lit by the sky
 	// either way and the water is reflections. A cheaper GI tier while the camera is low over water, the
-	// project defaults everywhere else. -hgwatergi=0 turns it off (A/B).
+	// project defaults everywhere else. -hgwatergi=1 turns it on.
 	WaterGICheck -= DeltaSeconds;
 	if (WaterGICheck > 0.f)
 	{
 		return;
 	}
 	WaterGICheck = 0.5f;
-	static const bool bEnabled = [] { int32 V = 1; FParse::Value(FCommandLine::Get(), TEXT("hgwatergi="), V); return V != 0; }();
+	// Measured (round 4, 2x A/B at VP3_TuSan_boat): 64.5 -> 65 FPS, GPU 14.3 ms both ways - the boat view is draw-
+	// thread bound (14.8 ms), so coarser screen probes buy nothing. Opt-in (-hgwatergi=1) until that is fixed.
+	static const bool bEnabled = [] { int32 V = 0; FParse::Value(FCommandLine::Get(), TEXT("hgwatergi="), V); return V != 0; }();
 	const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	if (!bEnabled || !PC || !PC->PlayerCameraManager)
 	{
