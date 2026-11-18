@@ -633,3 +633,15 @@ load-contaminated): final playtest all PASS (3 missions, boat hire, boat tour, u
 27.9 FPS. Same-session A/B -hgperf, round-4B visuals on vs `-hgnokit -hghide=FarTerrain,RangeLayer`:
 Spawn_ThamMa 78.2 vs 74.5 ms, Viewpoint_3 59.9 vs 51.4 ms. Earlier, lighter load: playtest 59.8 FPS with far
 terrain vs 61.4 without. validate_layout: 0 FAIL.
+
+## Round 5B - OBJ mirror, far-terrain seam tones, finer fences (agent B, merged A's branch)
+
+- gen_assets `write_obj` now writes Y negated with reversed winding (the OBJ import mirrors Y; found on the far
+  terrain in 4B). The two asymmetric props are re-authored so they look exactly as before in game: guardrail rail
+  on local -Y, chevron board on +Y (gen_scatter's yaws were set against the mirrored meshes). Random props (cliffs,
+  boulders, bushes, trees) now arrive as generated; road strip, posts, houses, poles, walls are symmetric.
+  Review5B_1: guardrails, chevrons, road, cliffs, bushes render as before (no inside-out faces).
+- Far terrain: the landscape's own dry-grass / khaki / shrub tones within ~1.5 km of the map edge, blending to the
+  hazy far palette by ~6 km (no pale band at the seam; rim_000 / rim_240).
+- Dry-stone fences: 4 courses of 15-28 cm stones (were 3 courses of 26-48 cm boxes).
+- CP05 OK (deferred-quit runner), validate_layout 0 FAIL, no new crash folder / CrashReportClient.
