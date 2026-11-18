@@ -17,8 +17,12 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
           "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
           "SM_HG_DistantRanges", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
           "SM_HG_StoneWall", "SM_HG_Monument"]
+# Round 3B: layered distant ranges (Scripts/Tools/gen_ranges.py) replace the single SM_HG_DistantRanges ring.
+RANGE_LAYERS = [f"SM_HG_RangeLayer_{i}" for i in range(4)]
+MESHES += RANGE_LAYERS
 PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_Chevron",
-         "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument")
+         "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument",
+         *RANGE_LAYERS)
 NANITE = {m for m in MESHES if m not in PROPS}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
 COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
@@ -49,6 +53,7 @@ def run_generator(script: str, check_file: str) -> None:
 def ensure_generated() -> None:
     run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_Monument.obj")
     run_generator("gen_scatter.py", "Generated/Assets/Textures/T_HG_PathMask.png")
+    run_generator("gen_ranges.py", "Generated/Assets/Meshes/SM_HG_RangeLayer_3.obj")
 
 
 def _import(src: str, dest_folder: str, name: str):

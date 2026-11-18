@@ -364,7 +364,13 @@ def build_golden_hour(tag, folder):
                  ("color_contrast", unreal.Vector4(1.08, 1.08, 1.08, 1.0)),
                  ("color_gain_shadows", unreal.Vector4(0.94, 1.0, 1.08, 1.0)),
                  ("color_gain_highlights", unreal.Vector4(1.03, 1.0, 0.96, 1.0)),
-                 ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0)):
+                 ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0),
+                 # Round 3B - deep gorge shade (Tu San narrows went near-black): sky light leaks a little into
+                 # sky-occluded places (a bounce fill that only matters where Lumen sees no sky), and local
+                 # exposure lifts the shadows without flattening the sunlit walls.
+                 ("lumen_skylight_leaking", 0.16),
+                 ("local_exposure_shadow_contrast_scale", 0.72), ("local_exposure_highlight_contrast_scale", 0.9),
+                 ("local_exposure_detail_strength", 1.1)):
         try:
             s.set_editor_property(k, v)
             s.set_editor_property("override_" + k, True)
@@ -534,8 +540,20 @@ def build_river_traffic(layout, tag, folder):
 
 def build_set_dressing(scatter, meshes, mats, tag, folder):
     """Reference-photo dressing: distant blue ranges, chevrons on the bends, utility poles, hamlets."""
+    # Round 3B: four layered ridge rings (gen_ranges.py, absolute altitude) instead of the single flat band.
+    for i in range(4):
+        path = f"/Game/HaGiang/Generated/Meshes/SM_HG_RangeLayer_{i}.SM_HG_RangeLayer_{i}"
+        if unreal.EditorAssetLibrary.does_asset_exist(path.split(".")[0]) and f"range_{i}" in mats:
+            layer = hg.spawn_mesh(f"RangeLayer_{i}", path, (0, 0, 0), material=mats[f"range_{i}"], tag=tag,
+                                  folder=folder, collision=False)
+            layer.static_mesh_component.set_editor_property("cast_shadow", False)
+            try:
+                unreal.EditorStaticMeshLibrary.remove_collisions(layer.static_mesh_component.static_mesh)
+            except Exception as exc:
+                hg.warn(f"RangeLayer_{i} collision: {exc}")
     ranges = hg.spawn_mesh("DistantRanges", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantRanges.SM_HG_DistantRanges",
                            (0, 0, 80000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
+    ranges.set_actor_hidden_in_game(any(f"range_{i}" in mats for i in range(4)))   # kept only as a fallback
     ranges.static_mesh_component.set_editor_property("cast_shadow", False)
     # Scenery only: its auto-generated collision box would enclose the whole map (170..2060 m) and
     # swallow every ground trace and the PlayerStart.

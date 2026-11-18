@@ -218,6 +218,28 @@ def blur_coarse(a, k, iters):
     return np.asarray(Image.fromarray(c, mode="F").resize((N, N), Image.BICUBIC), dtype=np.float32)
 
 
+def ring_distance(mask, max_cells):
+    """Approximate distance in cells from the True cells of mask (octagonal dilation), capped at max_cells + 1.
+    Pure numpy (no scipy): max_cells shifted ORs of a boolean grid."""
+    dist = np.full(mask.shape, float(max_cells + 1), np.float32)
+    cur = mask.copy()
+    dist[cur] = 0.0
+    for i in range(1, max_cells + 1):
+        nxt = cur.copy()
+        nxt[1:, :] |= cur[:-1, :]
+        nxt[:-1, :] |= cur[1:, :]
+        nxt[:, 1:] |= cur[:, :-1]
+        nxt[:, :-1] |= cur[:, 1:]
+        if i % 2 == 0:
+            nxt[1:, 1:] |= cur[:-1, :-1]
+            nxt[:-1, :-1] |= cur[1:, 1:]
+            nxt[1:, :-1] |= cur[:-1, 1:]
+            nxt[:-1, 1:] |= cur[1:, :-1]
+        dist[nxt & ~cur] = float(i)
+        cur = nxt
+    return dist
+
+
 def bilinear(h, xy):
     f = np.clip(to_px(xy), 0, N - 1.001)
     c0, r0 = f[..., 0].astype(int), f[..., 1].astype(int)
@@ -457,10 +479,17 @@ def generate():
     del img, dr
     # The DSM's river surface is wider than the mapped line: low flat ground within ~70 m is water too
     # (otherwise it shows as a sandy beach - the Tu San walls drop straight into the water).
-    near = blur_coarse(water.astype(np.float32), 4, 12) > 0.01
+    # (Round 3B: a real distance ring instead of blur_coarse > 0.01, whose 5.8 m blocks gave the shoreline
+    # stair-stepped "pillars".)
+    near = ring_distance(water, 62) <= 62      # ~90 m, the reach of the old blurred mask
     low = height < float(np.median(height[water][::50])) + 2.5
     water = water | (near & low)
     del near, low
+    # Round 3B: DEM specks of "land" inside the river (thinner than ~12 m, water on both sides) become water, so
+    # they are carved like the rest instead of standing as islets and capping the depth around them.
+    core_land = ring_distance(water, 4) > 4
+    water = ~(ring_distance(core_land, 4) <= 4)
+    del core_land
     gx_, gy_ = np.meshgrid(xs, ys)
     downstream = ((gx_ - dam_c[0]) * flow[0] + (gy_ - dam_c[1]) * flow[1]) > 0
     del gx_, gy_
@@ -470,11 +499,31 @@ def generate():
     surf = np.where(downstream, DOWN_ASL_M, WATER_ASL_M).astype(np.float32)
     depth = blur_coarse(water.astype(np.float32), 4, 8)                     # 0.5 at the shore, 1 inside
     bed = surf - 1.5 - 32.0 * np.clip((depth - 0.5) * 2.0, 0, 1)
+    # Round 3B - drawdown banks. Round 2 dropped the bed straight to -1.5 m at the shore and lifted the first
+    # ~12 m of land to +0.6..+5 m, so every shoreline was a 2-7 m vertical "curtain" (blocky, ochre-banded).
+    # Now: a shallow shelf under the water (-0.3 m at the edge, ~25 deg down) and, within ~25 m of the shore on
+    # ground up to ~30 m above the water, a sloped irregular rocky drawdown bank (~35-55 deg). Cliffs taller than
+    # that (the Tu San walls) are left alone: they still drop straight into the river.
+    d_in = ring_distance(~water, 6).astype(np.float32) * CELL_M           # metres from the shore, inside water
+    d_out = ring_distance(water, 24).astype(np.float32) * CELL_M          # metres from the shore, on land
+    for _ in range(2):
+        d_in, d_out = proc.blur3(d_in), proc.blur3(d_out)
+    # Shelf only in the first ~6 m off the shore (beyond it the round-2 bed: the dock / pontoon / cruise-route
+    # depths stay as they were; the milky water hides the drop-off).
+    shelf = np.where(d_in < 6.5, surf - 0.35 - 0.55 * np.maximum(d_in - CELL_M, 0.0), bed)
+    bed = np.maximum(bed, shelf)
     height = np.where(water, np.minimum(height, bed), height)
-    bank = (depth > 0.02) & ~water
-    # Steep banks: +0.6 m at the waterline rising ~15 m across the ~12 m shore ring.
-    height = np.where(bank, np.maximum(height, surf + 0.6 + np.clip(0.5 - depth, 0, 0.5) * 10.0), height).astype(np.float32)
-    del depth, bed, bank, surf
+    # ~18 m irregularity; own generator so the road / landmark steps after this keep their random sequence.
+    wobble = (proc.value_noise(N, int(2 * HALF_M / 18.0), np.random.default_rng(SEED + 4)) - 0.5).astype(np.float32)
+    slope = 0.95 + 0.6 * wobble                                                            # ~35..55 deg, rocky drawdown
+    target = surf + 0.3 + np.maximum(d_out - CELL_M, 0.0) * slope + 0.4 * wobble * np.clip(d_out / 6.0, 0, 1)
+    band = 1.0 - proc.smoothstep(20.0, 32.0, d_out)                                      # within ~25 m of the water
+    lowland = 1.0 - proc.smoothstep(surf + 18.0, surf + 32.0, height)                    # cliffs > ~30 m stay
+    w = (band * lowland * ~water).astype(np.float32)
+    height = np.where(water, height, height + (np.minimum(height, target) - height) * w)
+    # Keep land just out of the water (no flooded cells at the edge).
+    height = np.where(~water & (d_out < 3.0), np.maximum(height, surf + 0.25 + 0.15 * d_out), height).astype(np.float32)
+    del depth, bed, shelf, d_in, d_out, wobble, slope, target, band, lowland, w, surf
     print(f"water {WATER_ASL_M} m / below dam {DOWN_ASL_M} m  {time.time() - t0:.1f}s")
 
     # --- 5. route: Tham Ma (patch) -> link -> QL4C north past Ma Pi Leng -> Ta Lang road -> dock ---

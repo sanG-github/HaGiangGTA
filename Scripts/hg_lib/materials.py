@@ -231,9 +231,20 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     base = g.lerp(ground, rock_col, rock)
 
     # Reservoir draw-down band: bare ochre rock/soil from the water line up ~4.5 m.
-    band = g.mul(g.saturate(g.mul(g.sub(g.scalar("BandTopZ", water_z_cm + 350.0), z), 1.0 / 150.0)),
+    # Round 3B: irregular top edge (+-1.7 m), grey-brown mud and ochre silt with faint old waterlines on gentle
+    # ground, water-stained rock on steep faces (the flat ochre stripe on vertical cuts read as brown curtains).
+    band_top = g.add(g.scalar("BandTopZ", water_z_cm + 520.0), g.mul(g.sub((n_mid, "R"), 0.5), 340.0))
+    band = g.mul(g.saturate(g.mul(g.sub(band_top, z), 1.0 / 120.0)),
                  g.saturate(g.mul(g.sub(z, water_z_cm - 50.0), 1.0 / 60.0)))
-    base = g.lerp(base, g.mul(g.color("WaterlineOchre", (0.42, 0.27, 0.13)), g.add(0.8, g.mul((n_fine, "G"), 0.4))), band)
+    lines = g.node(unreal.MaterialExpressionFrac)
+    g.link(g.mul(z, 1.0 / 70.0), lines)
+    mud = g.lerp(g.color("DrawdownMud", (0.24, 0.2, 0.15)), g.color("WaterlineOchre", (0.4, 0.27, 0.14)), (n_fine, "G"))
+    mud = g.mul(mud, g.add(0.82, g.mul(lines, 0.22)))
+    stained_rock = g.mul(rock_col, g.color("WaterStain", (0.68, 0.6, 0.5)))
+    band_col = g.lerp(mud, stained_rock, rock)
+    wet = g.saturate(g.mul(g.sub(g.add(water_z_cm, 45.0), z), 1.0 / 30.0))       # dark wet line at the water
+    band_col = g.mul(band_col, g.sub(1.0, g.mul(wet, 0.45)))
+    base = g.lerp(base, band_col, band)
 
     # Footpaths (pale zig-zag trails, baked by gen_scatter.py into a 2 m/px map-wide mask).
     if "T_HG_PathMask" in tex:
@@ -540,6 +551,27 @@ def lamp() -> unreal.Material:
     return g.finish()
 
 
+def range_layer(tex, name, color, haze, haze_amount) -> unreal.Material:
+    """Distant range layer (Round 3B): forest / rock breakup from world-space noise, lit by the sun on its sloped
+    flanks; the lower slopes fade into valley haze (lighter, bluer) while the ridges keep their contrast. The
+    height fog and the atmosphere add the distance colour on top."""
+    g = Graph(name)
+    g.mat.set_editor_property("two_sided", True)
+    wp = g.world_pos()
+    z = g.mask(wp, b=True)
+    n = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 60000.0))
+    n2 = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 9000.0))
+    col = g.mul(g.color("Base", color), g.add(0.7, g.add(g.mul((n, "R"), 0.4), g.mul((n2, "G"), 0.25))))
+    rock = g.saturate(g.mul(g.sub((n2, "B"), 0.62), 4.0))
+    col = g.lerp(col, g.mul(g.color("Rock", (0.2, 0.2, 0.2)), g.add(0.8, g.mul((n, "G"), 0.3))), g.mul(rock, 0.5))
+    valley = g.saturate(g.mul(g.sub(g.scalar("HazeTopZ", 125000.0), z), 1.0 / 80000.0))
+    col = g.lerp(col, g.color("Haze", haze), g.mul(valley, g.scalar("HazeAmount", haze_amount)))
+    g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.const(0.95), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.const(0.2), unreal.MaterialProperty.MP_SPECULAR)
+    return g.finish()
+
+
 def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
     hm = (layout or {}).get("heightmap", {})
     half_cm = hm.get("half_m", 2016.0) * 100.0
@@ -575,5 +607,9 @@ def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
         "roof_blue": metal("M_HG_RoofBlue", (0.07, 0.17, 0.34), 0.55),
         "vertex_color": vertex_color(),
         "lamp": lamp(),
+        "range_0": range_layer(tex, "M_HG_RangeLayer_0", (0.05, 0.075, 0.045), (0.2, 0.25, 0.3), 0.35),
+        "range_1": range_layer(tex, "M_HG_RangeLayer_1", (0.055, 0.075, 0.065), (0.22, 0.27, 0.33), 0.5),
+        "range_2": range_layer(tex, "M_HG_RangeLayer_2", (0.065, 0.085, 0.09), (0.25, 0.3, 0.37), 0.6),
+        "range_3": range_layer(tex, "M_HG_RangeLayer_3", (0.08, 0.1, 0.12), (0.28, 0.33, 0.4), 0.7),
         "ranges": foliage(tex, "M_HG_DistantRanges", (0.05, 0.08, 0.05), (0.09, 0.12, 0.08), 0.95, two_sided=True),
     }
