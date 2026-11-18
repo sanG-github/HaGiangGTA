@@ -119,6 +119,7 @@ private:
 	float PlayStockKmh = 0.f;
 	bool bPlayIntroLogged = false;
 	float PlayIntroT = 0.f;
+	int32 PlayIntroFrames = 0;
 	double LastShotRequestTime = -10.0;
 	bool bPerfQuitPending = false;
 	bool bPlayProfileChecked = false;

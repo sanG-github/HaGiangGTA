@@ -550,6 +550,12 @@ def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
         hg.box("MPL_DrinkStall", (stall[0], stall[1], stall[2] + 55), (260, 120, 110), yaw=yaw, material=mat_wood, tag=tag, folder=folder)
         hg.box("MPL_StallAwning", (stall[0], stall[1], stall[2] + 240), (320, 220, 8), yaw=yaw,
                material=mats["roof_blue"], tag=tag, folder=folder, collision=False)
+        # Stabilisation (review rim_120: "floating blue bar"): the awning had nothing under it - four posts from
+        # the stall corners up to the awning, and the stall snapped to the plaza ground.
+        ca, sa = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+        for px, py in ((-150, -100), (150, -100), (-150, 100), (150, 100)):
+            hg.box(f"MPL_StallPost_{px}_{py}", (stall[0] + ca * px - sa * py, stall[1] + sa * px + ca * py, stall[2] + 118),
+                   (8, 8, 236), yaw=yaw, material=mat_wood, tag=tag, folder=folder, collision=False)
 
     if "youth_monument" in marks:
         at, yaw = frame("youth_monument")

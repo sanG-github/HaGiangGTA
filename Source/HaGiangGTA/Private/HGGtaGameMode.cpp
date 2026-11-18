@@ -110,6 +110,12 @@ void AHGGtaGameMode::BeginPlay()
 	Super::BeginPlay();
 	bPerfRun = FParse::Param(FCommandLine::Get(), TEXT("hgperf"));
 	bPlayTest = FParse::Param(FCommandLine::Get(), TEXT("hgplaytest"));
+	if ((bPerfRun || bPlayTest) && GEngine)
+	{
+		// Right after a CP05 rebuild the engine prints "Preparing Textures / SoundWaves / Mesh Distance Fields"
+		// over the first review shots: scripted runs keep the screen to the game.
+		GEngine->Exec(GetWorld(), TEXT("DisableAllScreenMessages"));
+	}
 	StartAmbientAudio();
 	if (bPlayTest)
 	{
@@ -703,15 +709,11 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	if (PlayPhase == 1)                    // 1: walk forward 4 s (+ shrink the window: the restore guard must fix it)
 	{
 		// Put the intro card away (it was in the spawn shot): Enter for 0.2 s on entering the phase.
+		// Enter was never pressed by the bot: the first tick of this phase follows the spawn screenshot's 300-400 ms
+		// hitch, so a "first 0.2 s" window was already over. Count frames instead: down for 3 frames, then up.
 		PlayIntroT += DeltaSeconds;
-		if (PlayIntroT < 0.2f) { PlaySetKey(EKeys::Enter, true); }
-		else { PlaySetKey(EKeys::Enter, false); }
-		if (PlayIntroT < 0.25f)
-		{
-			// Diagnostic: does the simulated Enter reach the player input at all while unpaused?
-			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    intro Enter t=%.2f: down %d, just pressed %d, pawn %s, paused %d"), PlayIntroT,
-				PC->IsInputKeyDown(EKeys::Enter), PC->WasInputKeyJustPressed(EKeys::Enter), PC->GetPawn() ? *PC->GetPawn()->GetClass()->GetName() : TEXT("-"), GetWorld()->IsPaused());
-		}
+		++PlayIntroFrames;
+		PlaySetKey(EKeys::Enter, PlayIntroFrames <= 3);
 		if (PlayIntroT > 0.6f && PlayIntroT < 1.2f && !bPlayIntroLogged)
 		{
 			if (const UHGMissionSubsystem* MSk = GetWorld()->GetSubsystem<UHGMissionSubsystem>())
