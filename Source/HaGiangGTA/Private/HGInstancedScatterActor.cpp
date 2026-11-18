@@ -4,6 +4,7 @@
 #include "Engine/CollisionProfile.h"
 #include "Engine/StaticMesh.h"
 #include "HaGiangGTA.h"
+#include "Misc/CommandLine.h"
 #include "Materials/MaterialInterface.h"
 
 AHGInstancedScatterActor::AHGInstancedScatterActor()
@@ -65,4 +66,23 @@ void AHGInstancedScatterActor::ClearInstances()
 int32 AHGInstancedScatterActor::GetInstanceCount() const
 {
 	return Instances->GetInstanceCount();
+}
+
+void AHGInstancedScatterActor::BeginPlay()
+{
+	Super::BeginPlay();
+	if (!GetActorNameOrLabel().Contains(TEXT("Scatter_tree")))
+	{
+		return;
+	}
+	float Meters = -1.f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("hgtreecull="), Meters) && Meters > 0.f)
+	{
+		Instances->SetCullDistances(FMath::RoundToInt(Meters * 75.f), FMath::RoundToInt(Meters * 100.f));
+	}
+	int32 Shadow = 1;
+	if (FParse::Value(FCommandLine::Get(), TEXT("hgtreeshadow="), Shadow) && Shadow == 0)
+	{
+		Instances->SetCastShadow(false);
+	}
 }
