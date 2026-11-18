@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 2990,
+  "active_work_seconds": 2991,
   "cooldown_wait_seconds": 0,
-  "state": "running",
-  "segment_started_at": 1794977270,
-  "current_branch": "checkpoint/05-24hr-full-gta-5star",
-  "current_checkpoint": "cp-05-24hr",
-  "last_completed_step": "CP05 python",
-  "next_pending_step": "commit CP05",
+  "state": "stopped",
+  "segment_started_at": null,
+  "current_branch": "main",
+  "current_checkpoint": "compile-fix",
+  "last_completed_step": "CP05 merged (tag cp-05-24hr)",
+  "next_pending_step": "UE 5.8 installed -> compile + fix CP01-05",
   "pause_reason": null,
   "history": [
     {
@@ -163,6 +163,11 @@
       "active": 2990,
       "done": "CP05 python",
       "next": "commit CP05"
+    },
+    {
+      "t": 1794977271,
+      "event": "stop",
+      "active": 2991
     }
   ]
 }
