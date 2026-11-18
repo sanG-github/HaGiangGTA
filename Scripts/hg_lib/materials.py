@@ -245,10 +245,11 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     bedding = g.saturate(g.mul(g.sub(bed_d, 0.43), 14.0))                          # thin dark bedding planes
     band_tone = g.add(0.82, g.mul(g.sub((streak, "B"), 0.5), 0.5))                    # alternating beds
     rock_col = g.mul(rock_col, g.mul(band_tone, g.sub(1.0, g.mul(bedding, 0.35))))
-    crev_t = g.texture(tex["T_HG_Noise"], g.append(g.mul(xy, 1.0 / 260.0), g.mul(z, 1.0 / 3200.0)))
-    crev = g.saturate(g.mul(g.sub((crev_t, "R"), 0.72), 7.0))
+    # Crevices / ledge shrubs from samples already taken (the fine top projection stretches into vertical
+    # streaks on cliffs): no extra texture fetch on the landscape's M1 budget.
+    crev = g.saturate(g.mul(g.sub((n_fine, "B"), 0.78), 7.0))
     rock_col = g.lerp(rock_col, g.color("Crevice", (0.045, 0.045, 0.042)), g.mul(crev, 0.75))
-    ledge_veg = g.mul(g.saturate(g.mul(g.sub((crev_t, "G"), 0.58), 5.0)), g.add(bedding, 0.35))
+    ledge_veg = g.mul(g.saturate(g.mul(g.sub((n_mid, "B"), 0.6), 5.0)), g.add(bedding, 0.35))
     rock_col = g.lerp(rock_col, g.mul(green, 0.9), g.saturate(ledge_veg))
     # Even steep canyon slopes are grassed in the photos: bare rock only above ~68 deg.
     threshold = g.add(g.scalar("RockSlopeThreshold", 0.62), g.mul(g.sub((n_mid, "R"), 0.5), 0.25))

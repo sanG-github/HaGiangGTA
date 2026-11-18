@@ -396,8 +396,8 @@ def build_golden_hour(tag, folder):
                  # sky-occluded places (a bounce fill that only matters where Lumen sees no sky), and local
                  # exposure lifts the shadows without flattening the sunlit walls.
                  ("lumen_skylight_leaking", 0.16),
-                 ("local_exposure_shadow_contrast_scale", 0.95), ("local_exposure_highlight_contrast_scale", 1.0),
-                 ("local_exposure_detail_strength", 1.1)):
+                 ("local_exposure_shadow_contrast_scale", 1.0), ("local_exposure_highlight_contrast_scale", 1.0),
+                 ("local_exposure_detail_strength", 1.0)):
         try:
             s.set_editor_property(k, v)
             s.set_editor_property("override_" + k, True)
