@@ -438,6 +438,39 @@ def build_viewpoint_props(layout, scatter, meshes, mats, tag, folder):
     girl.set_editor_property("look_at_point", hg.vec(centre))
 
 
+def _cafe_piers(layout, at, yaw, concrete, tag, folder):
+    """Columns under the Panorama cafe wherever the ground is more than 0.4 m below its floor (house mesh
+    footprint 10.4 x 7.6 m scaled x1.25 along the road; columns every ~3.2 m along, 3 rows across)."""
+    try:
+        terrain = placements.ctx_for(layout).terrain
+    except Exception as exc:  # no heightmap next to the layout: skip the piers rather than the whole level
+        hg.warn(f"cafe piers skipped: {exc}")
+        return
+    ca, cu = placements.MPL_CAFE_AT
+    floor = at(ca, cu, -0.1)[2]
+    n = 0
+    lo = floor
+    for i in range(5):
+        along = ca + (-6.2 + 3.1 * i)
+        for up in (cu - 3.5, cu, cu + 3.5):
+            x, y, _ = at(along, up)
+            gz = terrain.z(x, y)
+            drop = floor - gz
+            if drop < 40.0:
+                continue
+            h = drop + 120.0                     # 1.2 m footing into the slope
+            hg.box(f"MPL_PanoramaCafe_Pier_{i}_{n}", (x, y, floor - h * 0.5), (40, 40, h), yaw=yaw,
+                   material=concrete, tag=tag, folder=folder)
+            n += 1
+            lo = min(lo, gz)
+    if n:
+        # Deck slab under the floor so the columns carry something (and the open underside isn't a void).
+        c = at(ca, cu, -0.1)
+        hg.box("MPL_PanoramaCafe_Deck", (c[0], c[1], floor - 15.0), (1340, 780, 30), yaw=yaw,
+               material=concrete, tag=tag, folder=folder)
+    hg.log(f"Panorama cafe: {n} piers (lowest ground {(floor - lo) / 100:.1f} m under the floor)")
+
+
 def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
     """Landmarks from docs/ART_BIBLE.md section 3, on the pads stamped by gen_heightmap.py:
     Ma Pi Leng summit (Youth Volunteers monument, name stone, Panorama cafe), Doc Tham Ma coffee shop
@@ -470,8 +503,10 @@ def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
         # Name stone: a big upright limestone block by the road edge.
         hg.spawn_mesh("MPL_NameStone", mesh_path(meshes["SM_HG_Boulder_01"]), at(-6, -4, -0.3), (0, yaw + 90, 0),
                       (1.1, 0.45, 1.0), mats["monument"], tag, folder)
-        building("MPL_PanoramaCafe", at(-15, 4.5, -0.1), yaw, (1.25, 1.0, 1.05), mats["cafe_wall"], mats["roof_green"])
-        stall = at(16, 3.5, 0.0)
+        building("MPL_PanoramaCafe", at(*placements.MPL_CAFE_AT, -0.1), yaw, (1.25, 1.0, 1.05), mats["cafe_wall"], mats["roof_green"])
+        # On the pad now; any corner still over the edge stands on concrete piers like the real cliff-edge cafes.
+        _cafe_piers(layout, at, yaw, mats.get("pole"), tag, folder)
+        stall = at(*placements.MPL_STALL_AT, 0.0)
         hg.box("MPL_DrinkStall", (stall[0], stall[1], stall[2] + 55), (260, 120, 110), yaw=yaw, material=mat_wood, tag=tag, folder=folder)
         hg.box("MPL_StallAwning", (stall[0], stall[1], stall[2] + 240), (320, 220, 8), yaw=yaw,
                material=mats["roof_blue"], tag=tag, folder=folder, collision=False)

@@ -11,6 +11,7 @@
 #include "Camera/PlayerCameraManager.h"
 #include "HaGiangGTA.h"
 #include "HGHappyWaterSubsystem.h"
+#include "HGMissionSubsystem.h"
 #include "HGRoadSplineActor.h"
 #include "HGWantedSubsystem.h"
 #include "HGWaterBody.h"
@@ -110,7 +111,7 @@ void AHGGroundVehicle::UpdateSpeed(float DeltaSeconds, float Throttle, bool bHan
 		}
 		if (Surface == EHGSurface::OffRoad)
 		{
-			Speed = FMath::FInterpConstantTo(Speed, 0.f, DeltaSeconds, OffRoadDrag);
+			Speed = FMath::FInterpConstantTo(Speed, 0.f, DeltaSeconds, bGripTyres ? OffRoadDrag * 0.5f : OffRoadDrag);
 		}
 		// Gravity component along the slope (MoveDir.Z > 0 means uphill).
 		Speed += GetWorld()->GetGravityZ() * MoveDir.Z * SlopeGravityScale * DeltaSeconds;
@@ -144,6 +145,16 @@ void AHGGroundVehicle::MoveWithCollision(const FVector& Delta, const FVector& Mo
 	}
 	LastBlocker = Hit.GetActor();
 	LastBlockPoint = Hit.ImpactPoint;
+	// AI on its lane: the road is validated to lie on the landscape (profile <= 0.3 m), so a box corner touching
+	// the cut bank on a sag or a crest is not a wall. Sliding off it wedged trucks for good ("blocked by
+	// Landscape_HaGiang, grounded 0" -> re-placed four times in a row); carry on and let SnapToGround settle.
+	if (bAutoDrive && !IsPlayerControlled() && FMath::Abs(LastCrossTrack) < 200.f && Hit.GetActor()
+		&& Hit.GetActor()->GetClass()->GetName().Contains(TEXT("Landscape")))
+	{
+		SetActorLocation(GetActorLocation() + Delta * (1.f - Hit.Time), false, nullptr, ETeleportType::None);
+		bMoveBlocked = false;
+		return;
+	}
 
 	FVector Remaining = Delta * (1.f - Hit.Time);
 
@@ -337,6 +348,11 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 		SetActorTickInterval(0.f);
 	}
 	const float Dt = FMath::Min(DeltaSeconds, bFarLOD ? 0.12f : 1.f / 20.f);
+	if (TurnState == EHGTurnState::Turning)
+	{
+		TickTurnaround(Dt);
+		return;
+	}
 
 	float Throttle = ReadAxis(ThrottleAction);
 	float Steer = ReadAxis(SteerAction);
@@ -484,6 +500,10 @@ void AHGGroundVehicle::StartAutoDrive(AHGRoadSplineActor* Road, float DistanceCm
 		return;
 	}
 	USplineComponent* Spline = Road->GetSpline();
+	if (AutoDriveRoad != Road)
+	{
+		bTurnPointsValid = false;
+	}
 	AutoDriveRoad = Road;
 	AutoDriveDirection = Direction >= 0 ? 1 : -1;
 	AutoDriveCruise = CruiseKmh / 0.036f;
@@ -528,6 +548,8 @@ void AHGGroundVehicle::PlaceOnRoad(AHGRoadSplineActor* Road, float DistanceCm, i
 	OvertakeTarget = nullptr;
 	GoAroundTime = BlockedTime = 0.f;
 	bYielding = false;
+	TurnState = EHGTurnState::None;
+	bQueuedForTurn = false;
 	SnapCamera();
 }
 
@@ -578,6 +600,7 @@ void AHGGroundVehicle::UpdateSurface(float DeltaSeconds)
 		Surface = EHGSurface::Asphalt;
 		SurfaceScale = 1.f;
 		bPlayerRoadTracked = false;
+		bGripTyres = false;
 		return;
 	}
 	SurfaceTimer -= DeltaSeconds;
@@ -612,7 +635,11 @@ void AHGGroundVehicle::UpdateSurface(float DeltaSeconds)
 			Surface = bOnLandscape ? EHGSurface::OffRoad : EHGSurface::Asphalt;
 		}
 	}
-	const float Target = Surface == EHGSurface::Concrete ? ConcreteSpeedScale : Surface == EHGSurface::OffRoad ? OffRoadSpeedScale : 1.f;
+	// Grip tyres (mission list upgrade, player only): 90 % of top speed on the concrete, 65 % off the road.
+	bGripTyres = IsPlayerControlled() && UHGMissionSubsystem::PlayerHasGripTyres(GetWorld());
+	const float ConcreteScale = bGripTyres ? FMath::Max(ConcreteSpeedScale, 0.9f) : ConcreteSpeedScale;
+	const float OffScale = bGripTyres ? FMath::Max(OffRoadSpeedScale, 0.65f) : OffRoadSpeedScale;
+	const float Target = Surface == EHGSurface::Concrete ? ConcreteScale : Surface == EHGSurface::OffRoad ? OffScale : 1.f;
 	SurfaceScale = FMath::FInterpTo(SurfaceScale, Target, DeltaSeconds, 2.f);
 }
 
@@ -745,16 +772,48 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	// End of the road (or of our stretch of it): loop or turn around.
 	const float RangeLo = AutoDriveRangeMin >= 0.f ? FMath::Max(AutoDriveRangeMin, 1500.f) : 1500.f;
 	const float RangeHi = AutoDriveRangeMax >= 0.f ? FMath::Min(AutoDriveRangeMax, Len - 1500.f) : Len - 1500.f;
-	const bool bAtEnd = (AutoDriveDirection > 0 && RoadDistance > RangeHi) || (AutoDriveDirection < 0 && RoadDistance < RangeLo);
-	if (bAtEnd)
+	if (LoopRestartDistance >= 0.f)
 	{
-		if (LoopRestartDistance >= 0.f)
+		if ((AutoDriveDirection > 0 && RoadDistance > RangeHi) || (AutoDriveDirection < 0 && RoadDistance < RangeLo))
 		{
 			StartAutoDrive(AutoDriveRoad, LoopRestartDistance, AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
+			return;
 		}
-		else
+	}
+	// Turning round: not a teleport into the other lane any more (that dropped the leader of a convoy nose to
+	// nose with its own riders - the Tham Ma "dead stop" - and trucks into the bank). Each end of the stretch
+	// has a turn-round spot (wide, straight, level; lay-by ground for trucks); the vehicle stops there, waits
+	// until both lanes are clear and drives a U-turn arc across the road.
+	if (!bTurnPointsValid && LoopRestartDistance < 0.f)
+	{
+		bTurnPointsValid = true;
+		TurnPointLo = FindTurnPoint(RangeLo, +1);
+		TurnPointHi = FindTurnPoint(RangeHi, -1);
+	}
+	const float TurnAt = AutoDriveDirection > 0 ? TurnPointHi : TurnPointLo;
+	const float ToTurn = LoopRestartDistance >= 0.f ? BIG_NUMBER : (TurnAt - RoadDistance) * float(AutoDriveDirection);
+	bQueuedForTurn = false;
+	if (TurnState == EHGTurnState::None && ToTurn < 150.f)
+	{
+		TurnState = EHGTurnState::Waiting;
+		TurnWaitTime = 0.f;
+		TrafficScanTimer = 0.f;
+	}
+	if (TurnState == EHGTurnState::Waiting)
+	{
+		TurnWaitTime += DeltaSeconds;
+		TrafficStats.LongestTurnWait = FMath::Max(TrafficStats.LongestTurnWait, TurnWaitTime);
+		OutThrottle = FMath::Clamp(-Speed / 200.f, -1.f, 1.f);
+		OutHandbrake = FMath::Abs(Speed) < 60.f;
+		SpeedReason = FString::Printf(TEXT("turn-round wait %.0f s"), TurnWaitTime);
+		TrafficScanTimer -= DeltaSeconds;
+		if (TrafficScanTimer <= 0.f)
 		{
-			StartAutoDrive(AutoDriveRoad, RoadDistance, -AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
+			TrafficScanTimer = 0.25f;
+			if (FMath::Abs(Speed) < 80.f && IsTurnClear())
+			{
+				BeginTurnaround();
+			}
 		}
 		return;
 	}
@@ -783,6 +842,15 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	const float Radius = FMath::Max(GetMinRadiusAhead(3600.f, 300.f) - FMath::Abs(GetLaneOffsetAt(RoadDistance)), 150.f);
 	TargetSpeed = FMath::Min(TargetSpeed, FMath::Sqrt(AutoDriveLateralAccel * Radius));
 	SpeedReason = TargetSpeed < AutoDriveCruise ? TEXT("curve") : TEXT("cruise");
+	if (ToTurn < 5000.f)
+	{
+		const float Stop = FMath::Sqrt(2.f * 250.f * FMath::Max(ToTurn - 100.f, 0.f)) + 80.f;
+		if (Stop < TargetSpeed)
+		{
+			TargetSpeed = Stop;
+			SpeedReason = TEXT("turn-round ahead");
+		}
+	}
 
 	// ---- Traffic: overtaking, yielding on hairpins, going round stopped things (4 Hz scan) ----
 	TrafficScanTimer -= DeltaSeconds;
@@ -807,7 +875,7 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 				LaneShiftTarget = 0.f;
 			}
 		}
-		else if (AheadV && AheadV != AutoDriveLeader.Get() && !bNarrow && CachedAheadGap < 3500.f
+		else if (AheadV && AheadV != AutoDriveLeader.Get() && !AheadV->IsWaitingForTurn() && !AheadV->IsTurningAround() && !bNarrow && CachedAheadGap < 3500.f
 			&& AheadV->GetSpeed() < AutoDriveCruise - 250.f && CachedOncomingGap > 15000.f
 			&& GetMinRadiusAhead(9000.f, 600.f) > 4000.f && GoAroundTime <= 0.f)
 		{
@@ -838,6 +906,7 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	}
 	OvertakeTime += DeltaSeconds;
 	GoAroundTime = FMath::Max(0.f, GoAroundTime - DeltaSeconds);
+	bHeadOnSqueeze = bHeadOnSqueeze && GoAroundTime > 0.f;
 	if (GoAroundTime <= 0.f && !OvertakeTarget.IsValid() && !bYielding)
 	{
 		LaneShiftTarget = 0.f;
@@ -864,6 +933,7 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 			{
 				// Close up when far behind, back off when too close.
 				TargetSpeed = FMath::Clamp(Leader->GetSpeed() + (Gap - Desired) * 0.8f, 0.f, AutoDriveCruise * 1.25f);
+				bQueuedForTurn = (Leader->IsWaitingForTurn() || Leader->IsTurningAround()) && Gap < Desired + 1500.f;
 				SpeedReason = FString::Printf(TEXT("leader %s gap %.0f m (%s)"), *Leader->GetName(), Gap / 100.f, *Leader->GetSpeedReason().Left(40));
 			}
 		}
@@ -887,11 +957,13 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	const FVector P2 = LanePoint(NoseCm + Probe);
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGAutoDriveProbe), false, this);
 	FHitResult Hit;
-	bool bHit = GetWorld()->SweepSingleByObjectType(Hit, P0, P1, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(70.f), Params);
+	// As wide as the vehicle (trucks: a cow at the lane edge was outside a 70 cm probe and inside the 2.5 m box).
+	const float ProbeRadius = FMath::Max(70.f, Collision->GetScaledBoxExtent().Y + 10.f);
+	bool bHit = GetWorld()->SweepSingleByObjectType(Hit, P0, P1, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(ProbeRadius), Params);
 	float HitDist = bHit ? Hit.Distance : 0.f;
 	if (!bHit)
 	{
-		bHit = GetWorld()->SweepSingleByObjectType(Hit, P1, P2, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(70.f), Params);
+		bHit = GetWorld()->SweepSingleByObjectType(Hit, P1, P2, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(ProbeRadius), Params);
 		HitDist = FVector::Dist(P0, P1) + (bHit ? Hit.Distance : 0.f);
 	}
 	if (bHit)
@@ -917,18 +989,35 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		// hairpin): both squeeze to their own edge, which opens the gap - going "round" to the left would only meet
 		// head-on again, and waiting for the other never ends.
 		const AHGGroundVehicle* Other = Cast<AHGGroundVehicle>(Obstacle);
+		if (Other && (Other->IsWaitingForTurn() || Other->IsTurningAround()))
+		{
+			// Queued behind someone turning round: wait in line (going round would drive into its arc).
+			bQueuedForTurn = true;
+			BlockedTime = 0.f;
+		}
 		const bool bHeadOn = Other && Other->HasRoadPosition() && Other->GetTravelDirection() != AutoDriveDirection;
 		if (BlockedTime > 2.f && bHeadOn && GoAroundTime <= 0.f)
 		{
-			GoAroundTime = 5.f;
+			GoAroundTime = 8.f;
 			LaneShiftTarget = 250.f;   // clamped to the road edge by GetLaneOffsetAt
 			BlockedTime = 0.f;
+			bHeadOnSqueeze = true;
 			++TrafficStats.GoArounds;
+		}
+		// Squeezing past: a bike can only move sideways by rolling forward, and the probe (which still sees the
+		// other one) held both at 0 km/h with their wheels turned - the Tham Ma hairpin deadlock. Creep at
+		// walking pace; the collision sweep keeps them from overlapping.
+		if (bHeadOn && bHeadOnSqueeze && GoAroundTime > 0.f && TargetSpeed < 150.f)
+		{
+			TargetSpeed = 150.f;
+			SpeedReason = FString::Printf(TEXT("squeeze past %s"), *Other->GetName());
 		}
 		else if (BlockedTime > 3.f && CachedOncomingGap > 6000.f && GoAroundTime <= 0.f)
 		{
 			GoAroundTime = 6.f;
-			LaneShiftTarget = -(FMath::Abs(AutoDriveLane) + 150.f);
+			// Round it in the mirror lane (lateral -lane), not 1.5 m past it: that put bikes on the inside kerb of
+			// the 9 m hairpins, into the chevron boards.
+			LaneShiftTarget = -2.f * FMath::Abs(AutoDriveLane);
 			BlockedTime = 0.f;
 			++TrafficStats.GoArounds;
 		}
@@ -941,4 +1030,213 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	const float SpeedError = TargetSpeed - Speed;
 	OutThrottle = FMath::Clamp(SpeedError / 300.f, -1.f, 1.f);
 	OutHandbrake = TargetSpeed < 30.f && FMath::Abs(Speed) < 60.f;
+}
+
+// ---------------------------------------------------------------------------
+// AI turning round
+// ---------------------------------------------------------------------------
+
+float AHGGroundVehicle::FindTurnPoint(float FromCm, int32 InwardDir) const
+{
+	if (!AutoDriveRoad)
+	{
+		return FromCm;
+	}
+	const bool bLong = Collision->GetScaledBoxExtent().X > 200.f;   // trucks
+	// Every vehicle with the same stretch and size gets the same answer: cache it (ambient traffic re-ranges often).
+	static TMap<FString, float> Cache;
+	const FString Key = FString::Printf(TEXT("%s|%d|%d|%d"), *AutoDriveRoad->GetName(), FMath::RoundToInt(FromCm), InwardDir, bLong ? 1 : 0);
+	if (const float* Found = Cache.Find(Key))
+	{
+		return *Found;
+	}
+	const USplineComponent* Sp = AutoDriveRoad->GetSpline();
+	const float Len = Sp->GetSplineLength();
+	const float NeedWidth = bLong ? 650.f : 420.f;
+	const float NeedRadius = bLong ? 6000.f : 2000.f;
+	const float Half = bLong ? 2000.f : 1000.f;
+	const float MaxGrade = bLong ? 0.07f : 0.10f;
+	// Ground beside the lane that has to be level with the road: trucks sweep their nose and tail over the
+	// shoulders in the middle of the turn (a lay-by); bikes stay on the asphalt.
+	const float Side = bLong ? 550.f : 330.f;
+	const float FlatTol = bLong ? 120.f : 80.f;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGTurnPoint), false, this);
+	float Result = FromCm;
+	for (int32 Pass = 0; Pass < 2 && Result == FromCm; ++Pass)
+	{
+		for (float K = 0.f; K <= 60000.f; K += 500.f)
+		{
+			const float D = FromCm + float(InwardDir) * K;
+			if (D - Half < 0.f || D + Half > Len)
+			{
+				continue;
+			}
+			if (AutoDriveRoad->GetWidthAtDistance(D) < NeedWidth)
+			{
+				continue;
+			}
+			const FVector T0 = Sp->GetDirectionAtDistanceAlongSpline(D - Half, ESplineCoordinateSpace::World).GetSafeNormal2D();
+			const FVector T1 = Sp->GetDirectionAtDistanceAlongSpline(D, ESplineCoordinateSpace::World).GetSafeNormal2D();
+			const FVector T2 = Sp->GetDirectionAtDistanceAlongSpline(D + Half, ESplineCoordinateSpace::World).GetSafeNormal2D();
+			const float Turn = FMath::Acos(FMath::Clamp(FVector::DotProduct(T0, T1), -1.f, 1.f)) + FMath::Acos(FMath::Clamp(FVector::DotProduct(T1, T2), -1.f, 1.f));
+			if (Turn > KINDA_SMALL_NUMBER && 2.f * Half / Turn < NeedRadius)
+			{
+				continue;
+			}
+			const FVector P0 = Sp->GetLocationAtDistanceAlongSpline(D - Half, ESplineCoordinateSpace::World);
+			const FVector P1 = Sp->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
+			const FVector P2 = Sp->GetLocationAtDistanceAlongSpline(D + Half, ESplineCoordinateSpace::World);
+			if (FMath::Abs(P1.Z - P0.Z) > MaxGrade * Half || FMath::Abs(P2.Z - P1.Z) > MaxGrade * Half)
+			{
+				continue;
+			}
+			bool bFlat = true;
+			if (Pass == 0)
+			{
+				const FVector R = FVector::CrossProduct(FVector::UpVector, T1).GetSafeNormal();
+				for (const float Lat : { -Side, Side })
+				{
+					for (const float Along : { -500.f, 0.f, 500.f })
+					{
+						const FVector At = P1 + R * Lat + T1 * Along;
+						FHitResult Hit;
+						if (!GetWorld()->LineTraceSingleByChannel(Hit, At + FVector(0.f, 0.f, 1500.f), At - FVector(0.f, 0.f, 3000.f), ECC_Visibility, Params)
+							|| FMath::Abs(Hit.ImpactPoint.Z - At.Z) > FlatTol)
+						{
+							bFlat = false;
+							break;
+						}
+					}
+					if (!bFlat)
+					{
+						break;
+					}
+				}
+			}
+			if (bFlat)
+			{
+				Result = D;
+				break;
+			}
+		}
+	}
+	UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] turn-round spot for %s: %.0f m (stretch end %.0f m)"), bLong ? TEXT("trucks") : TEXT("bikes"), Result / 100.f, FromCm / 100.f);
+	Cache.Add(Key, Result);
+	return Result;
+}
+
+FVector AHGGroundVehicle::TurnPathPoint(float S, FVector* OutTangent) const
+{
+	// Half an ellipse: TurnReach forward, TurnShift to the left; heading turns from TurnFwd to -TurnFwd.
+	const float Th = PI * FMath::Clamp(S, 0.f, 1.f);
+	if (OutTangent)
+	{
+		*OutTangent = TurnFwd * (TurnReach * FMath::Cos(Th)) + TurnLeft * (0.5f * TurnShift * FMath::Sin(Th));
+	}
+	return TurnOrigin + TurnFwd * (TurnReach * FMath::Sin(Th)) + TurnLeft * (0.5f * TurnShift * (1.f - FMath::Cos(Th)));
+}
+
+bool AHGGroundVehicle::IsTurnClear()
+{
+	const bool bLong = Collision->GetScaledBoxExtent().X > 200.f;
+	TurnOrigin = GetActorLocation();
+	TurnFwd = FRotator(0.f, HeadingYaw, 0.f).Vector();
+	TurnLeft = -FVector::CrossProduct(FVector::UpVector, TurnFwd).GetSafeNormal();
+	// From where we stand (right of centre) to our lane line on the other side.
+	TurnShift = FMath::Max(LastLateral + FMath::Abs(GetLaneOffsetAt(RoadDistance)), 150.f);
+	TurnReach = bLong ? 750.f : 280.f;
+	TurnDuration = bLong ? 9.f : 3.2f;
+
+	const float Dir = float(AutoDriveDirection);
+	for (TActorIterator<AHGGroundVehicle> It(GetWorld()); It; ++It)
+	{
+		const AHGGroundVehicle* V = *It;
+		if (V == this || !V->HasRoadPosition())
+		{
+			continue;
+		}
+		const float G = (V->GetRoadDistance() - RoadDistance) * Dir;
+		if (V->IsTurningAround() && FMath::Abs(G) < 4000.f)
+		{
+			return false;   // one U-turn at a time on a stretch of road
+		}
+		if (V->GetTravelDirection() != AutoDriveDirection)
+		{
+			// Coming down the lane we turn into: let it pass (or, stopped, be well clear of the arc).
+			const bool bMoving = FMath::Abs(V->GetSpeed()) > 150.f;
+			if (G > -1500.f && G < (bMoving ? 7000.f : TurnReach + 1500.f))
+			{
+				return false;
+			}
+		}
+		else if (G > 50.f && G < 3000.f)
+		{
+			return false;   // someone just ahead in our lane: the arc crosses it
+		}
+	}
+	// People, cows, the player on foot: anything on the arc.
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGTurnClear), false, this);
+	const float Rad = Collision->GetScaledBoxExtent().Y + 80.f;
+	for (const float S : { 0.25f, 0.5f, 0.75f, 1.f })
+	{
+		if (GetWorld()->OverlapAnyTestByObjectType(TurnPathPoint(S, nullptr), FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(Rad), Params))
+		{
+			return false;
+		}
+	}
+	return true;
+}
+
+void AHGGroundVehicle::BeginTurnaround()
+{
+	TurnState = EHGTurnState::Turning;
+	TurnTime = 0.f;
+	Speed = 0.f;
+	LaneShift = LaneShiftTarget = 0.f;
+	OvertakeTarget = nullptr;
+	if (TrafficStats.UTurns < 60)
+	{
+		UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s turns round at road %.0f m after waiting %.1f s"), *GetName(), RoadDistance / 100.f, TurnWaitTime);
+	}
+}
+
+void AHGGroundVehicle::TickTurnaround(float DeltaSeconds)
+{
+	TurnTime += DeltaSeconds;
+	const float A = FMath::Clamp(TurnTime / TurnDuration, 0.f, 1.f);
+	const float S = A * A * (3.f - 2.f * A);
+	FVector Tangent;
+	const FVector P = TurnPathPoint(S, &Tangent);
+	const FVector Before = GetActorLocation();
+	float Z = Before.Z;
+	FHitResult Hit;
+	if (TraceGround(FVector(P.X, P.Y, Before.Z), Hit))
+	{
+		Z = Hit.ImpactPoint.Z + Collision->GetScaledBoxExtent().Z + GroundClearance;
+		GroundNormal = Hit.ImpactNormal;
+		bGrounded = true;
+	}
+	SetActorLocation(FVector(P.X, P.Y, Z), false, nullptr, ETeleportType::None);
+	if (!Tangent.IsNearlyZero())
+	{
+		HeadingYaw = Tangent.Rotation().Yaw;
+	}
+	Speed = FVector::Dist2D(Before, GetActorLocation()) / FMath::Max(DeltaSeconds, KINDA_SMALL_NUMBER);
+	LastThrottle = 0.2f;
+	UpdateOrientation(DeltaSeconds);
+	UpdateVisuals(DeltaSeconds, -0.8f);
+	UpdateChaseCamera(DeltaSeconds);
+	if (A >= 1.f)
+	{
+		TurnState = EHGTurnState::None;
+		AutoDriveDirection = -AutoDriveDirection;
+		RoadDistance = AutoDriveRoad ? AutoDriveRoad->GetDistanceAlongRoad(GetActorLocation()) : RoadDistance;
+		RoadResyncTimer = 0.25f;
+		Speed = 150.f;
+		YawRateDeg = 0.f;
+		BlockedTime = GoAroundTime = 0.f;
+		StuckTime = 0.f;
+		bYielding = false;
+		++TrafficStats.UTurns;
+	}
 }

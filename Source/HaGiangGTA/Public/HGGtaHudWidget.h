@@ -35,6 +35,8 @@ private:
 	};
 
 	void CacheRoad();
+	void PaintMenus(const class UHGMissionSubsystem& MS, FSlateWindowElementList& Out, const FGeometry& G, int32 L, float W, float H, float S) const;
+	TSet<FString> CardsShown;
 
 	/** Main route first, then the QL4C stubs - one polyline per road actor (cm, world XY). */
 	TArray<TArray<FVector2D>> RoadLines;

@@ -39,6 +39,7 @@
 #include "Misc/CommandLine.h"
 #include "RenderCore.h"
 #include "RHI.h"
+#include "HAL/IConsoleManager.h"
 #include "RHIStats.h"
 
 AHGGtaGameMode::AHGGtaGameMode()
@@ -46,6 +47,7 @@ AHGGtaGameMode::AHGGtaGameMode()
 	DefaultPawnClass = AHGPlayerCharacter::StaticClass();
 	HUDClass = AHGGtaHUD::StaticClass();
 	PrimaryActorTick.bCanEverTick = true;
+	PrimaryActorTick.bTickEvenWhenPaused = true;   // the scripted playtest drives the pause menu
 }
 
 AActor* AHGGtaGameMode::ChoosePlayerStart_Implementation(AController* Player)
@@ -156,6 +158,20 @@ void AHGGtaGameMode::BeginPlay()
 		PerfNames.Add(It->GetName());
 		PerfFov.Add(0.f);
 	}
+	// -hgperfonly=<substring>: measure only the matching spots (A/B of one setting on one camera).
+	FString Only;
+	if (FParse::Value(FCommandLine::Get(), TEXT("hgperfonly="), Only) && !Only.IsEmpty())
+	{
+		for (int32 i = PerfNames.Num() - 1; i >= 0; --i)
+		{
+			if (!PerfNames[i].Contains(Only))
+			{
+				PerfNames.RemoveAt(i);
+				PerfSpots.RemoveAt(i);
+				PerfFov.RemoveAt(i);
+			}
+		}
+	}
 	PerfStage = 0;
 	PerfTime = -5.f; // warm-up (streaming, shader cache)
 	UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] benchmark start, %d spots"), PerfSpots.Num());
@@ -255,8 +271,8 @@ void AHGGtaGameMode::PlayResetStageStats()
 FString AHGGtaGameMode::PlayTrafficSummary() const
 {
 	const AHGGroundVehicle::FTrafficStats& T = AHGGroundVehicle::TrafficStats;
-	return FString::Printf(TEXT("traffic: %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | session AI: %d overtakes, %d yields, %d go-arounds, %d unsticks%s"),
-		PlayNearMiss, PlayStops, PlayOncoming, PlayOvertookUs, T.Overtakes, T.Yields, T.GoArounds, T.Unsticks,
+	return FString::Printf(TEXT("traffic: %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | session AI: %d overtakes, %d yields, %d go-arounds, %d unsticks (re-placements), %d U-turns (longest wait %.0f s)%s"),
+		PlayNearMiss, PlayStops, PlayOncoming, PlayOvertookUs, T.Overtakes, T.Yields, T.GoArounds, T.Unsticks, T.UTurns, T.LongestTurnWait,
 		PlayLaneSamples > 0 ? *FString::Printf(TEXT(" | lane error mean %.2f m, max %.2f m"), PlayLaneErrSum / PlayLaneSamples / 100.0, PlayLaneErrMax / 100.f) : TEXT(""));
 }
 
@@ -303,11 +319,13 @@ void AHGGtaGameMode::PlayTrafficTick(float DeltaSeconds)
 			++PlayNearMiss;
 			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    near miss: %s at %.1f m, %.0f km/h relative"), *V->GetName(), Dist / 100.f, Rel * 0.036f);
 		}
-		// Dead stop: an AI vehicle within 300 m standing still for 4 s (yielding on a hairpin is allowed).
+		// Dead stop: an AI vehicle within 300 m standing still for 4 s (yielding on a hairpin is allowed; waiting
+		// at a turn-round spot for the road to clear, or in line behind one, counts after 20 s).
 		float& Stop = PlayStopTime.FindOrAdd(Key);
 		const float Before = Stop;
+		const float Limit = V->IsWaitingForTurn() ? 20.f : 4.f;
 		Stop = (FMath::Abs(V->GetSpeed()) < 50.f && !V->IsYielding()) ? Stop + DeltaSeconds : 0.f;
-		if (Before < 4.f && Stop >= 4.f)
+		if (Before < Limit && Stop >= Limit)
 		{
 			++PlayStops;
 			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    AI dead stop: %s at road %.0f m, %.0f m from the player: %s"), *V->GetName(), V->GetRoadDistance() / 100.f, Dist / 100.f, *V->GetSpeedReason());
@@ -396,6 +414,7 @@ void AHGGtaGameMode::PlayCheck(const TCHAR* Label, bool bShot)
 	{
 		const FString File = FPaths::ProjectSavedDir() / TEXT("HG_CI/Play") / FString::Printf(TEXT("%02d_%s.png"), PlayShot++, Label);
 		FScreenshotRequest::RequestScreenshot(File, true, false);
+		LastShotRequestTime = FPlatformTime::Seconds();
 	}
 }
 
@@ -557,6 +576,13 @@ bool AHGGtaGameMode::EnforceViewport(float DeltaSeconds)
 		}
 		// Any change (it was shrunk to 679 px and grown to 1280 px by something outside the game): resize the
 		// window by the difference so the viewport is back to the start size (FPS comparable, shots alike).
+		// Never resize while a screenshot is pending or its readback may still be in flight: the resize recreates
+		// the backbuffer under the readback (SIGSEGV seen by agent B). Check again a little later instead.
+		if (FScreenshotRequest::IsScreenshotRequested() || FPlatformTime::Seconds() - LastShotRequestTime < 1.0)
+		{
+			PlayResCheck = 0.25f;
+			return false;
+		}
 		const TSharedPtr<SWindow> Win = GEngine->GameViewport->GetWindow();
 		if (Win.IsValid() && PlayInitialRes.X > 0 && (FMath::Abs(Size.X - PlayInitialRes.X) > 8 || FMath::Abs(Size.Y - PlayInitialRes.Y) > 8)
 			&& PlayResFixes < 20)
@@ -641,8 +667,19 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	}
 	if (PlayPhase == 1)                    // 1: walk forward 4 s (+ shrink the window: the restore guard must fix it)
 	{
+		// Put the intro card away (it was in the spawn shot): Enter for 0.2 s on entering the phase.
+		PlayIntroT += DeltaSeconds;
+		if (PlayIntroT < 0.2f) { PlaySetKey(EKeys::Enter, true); }
+		else { PlaySetKey(EKeys::Enter, false); }
+		if (PlayIntroT > 0.7f)
+		{
+			if (const UHGMissionSubsystem* MSi = GetWorld()->GetSubsystem<UHGMissionSubsystem>())
+			{
+				if (!bPlayIntroLogged) { bPlayIntroLogged = true; UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] intro card closed with Enter: %s"), MSi->IsIntroOpen() ? TEXT("FAIL") : TEXT("PASS")); }
+			}
+		}
 		if (Player) { Player->AddMovementInput(Player->GetActorForwardVector(), 1.f); }
-		if (!bPlayShrunk && PlayTime > 5.f)
+		if (!bPlayShrunk && PlayTime > 5.f && !FScreenshotRequest::IsScreenshotRequested() && FPlatformTime::Seconds() - LastShotRequestTime > 1.0)
 		{
 			bPlayShrunk = true;
 			if (GEngine->GameViewport && GEngine->GameViewport->GetWindow().IsValid())
@@ -965,6 +1002,107 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			return;
 		}
 		WS->ClearWanted();
+		PlayPhase = 50; PlayTime = 0.f; NextShot = 0.f;
+		return;
+	}
+	if (PlayPhase >= 50 && PlayPhase < 60)    // mission list + grip tyres (handling A/B), pause menu + restart
+	{
+		UHGMissionSubsystem* MS = GetWorld()->GetSubsystem<UHGMissionSubsystem>();
+		UHGWantedSubsystem* WS = GetWorld()->GetSubsystem<UHGWantedSubsystem>();
+		AHGGroundVehicle* Bike = PlayBike.Get();
+		if (!MS || !WS || !Bike)
+		{
+			PlayPhase = 10; PlayTime = 0.f; NextShot = 0.f;
+			return;
+		}
+		auto Tap = [this](const FKey& Key, float At)
+		{
+			if (PlayTime >= At && PlayTime < At + 0.2f) { PlaySetKey(Key, true); }
+			if (PlayTime >= At + 0.2f) { PlaySetKey(Key, false); }
+		};
+		if (PlayPhase == 50 || PlayPhase == 52)   // 15 s on the Ta Lang concrete, cruise 90 km/h: top speed
+		{
+			if (PlayTime < DeltaSeconds * 1.5f)
+			{
+				if (AHGPlayerCharacter* Walker = Cast<AHGPlayerCharacter>(PC->GetPawn())) { Bike->EnterVehicle(Walker); }
+				float Top = 0.f;
+				TArray<float> D;
+				for (TActorIterator<AHGViewpointActor> It(GetWorld()); It; ++It) { D.Add(PlayRoad->GetDistanceAlongRoad(It->GetActorLocation())); }
+				D.Sort();
+				Top = D.Num() >= 3 ? FMath::Max(0.f, D[2] - 300000.f) : PlayRoad->GetRoadLength() * 0.9f;
+				Bike->bAutoDriveWithPlayer = true;
+				Bike->StartAutoDrive(PlayRoad.Get(), Top, +1, 90.f, 100.f);
+				PlayMaxKmh = 0.f;
+			}
+			if (PlayTime > 3.f)
+			{
+				PlayMaxKmh = FMath::Max(PlayMaxKmh, Bike->GetSpeedKmh());
+			}
+			if (PlayTime > 15.f)
+			{
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] concrete top speed %s: %.0f km/h (surface %s)"), PlayPhase == 50 ? TEXT("stock tyres") : TEXT("GRIP TYRES"), PlayMaxKmh,
+					Bike->GetSurface() == EHGSurface::Concrete ? TEXT("concrete") : TEXT("not concrete"));
+				if (PlayPhase == 50) { PlayStockKmh = PlayMaxKmh; }
+				else
+				{
+					UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] upgrade handling: %.0f -> %.0f km/h on the concrete: %s"), PlayStockKmh, PlayMaxKmh,
+						PlayMaxKmh > PlayStockKmh + 5.f ? TEXT("PASS") : TEXT("FAIL"));
+				}
+				Bike->StopAutoDrive();
+				Bike->bAutoDriveWithPlayer = false;
+				PlayPhase++; PlayTime = 0.f;
+			}
+			return;
+		}
+		if (PlayPhase == 51)                      // Tab: mission list, B: buy the tyres, Tab: close
+		{
+			if (PlayTime < DeltaSeconds * 1.5f) { PlayMoneyMark = WS->GetMoney(); }
+			Tap(EKeys::Tab, 0.3f);
+			if (PlayTime >= 1.2f && NextShot == 0.f) { NextShot = 1.f; PlayCheck(TEXT("mission_list"), true); }
+			Tap(EKeys::B, 1.6f);
+			if (PlayTime >= 2.6f && NextShot == 1.f)
+			{
+				NextShot = 2.f;
+				PlayCheck(TEXT("mission_list_upgrade"), true);
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] mission list %s, grip tyres bought: %s | money %+d"), MS->IsListOpen() ? TEXT("open") : TEXT("NOT open"),
+					MS->HasGripTyres() ? TEXT("PASS") : TEXT("FAIL"), WS->GetMoney() - PlayMoneyMark);
+			}
+			Tap(EKeys::Tab, 3.0f);
+			if (PlayTime > 3.6f) { NextShot = 0.f; PlayPhase = 52; PlayTime = 0.f; }
+			return;
+		}
+		if (PlayPhase == 53)                      // Esc: pause menu, S: restart row, D: next viewpoint, Enter
+		{
+			Tap(EKeys::Escape, 0.3f);
+			if (PlayTime >= 1.2f && NextShot == 0.f)
+			{
+				NextShot = 1.f;
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] pause menu: %s (game %s)"), MS->IsPauseOpen() ? TEXT("PASS") : TEXT("FAIL"), GetWorld()->IsPaused() ? TEXT("paused") : TEXT("NOT paused"));
+				PlayCheck(TEXT("pause_menu"), true);
+			}
+			Tap(EKeys::S, 1.5f);
+			Tap(EKeys::D, 2.0f);
+			if (PlayTime >= 2.6f && NextShot == 1.f) { NextShot = 2.f; PlayCheck(TEXT("pause_restart_row"), true); }
+			Tap(EKeys::Enter, 3.0f);
+			if (PlayTime >= 5.f && NextShot == 2.f) { NextShot = 3.f; PlayCheck(TEXT("restart_viewpoint"), true); }   // on foot at the viewpoint
+			if (PlayTime >= 6.f)
+			{
+				const APawn* Me = PC->GetPawn();
+				const AHGViewpointActor* Target = nullptr;
+				float Best = BIG_NUMBER;
+				for (TActorIterator<AHGViewpointActor> It(GetWorld()); It; ++It)
+				{
+					const float Dd = Me ? FVector::Dist2D(Me->GetActorLocation(), It->GetActorLocation()) : BIG_NUMBER;
+					if (Dd < Best) { Best = Dd; Target = *It; }
+				}
+				const bool bOk = !GetWorld()->IsPaused() && Me && Me->IsA<AHGPlayerCharacter>() && Best < 4000.f;
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] restart at viewpoint: %s (%s, %.0f m away, %s)"), bOk ? TEXT("PASS") : TEXT("FAIL"),
+					Target ? *Target->ViewpointName.ToString() : TEXT("-"), Best / 100.f, GetWorld()->IsPaused() ? TEXT("still paused") : TEXT("running"));
+				if (AHGPlayerCharacter* Walker = Cast<AHGPlayerCharacter>(PC->GetPawn())) { Bike->EnterVehicle(Walker); }
+				PlayPhase = 10; PlayTime = 0.f; NextShot = 0.f;
+			}
+			return;
+		}
 		PlayPhase = 10; PlayTime = 0.f; NextShot = 0.f;
 		return;
 	}
@@ -1103,7 +1241,9 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	}
 	if (PlayPhase == 30)                   // boat ride on the keys
 	{
-		if (PlayTime > 1.f) { PlayDriveBoatKeys(DeltaSeconds); }
+		const bool bDocking = bPlayBoatReturn && PlayBoat.IsValid() && PlayBoatPath.Num() > 0
+			&& FVector::Dist2D(PlayBoat->GetActorLocation(), PlayBoatPath.Last()) < 4000.f;
+		if (PlayTime > 1.f && !bDocking) { PlayDriveBoatKeys(DeltaSeconds); }
 		if (PlayTime >= NextShot)
 		{
 			PlayCheck(*FString::Printf(TEXT("boat_%03d"), int32(PlayTime)), true);
@@ -1115,6 +1255,50 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		{
 			PlayBoatArrivedAt = PlayTime;
 			PlayCheck(TEXT("boat_MaPiLeng_bend"), true);
+		}
+		// Tu San boat tour: the job starts while the cano waits in the dock ring (two backpackers board); after the
+		// bend the same keys bring it back along the reversed line.
+		UHGMissionSubsystem* BMS = GetWorld()->GetSubsystem<UHGMissionSubsystem>();
+		const FHGMission* BoatJob = BMS ? BMS->Find(TEXT("boat_tour_tu_san")) : nullptr;
+		if (BoatJob && PlayTime > 0.9f && !bPlayBoatJobLogged)
+		{
+			bPlayBoatJobLogged = true;
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boat tour: %s | objective: %s"), BoatJob->State == EHGMissionState::Active ? TEXT("started") : TEXT("NOT started"), *BMS->GetObjective());
+			if (UHGWantedSubsystem* BW = GetWorld()->GetSubsystem<UHGWantedSubsystem>()) { PlayMoneyMark = BW->GetMoney(); }
+			PlayCheck(TEXT("boat_tour_start"), true);
+		}
+		if (BoatJob && BoatJob->State == EHGMissionState::Active && PlayBoatArrivedAt >= 0.f && !bPlayBoatReturn && PlayTime > PlayBoatArrivedAt + 1.5f)
+		{
+			bPlayBoatReturn = true;
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boat reached the Ma Pi Leng bend after %.0f s; tour heading back: %s"), PlayBoatArrivedAt,
+				BMS->IsBoatTourReturning() ? TEXT("yes") : TEXT("NO"));
+			Algo::Reverse(PlayBoatPath);
+			PlayBoatPath.Add(BoatJob->Start);   // the cruise line starts 145 m off the dock: finish at the cano's berth
+			PlayBoatIndex = 0;
+			PlayReturnStart = PlayTime;
+			NextShot = PlayTime + 20.f;
+		}
+		if (bPlayBoatReturn)
+		{
+			const bool bDone = BoatJob->State == EHGMissionState::Done;
+			// Last 40 m to the dock: off the throttle, brake (S) down to a crawl so the job can hand over.
+			if (PlayBoat.IsValid() && PlayBoatPath.Num() > 0 && FVector::Dist2D(PlayBoat->GetActorLocation(), PlayBoatPath.Last()) < 4000.f)
+			{
+				PlaySetKey(EKeys::W, false);
+				PlaySetKey(EKeys::A, false);
+				PlaySetKey(EKeys::D, false);
+				PlaySetKey(EKeys::S, PlayBoat->GetSpeedKmh() > 6.f);
+			}
+			if (bDone || PlayTime > PlayReturnStart + 300.f)
+			{
+				PlayReleaseKeys();
+				const UHGWantedSubsystem* BW = GetWorld()->GetSubsystem<UHGWantedSubsystem>();
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] mission boat_tour_tu_san: %s | back at the dock after %.0f s | money %+d"), bDone ? TEXT("PASS") : TEXT("FAIL"),
+					PlayTime - PlayReturnStart, BW ? BW->GetMoney() - PlayMoneyMark : 0);
+				PlayCheck(TEXT("boat_tour_done"), true);
+				PlayPhase = 99;
+			}
+			return;
 		}
 		if ((PlayBoatArrivedAt >= 0.f && PlayTime > PlayBoatArrivedAt + 1.5f) || PlayTime > 300.f)
 		{
@@ -1139,10 +1323,62 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	}
 }
 
+void AHGGtaGameMode::UpdateWaterGITier(float DeltaSeconds)
+{
+	// Down in the Tu San gorge on the river the frame is mostly water, sheer walls and sky: Lumen's screen probes
+	// (4.3 of 10.8 ms GPU there) can be coarser without a visible change - the walls are flat-lit by the sky
+	// either way and the water is reflections. A cheaper GI tier while the camera is low over water, the
+	// project defaults everywhere else. -hgwatergi=0 turns it off (A/B).
+	WaterGICheck -= DeltaSeconds;
+	if (WaterGICheck > 0.f)
+	{
+		return;
+	}
+	WaterGICheck = 0.5f;
+	static const bool bEnabled = [] { int32 V = 1; FParse::Value(FCommandLine::Get(), TEXT("hgwatergi="), V); return V != 0; }();
+	const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	if (!bEnabled || !PC || !PC->PlayerCameraManager)
+	{
+		return;
+	}
+	const FVector Cam = PC->PlayerCameraManager->GetCameraLocation();
+	float WaterZ = 0.f;
+	const bool bOver = AHGWaterBody::FindSurface(GetWorld(), Cam, WaterZ);
+	const float Height = bOver ? Cam.Z - WaterZ : BIG_NUMBER;
+	const bool bWant = bWaterGI ? Height < 6000.f : Height < 4000.f;   // hysteresis: in under 40 m, out over 60 m
+	if (bWant == bWaterGI)
+	{
+		return;
+	}
+	bWaterGI = bWant;
+	struct FTier { const TCHAR* Name; int32 Water; int32 Saved; };
+	static FTier Tiers[] = {
+		{ TEXT("r.Lumen.ScreenProbeGather.DownsampleFactor"), 24, -1 },
+		{ TEXT("r.Lumen.ScreenProbeGather.TracingOctahedronResolution"), 6, -1 },
+	};
+	for (FTier& T : Tiers)
+	{
+		if (IConsoleVariable* CVar = IConsoleManager::Get().FindConsoleVariable(T.Name))
+		{
+			if (bWaterGI)
+			{
+				T.Saved = CVar->GetInt();
+				CVar->Set(T.Water, ECVF_SetByCode);
+			}
+			else if (T.Saved >= 0)
+			{
+				CVar->Set(T.Saved, ECVF_SetByCode);
+			}
+		}
+	}
+	UE_LOG(LogHaGiang, Log, TEXT("[HG_GI] water GI tier %s (camera %.0f m over the water)"), bWaterGI ? TEXT("on") : TEXT("off"), bOver ? Height / 100.f : -1.f);
+}
+
 void AHGGtaGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 	UpdateAmbientAudio(DeltaSeconds);
+	UpdateWaterGITier(DeltaSeconds);
 	if (bPlayTest)
 	{
 		TickPlayTest(DeltaSeconds);
@@ -1229,6 +1465,7 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 		{
 			const FString File = FPaths::ProjectSavedDir() / TEXT("HG_CI/Perf") / FString::Printf(TEXT("%02d_%s.png"), PerfStage, *PerfNames[PerfStage]);
 			FScreenshotRequest::RequestScreenshot(File, true, false);
+			LastShotRequestTime = FPlatformTime::Seconds();
 		}
 		PerfGpuAccum = 0.0;
 		PerfFps.Add(float(1000.0 / FMath::Max(AvgMs, 0.001)));

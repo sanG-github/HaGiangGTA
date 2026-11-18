@@ -106,8 +106,9 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		// moored hull: with 3.2 m of socket height it ended inside our own roof / hull (black frames).
 		// Low and well behind (round 3): the gorge is the subject, the boat ~1/5 of the frame. When the arm is pulled in
 		// against a pontoon the canopy is hidden (UpdateBoatCamera) instead of filling the view.
-		SpringArm->TargetArmLength = 1900.f;
-		SpringArm->SocketOffset = FVector(0.f, 0.f, 330.f);
+		// Round 4: 12 m behind, 3 m up - at 19 m the cano read as just its roof.
+		SpringArm->TargetArmLength = 1200.f;
+		SpringArm->SocketOffset = FVector(0.f, 0.f, 300.f);
 	}
 	else
 	{

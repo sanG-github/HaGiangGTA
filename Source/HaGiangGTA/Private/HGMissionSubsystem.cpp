@@ -15,12 +15,17 @@
 #include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "NhoQueBoatPawn.h"
+#include "HGTouristNPC.h"
+#include "Components/CapsuleComponent.h"
+#include "Kismet/KismetSystemLibrary.h"
+#include "Misc/CommandLine.h"
 
 namespace
 {
 	const FName TourId(TEXT("tour_dong_van"));
 	const FName PhotoId(TEXT("photo_ma_pi_leng"));
 	const FName ChaseId(TEXT("chase_ta_lang"));
+	const FName BoatTourId(TEXT("boat_tour_tu_san"));
 
 	FString Vnd(int32 V)
 	{
@@ -75,6 +80,17 @@ void UHGMissionSubsystem::SetupMissions()
 		return;
 	}
 	Road = Best;
+	Viewpoints.Reset();
+	for (const TPair<float, AHGViewpointActor*>& V : Vps)
+	{
+		Viewpoints.Add(V.Value);
+	}
+	// Intro / tutorial card on the first spawn of the session (not over the -hgperf benchmark frames).
+	if (!bIntroShown && !FParse::Param(FCommandLine::Get(), TEXT("hgperf")))
+	{
+		bIntroShown = true;
+		IntroTime = 25.f;
+	}
 	const USplineComponent* Sp = Best->GetSpline();
 	auto RoadAt = [Sp](float D, float Lane)
 	{
@@ -117,14 +133,31 @@ void UHGMissionSubsystem::SetupMissions()
 	Chase.Reward = 300000;
 	Missions.Add(Chase);
 
+	// Tu San boat tour: from the dock (the dock viewpoint is just off the slipway, on the water) down the gorge to
+	// the Ma Pi Leng bend (the cruise-line point nearest the Ma Pi Leng viewpoint, set when the job starts) and back.
+	FHGMission Boat;
+	Boat.Id = BoatTourId;
+	Boat.Title = TEXT("Thuyền Tu Sản: chở 2 khách");
+	// The ring is where the hired cano lies at the dock (the dock viewpoint is ~55 m off it, over the slipway).
+	Boat.Start = Dock->GetActorLocation();
+	Boat.Target = Mpl->GetActorLocation();
+	Boat.RadiusCm = 3000.f;
+	Boat.Reward = 250000;
+	Missions.Add(Boat);
+
 	// The boatman waits at the top of the slipway (the dock viewpoint itself is 3 m out in the water).
 	BoatHirePoint = RoadAt(FMath::Max(Best->GetRoadLength() - 1000.f, 0.f), 0.f);
+	if (const ANhoQueBoatPawn* HireBoat = FindHireBoat())
+	{
+		Missions.Last().Start = HireBoat->GetActorLocation();
+	}
 	(void)Dock;
 	UE_LOG(LogHaGiang, Log, TEXT("Missions: %d jobs, boat hire at %s"), Missions.Num(), *BoatHirePoint.ToString());
 }
 
 void UHGMissionSubsystem::Complete(FHGMission& M, int32 Pay, const FString& Line)
 {
+	ClearBoatGuests();
 	M.State = EHGMissionState::Done;
 	ActiveIndex = INDEX_NONE;
 	if (UHGWantedSubsystem* W = GetWorld()->GetSubsystem<UHGWantedSubsystem>())
@@ -139,6 +172,7 @@ void UHGMissionSubsystem::Complete(FHGMission& M, int32 Pay, const FString& Line
 
 void UHGMissionSubsystem::Fail(FHGMission& M, const FString& Why)
 {
+	ClearBoatGuests();
 	M.State = EHGMissionState::Available;   // retry from the start ring
 	ActiveIndex = INDEX_NONE;
 	Banner = FString::Printf(TEXT("NHIỆM VỤ THẤT BẠI - %s"), *Why);
@@ -169,6 +203,29 @@ void UHGMissionSubsystem::StartMission(int32 Index, APawn* Player)
 			Bike->SetHasPassenger(true);   // the backpacker climbs on
 			bPassengerAboard = true;
 		}
+	}
+	if (M.Id == BoatTourId)
+	{
+		bBoatLegBack = false;
+		if (BoatBend.IsNearlyZero() && Viewpoints.Num() >= 2 && Viewpoints[1].IsValid())
+		{
+			if (const TArray<FVector>* Line = ANhoQueBoatPawn::FindCruiseLine(GetWorld()))
+			{
+				const FVector MplLoc = Viewpoints[1]->GetActorLocation();
+				for (const FVector& P : *Line)
+				{
+					if (BoatBend.IsNearlyZero() || FVector::DistSquared2D(P, MplLoc) < FVector::DistSquared2D(BoatBend, MplLoc))
+					{
+						BoatBend = P;
+					}
+				}
+			}
+		}
+		if (!BoatBend.IsNearlyZero())
+		{
+			M.Target = BoatBend;
+		}
+		SpawnBoatGuests(Cast<ANhoQueBoatPawn>(Player));
 	}
 	Banner = M.Title;
 	BannerTime = 3.f;
@@ -223,6 +280,36 @@ void UHGMissionSubsystem::TickActive(FHGMission& M, APawn* Player, float DeltaTi
 			}
 			const int32 Bonus = FMath::RoundToInt(50000.f * (1.f - Off / 25.f) / 1000.f) * 1000;
 			Complete(M, M.Reward + Bonus, FString::Printf(TEXT("Ảnh đẹp! (lệch %.0f°)"), Off));
+		}
+		return;
+	}
+	if (M.Id == BoatTourId)
+	{
+		if (!Player->IsA<ANhoQueBoatPawn>())
+		{
+			Objective = TEXT("Quay lại cano - khách đang đợi");
+			return;
+		}
+		if (!bBoatLegBack)
+		{
+			Objective = FString::Printf(TEXT("Chở khách xuống khúc cua Mã Pí Lèng  ·  %.1f km"), Dist / 100000.f);
+			if (Dist < 4000.f)
+			{
+				bBoatLegBack = true;
+				M.Target = M.Start;
+				Banner = TEXT("Khách chụp ảnh khúc cua Mã Pí Lèng - quay về bến");
+				BannerTime = 3.f;
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_MISSION] %s: Ma Pi Leng bend reached (%.0f s), back to the dock"), *M.Id.ToString(), M.Elapsed);
+			}
+			return;
+		}
+		Objective = FString::Printf(TEXT("Đưa khách về bến Tà Làng  ·  %.1f km"), Dist / 100000.f);
+		if (Dist < M.RadiusCm && PawnKmh(Player) < 10.f)
+		{
+			// Tip: 50,000 for the round trip under 8 min, nothing after 14.
+			const int32 Tip = FMath::RoundToInt(50000.f * FMath::Clamp((840.f - M.Elapsed) / 360.f, 0.f, 1.f) / 1000.f) * 1000;
+			M.Target = BoatBend;
+			Complete(M, M.Reward + Tip, TEXT("Tour thuyền Tu Sản xong"));
 		}
 		return;
 	}
@@ -295,6 +382,12 @@ bool UHGMissionSubsystem::TryBoatHire(AHGPlayerCharacter* Player)
 
 void UHGMissionSubsystem::Tick(float DeltaTime)
 {
+	HandleMenuInput(UGameplayStatics::GetPlayerController(GetWorld(), 0));
+	if (GetWorld()->IsPaused())
+	{
+		return;
+	}
+	IntroTime = FMath::Max(0.f, IntroTime - DeltaTime);
 	BannerTime = FMath::Max(0.f, BannerTime - DeltaTime);
 	FlashTime += DeltaTime;
 	APawn* Player = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
@@ -315,6 +408,7 @@ void UHGMissionSubsystem::Tick(float DeltaTime)
 	{
 		Objective.Reset();
 		const bool bOnBike = Player->IsA<AHGBikePawn>();
+		const bool bOnBoat = Player->IsA<ANhoQueBoatPawn>();
 		for (int32 i = 0; i < Missions.Num(); ++i)
 		{
 			const FHGMission& M = Missions[i];
@@ -322,10 +416,9 @@ void UHGMissionSubsystem::Tick(float DeltaTime)
 			{
 				continue;
 			}
-			const bool bNeedsBike = M.Id != PhotoId;
-			if (bNeedsBike && !bOnBike)
+			if (M.Id == BoatTourId ? !bOnBoat : (M.Id != PhotoId && !bOnBike))
 			{
-				Prompt = FString::Printf(TEXT("%s - cần xe máy"), *M.Title);
+				Prompt = FString::Printf(TEXT("%s - %s"), *M.Title, M.Id == BoatTourId ? TEXT("cần cano (thuê ở bến, F)") : TEXT("cần xe máy"));
 				break;
 			}
 			if (PawnKmh(Player) < 8.f)
@@ -344,5 +437,246 @@ void UHGMissionSubsystem::Tick(float DeltaTime)
 		&& FVector::Dist2D(Player->GetActorLocation(), BoatHirePoint) < 2500.f)
 	{
 		Prompt = TEXT("Nhấn  F  thuê cano Tu Sản - 100.000 VNĐ");
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Boat tour guests, mission list / upgrade, pause menu, intro card
+// ---------------------------------------------------------------------------
+
+void UHGMissionSubsystem::SpawnBoatGuests(ANhoQueBoatPawn* Boat)
+{
+	ClearBoatGuests();
+	if (!Boat)
+	{
+		return;
+	}
+	// Two backpackers standing in the cano (deck top at +18 cm in the boat's frame; the NPC origin is its capsule
+	// centre, 90 cm over the feet). Static: no strolling or ground snapping on a moving boat.
+	const FVector Seats[] = { FVector(70.f, 0.f, 108.f), FVector(-70.f, 0.f, 108.f) };
+	for (int32 i = 0; i < 2; ++i)
+	{
+		const FTransform T = FTransform(FRotator(0.f, i == 0 ? 20.f : -30.f, 0.f), Seats[i]) * Boat->GetActorTransform();
+		AHGTouristNPC* Npc = GetWorld()->SpawnActorDeferred<AHGTouristNPC>(AHGTouristNPC::StaticClass(), T, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+		if (!Npc)
+		{
+			continue;
+		}
+		Npc->Style = EHGTouristStyle::Backpacker;
+		Npc->bWander = false;
+		Npc->FinishSpawning(T);
+		Npc->SetActorEnableCollision(false);
+		Npc->SetActorTickEnabled(false);
+		Npc->AttachToActor(Boat, FAttachmentTransformRules::KeepWorldTransform);
+		BoatGuests.Add(Npc);
+	}
+}
+
+void UHGMissionSubsystem::ClearBoatGuests()
+{
+	for (const TWeakObjectPtr<AActor>& G : BoatGuests)
+	{
+		if (AActor* A = G.Get())
+		{
+			A->Destroy();
+		}
+	}
+	BoatGuests.Reset();
+}
+
+bool UHGMissionSubsystem::PlayerHasGripTyres(const UWorld* World)
+{
+	const UHGMissionSubsystem* M = World ? World->GetSubsystem<UHGMissionSubsystem>() : nullptr;
+	return M && M->HasGripTyres();
+}
+
+bool UHGMissionSubsystem::BuyGripTyres()
+{
+	UHGWantedSubsystem* W = GetWorld()->GetSubsystem<UHGWantedSubsystem>();
+	if (bGripTyres || !W)
+	{
+		Banner = TEXT("Đã lắp lốp gai");
+		BannerTime = 2.f;
+		return false;
+	}
+	if (W->GetMoney() < GripTyresPrice)
+	{
+		Banner = FString::Printf(TEXT("Không đủ tiền - lốp gai %s"), *Vnd(GripTyresPrice).RightChop(1));
+		BannerTime = 2.f;
+		return false;
+	}
+	W->AddMoney(-GripTyresPrice);
+	bGripTyres = true;
+	Banner = FString::Printf(TEXT("Lắp lốp gai: bám đường bê tông & đường đất  %s"), *Vnd(-GripTyresPrice));
+	BannerTime = 3.f;
+	UE_LOG(LogHaGiang, Display, TEXT("[HG_MISSION] upgrade bought: grip tyres %s"), *Vnd(-GripTyresPrice));
+	return true;
+}
+
+FString UHGMissionSubsystem::GetRestartName() const
+{
+	const AHGViewpointActor* V = Viewpoints.IsValidIndex(RestartIndex) ? Viewpoints[RestartIndex].Get() : nullptr;
+	return V ? V->ViewpointName.ToString() : FString();
+}
+
+void UHGMissionSubsystem::SetPaused(bool bPause)
+{
+	bPauseOpen = bPause;
+	PauseItem = EHGPauseItem::Resume;
+	bListOpen = false;
+	if (APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0))
+	{
+		UGameplayStatics::SetGamePaused(GetWorld(), bPause);
+		(void)PC;
+	}
+	UE_LOG(LogHaGiang, Display, TEXT("[HG_MENU] pause %s"), bPause ? TEXT("open") : TEXT("closed"));
+}
+
+void UHGMissionSubsystem::RestartAtViewpoint(int32 Index)
+{
+	AHGViewpointActor* Vp = Viewpoints.IsValidIndex(Index) ? Viewpoints[Index].Get() : nullptr;
+	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	if (!Vp || !PC)
+	{
+		return;
+	}
+	SetPaused(false);
+	if (Missions.IsValidIndex(ActiveIndex))
+	{
+		Missions[ActiveIndex].State = EHGMissionState::Available;
+		if (Missions[ActiveIndex].Id == BoatTourId)
+		{
+			Missions[ActiveIndex].Target = BoatBend;
+		}
+	}
+	ActiveIndex = INDEX_NONE;
+	Objective.Reset();
+	ClearBoatGuests();
+	APawn* Pawn = PC->GetPawn();
+	AHGPlayerCharacter* Char = Cast<AHGPlayerCharacter>(Pawn);
+	if (AHGVehicleBase* V = Cast<AHGVehicleBase>(Pawn))
+	{
+		Char = V->GetDriver();
+		V->ExitVehicle();
+	}
+	if (!Char)
+	{
+		return;
+	}
+	// The dock viewpoint stands on the water: restart at the boatman on the slipway instead.
+	FVector Spot = (Index == Viewpoints.Num() - 1 && !BoatHirePoint.IsNearlyZero()) ? BoatHirePoint : Vp->GetActorLocation();
+	FHitResult Hit;
+	FCollisionQueryParams Q(SCENE_QUERY_STAT(HGRestart), false, Char);
+	if (GetWorld()->LineTraceSingleByChannel(Hit, Spot + FVector(0.f, 0.f, 2000.f), Spot - FVector(0.f, 0.f, 5000.f), ECC_Visibility, Q))
+	{
+		Spot.Z = Hit.ImpactPoint.Z + 100.f;
+	}
+	Char->SetActorLocation(Spot, false, nullptr, ETeleportType::TeleportPhysics);
+	const FVector Look = Vp->OrbitCenter.IsNearlyZero() ? Vp->GetActorLocation() + Vp->GetActorForwardVector() * 1000.f : Vp->OrbitCenter;
+	PC->SetControlRotation(FRotator(-10.f, (Look - Spot).Rotation().Yaw, 0.f));
+	if (UHGWantedSubsystem* W = GetWorld()->GetSubsystem<UHGWantedSubsystem>())
+	{
+		W->ClearWanted();
+	}
+	Banner = FString::Printf(TEXT("Về điểm ngắm %s"), *Vp->ViewpointName.ToString());
+	BannerTime = 2.5f;
+	UE_LOG(LogHaGiang, Display, TEXT("[HG_MENU] restart at %s (%s)"), *Vp->ViewpointName.ToString(), *Spot.ToString());
+}
+
+void UHGMissionSubsystem::HandleMenuInput(APlayerController* PC)
+{
+	if (!PC)
+	{
+		return;
+	}
+	// Own edge detection on the key state: WasInputKeyJustPressed re-fired every frame while a (simulated) key was
+	// held at some points and toggled the mission list ten times in 0.2 s.
+	auto EdgeOf = [this, PC](const FKey& K)
+	{
+		const bool bDown = PC->IsInputKeyDown(K);
+		bool& bWas = MenuKeysDown.FindOrAdd(K);
+		const bool bEdge = bDown && !bWas;
+		bWas = bDown;
+		return bEdge;
+	};
+	// Poll every menu key each tick so the edge state never goes stale.
+	static const FKey Keys[] = { EKeys::Enter, EKeys::SpaceBar, EKeys::Escape, EKeys::Up, EKeys::Down, EKeys::Left, EKeys::Right,
+		EKeys::W, EKeys::S, EKeys::A, EKeys::D, EKeys::F, EKeys::Tab, EKeys::M, EKeys::B };
+	TSet<FKey> Edges;
+	for (const FKey& K : Keys)
+	{
+		if (EdgeOf(K)) { Edges.Add(K); }
+	}
+	auto Pressed = [&Edges](const FKey& K) { return Edges.Contains(K); };
+	if (IntroTime > 0.f)
+	{
+		// Any of the "start" keys - or simply riding / walking off - puts the card away.
+		if (Pressed(EKeys::Enter) || Pressed(EKeys::SpaceBar) || Pressed(EKeys::Escape) || PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Up))
+		{
+			IntroTime = 0.f;
+			return;
+		}
+	}
+	if (bPauseOpen)
+	{
+		const int32 N = int32(EHGPauseItem::Count);
+		int32 Item = int32(PauseItem);
+		if (Pressed(EKeys::Escape))
+		{
+			SetPaused(false);
+			return;
+		}
+		if (Pressed(EKeys::Up) || Pressed(EKeys::W))
+		{
+			Item = (Item + N - 1) % N;
+		}
+		if (Pressed(EKeys::Down) || Pressed(EKeys::S))
+		{
+			Item = (Item + 1) % N;
+		}
+		PauseItem = EHGPauseItem(Item);
+		if (PauseItem == EHGPauseItem::Restart && Viewpoints.Num() > 0)
+		{
+			if (Pressed(EKeys::Left) || Pressed(EKeys::A))
+			{
+				RestartIndex = (RestartIndex + Viewpoints.Num() - 1) % Viewpoints.Num();
+			}
+			if (Pressed(EKeys::Right) || Pressed(EKeys::D))
+			{
+				RestartIndex = (RestartIndex + 1) % Viewpoints.Num();
+			}
+		}
+		if (Pressed(EKeys::Enter) || Pressed(EKeys::SpaceBar) || Pressed(EKeys::F))
+		{
+			switch (PauseItem)
+			{
+			case EHGPauseItem::Resume: SetPaused(false); break;
+			case EHGPauseItem::Restart: RestartAtViewpoint(RestartIndex); break;
+			case EHGPauseItem::Quit:
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_MENU] quit"));
+				UKismetSystemLibrary::QuitGame(GetWorld(), PC, EQuitPreference::Quit, false);
+				break;
+			default: break;
+			}
+		}
+		return;
+	}
+	if (GetWorld()->IsPaused())
+	{
+		return;   // paused by something else (debug console)
+	}
+	if (Pressed(EKeys::Escape))
+	{
+		SetPaused(true);
+		return;
+	}
+	if (Pressed(EKeys::Tab) || Pressed(EKeys::M))
+	{
+		bListOpen = !bListOpen;
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_MENU] mission list %s"), bListOpen ? TEXT("open") : TEXT("closed"));
+	}
+	if (bListOpen && Pressed(EKeys::B))
+	{
+		BuyGripTyres();
 	}
 }

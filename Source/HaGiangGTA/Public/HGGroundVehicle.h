@@ -95,11 +95,15 @@ public:
 	float GetCrossTrackError() const { return LastCrossTrack; }
 	bool IsOvertaking() const { return OvertakeTarget.IsValid(); }
 	bool IsYielding() const { return bYielding; }
+	/** AI: stopped at a turn-round spot waiting for the road to clear, or queued behind one that is. */
+	bool IsWaitingForTurn() const { return TurnState == EHGTurnState::Waiting || bQueuedForTurn; }
+	/** AI: in the middle of a U-turn (kinematic arc across the road). */
+	bool IsTurningAround() const { return TurnState == EHGTurnState::Turning; }
 	/** AI: what set the target speed last tick ("probe:<actor>", "leader", "curve", "yield", "cruise"). */
 	const FString& GetSpeedReason() const { return SpeedReason; }
 
 	/** Session counters of AI traffic manoeuvres (playtest log). */
-	struct FTrafficStats { int32 Overtakes = 0; int32 Yields = 0; int32 GoArounds = 0; int32 Unsticks = 0; };
+	struct FTrafficStats { int32 Overtakes = 0; int32 Yields = 0; int32 GoArounds = 0; int32 Unsticks = 0; int32 UTurns = 0; float LongestTurnWait = 0.f; };
 	static FTrafficStats TrafficStats;
 
 	/** When the AI reaches a road end it teleports here (cm along the spline); <0 = turn around. */
@@ -114,7 +118,7 @@ public:
 	 * road ends. < 0 = no limit. Trucks use it to stay on QL4C (they never take the narrow Ta Lang road).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "HaGiang|AI")
-	void SetAutoDriveRange(float MinCm, float MaxCm) { AutoDriveRangeMin = MinCm; AutoDriveRangeMax = MaxCm; }
+	void SetAutoDriveRange(float MinCm, float MaxCm) { AutoDriveRangeMin = MinCm; AutoDriveRangeMax = MaxCm; bTurnPointsValid = false; }
 
 protected:
 	virtual void BeginPlay() override;
@@ -212,6 +216,14 @@ private:
 	void UpdateOrientation(float DeltaSeconds);
 	void UpdateSurface(float DeltaSeconds);
 	void UpdateChaseCamera(float DeltaSeconds);
+	/** First spot (cm along the road) from FromCm going InwardDir where this vehicle can turn round: wide, straight,
+	 *  gentle grade and (trucks) flat ground beside the road - a lay-by. FromCm when none within 600 m. */
+	float FindTurnPoint(float FromCm, int32 InwardDir) const;
+	/** Both lanes clear around the turn-round arc (traffic by road position, people / cows / the player by overlap). */
+	bool IsTurnClear();
+	void BeginTurnaround();
+	void TickTurnaround(float DeltaSeconds);
+	FVector TurnPathPoint(float S, FVector* OutTangent) const;
 	/** Road whose centreline is closest to Location (2D), and that distance (cm). */
 	AHGRoadSplineActor* FindNearestRoad(const FVector& Location, float& OutLateralCm, float& OutDistanceCm) const;
 
@@ -255,6 +267,24 @@ private:
 	float FarCheckTimer = 0.f;
 	double LastUnstickTime = -100.0;
 	float ChaseCamPitchCurrent = -10.f;
+
+	// ---- Turning round at the ends of the AI's stretch ----
+	enum class EHGTurnState : uint8 { None, Waiting, Turning };
+	EHGTurnState TurnState = EHGTurnState::None;
+	bool bQueuedForTurn = false;
+	bool bHeadOnSqueeze = false;
+	bool bGripTyres = false;
+	bool bTurnPointsValid = false;
+	float TurnPointLo = 0.f;
+	float TurnPointHi = 0.f;
+	float TurnWaitTime = 0.f;
+	float TurnTime = 0.f;
+	float TurnDuration = 3.f;
+	FVector TurnOrigin = FVector::ZeroVector;
+	FVector TurnFwd = FVector::ForwardVector;
+	FVector TurnLeft = FVector::RightVector;
+	float TurnReach = 300.f;
+	float TurnShift = 300.f;
 
 	EHGSurface Surface = EHGSurface::Asphalt;
 	float SurfaceScale = 1.f;

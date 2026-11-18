@@ -1,7 +1,7 @@
 """Run a checkpoint build script inside the editor unattended, record the result, then quit.
 
 Launched by Scripts/run_checkpoint.sh --ci <NN>:
-  UnrealEditor HaGiangGTA.uproject -ExecutePythonScript=Scripts/Tools/ci_run_checkpoint.py
+  UnrealEditor HaGiangGTA.uproject -ExecutePythonScript=Scripts/Tools/ci_run_checkpoint.py -unattended -nocrashreports
 with HG_CP=<NN> in the environment. Writes Saved/HG_CI/cp<NN>.txt ("OK" or "FAIL" + traceback).
 """
 import os

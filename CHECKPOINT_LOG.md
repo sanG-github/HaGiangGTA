@@ -435,3 +435,50 @@ ran alongside - builds don't take the lock - so treat single runs on this machin
 now resolved) and 5-7 re-placements per session (47-69 in round 2). Distant foothills are now their own olive mesh
 (the hazy ranges material made the apron read as a lake); the Mom Da review camera moved 5 m so the Panorama cafe no
 longer fills its corner.
+
+---
+
+## Round 4 - traffic U-turns, boat tour, menus, upgrade, water GI tier (`improve/gameplay-realism`)
+
+Review answer, 26_auto_ThamMa_21 (convoy at 0 km/h on the Tham Ma bends): a **dead stop**, not a regroup. The
+AI "U-turn" at the end of its stretch was a teleport into the other lane (`StartAutoDrive(RoadDistance, -dir)`):
+the convoy leader reappeared nose to nose with its own riders on the 9 m hairpins at road 15-100 m and both
+probes held 0 km/h ("probe HGBikePawn_27 at 0.0 m" <-> "probe HGBikePawn_21 at 0.0 m"); the riders behind
+queued. Trucks teleport-turned at 3.19 km into the cut bank (re-placed 4x in a row) and wedged on a cow at the
+lane edge outside their 70 cm probe.
+
+Traffic (HGGroundVehicle):
+- Real U-turns. Each end of an AI stretch gets a turn-round spot (`FindTurnPoint`, cached): road >= 4.2 m wide
+  (trucks 6.5 m), radius >= 20 m over +-10 m (trucks 60 m over +-20 m), grade <= 10 % (7 %), and for trucks level
+  ground 5.5 m either side of the centre = a lay-by (second pass without it if none within 600 m). The vehicle
+  brakes to a stop there, waits until `IsTurnClear` (no oncoming vehicle 15 m behind .. 70 m ahead, nobody just
+  ahead in its lane, no U-turn within 40 m, no pawn - people, cows, the player - on the arc), then drives a
+  half-ellipse across the road (bike 2.8 m reach / 3.2 s, truck 7.5 m / 9 s) into its lane facing back.
+- Riders behind a turning vehicle queue (no go-around into its arc, no overtaking it); the dead-stop counter
+  allows that wait up to 20 s.
+- Head-on deadlock: both squeeze to their own edge AND creep at 5 km/h (a bike only moves sideways by rolling;
+  the probe held both at 0 with the bars turned). Go-around of a stopped obstacle uses the mirror lane, not
+  1.5 m past it (put bikes on the chevron boards of the hairpins). Truck probe as wide as the truck.
+- AI on its lane no longer slides off landscape contacts (road validated on the landscape; box corners on sags
+  wedged trucks "grounded 0").
+
+Missions / game feel (HGMissionSubsystem, HGGtaHudWidget, HGGtaGameMode):
+- "Thuyen Tu San: cho 2 khach": in the hired cano at its berth, two backpackers board; down the gorge to the Ma
+  Pi Leng bend, back to the berth: 250,000 VND + up to 50,000 tip (round trip under 8 min).
+- Mission list on Tab / M (jobs, state, pay) with the upgrade: grip tyres 200,000 VND ([B]): the player's bike
+  keeps 90 % of top speed on the Ta Lang concrete (70 % stock) and 65 % off the road (45 %), half the off-road drag.
+- Pause menu on Esc (game paused): Tiep tuc / Ve diem ngam < name > (A/D picks the viewpoint, dock = the
+  slipway) / Thoat game. Intro / tutorial card in Vietnamese on the first spawn (Enter, Space or riding off
+  closes it; not shown in -hgperf). Location card with name + altitude once per viewpoint per session.
+- Menu keys use their own edge detection (WasInputKeyJustPressed re-fired every frame while a simulated key
+  was held and toggled the list 10 times in 0.2 s).
+
+Panorama cafe (review 20_mission_photo_aim): it stood at (-15, 4.5) m in the plaza frame, past the edge of the
+12 m pad - 40 m of air under its far end; the drink stall also hung off the edge. Both moved onto the levelled pad
+(placements.MPL_CAFE_AT / MPL_STALL_AT, shared by world.py and the footprints); a corner that still overhangs
+stands on 0.4 m concrete piers with a deck slab (1 pier, 1.7 m). validate_layout: "<landmark> on solid ground"
+for every landmark building (max 0.0 m under a corner now) - 116 checks, 0 FAIL.
+
+Perf lock protocol (also for agent B): `until mkdir /tmp/hg_perf.lock 2>/dev/null; do sleep 30; done` before any
+build (Build.sh), CP05 rebuild (ci_run_checkpoint.py) or -hgperf run; `rmdir /tmp/hg_perf.lock` right after.
+Functional playtests don't take it but must not overlap a perf run. Every reported FPS is the median of two runs.

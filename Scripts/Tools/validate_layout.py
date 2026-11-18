@@ -528,6 +528,16 @@ def check_props(ctx, g, rep):
     for i, (x, y, z) in enumerate(buckets):
         c = ctx.road.edge_clearance(x, y)
         rep.check("props", f"flower bucket {i}", None if c >= 50 else f"{c / 100:.1f} m from the road edge")
+    # Landmark buildings stand on their pads: no corner hanging more than 1 m over the slope (the Panorama cafe
+    # stood half off the Ma Pi Leng plaza, 40 m of air under its far end).
+    for fp in P.footprints(ctx.layout):
+        a = math.radians(fp["yaw"])
+        ax, ay, bx, by = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
+        z0 = g.ground(fp["cx"], fp["cy"])
+        worst = max(z0 - g.ground(fp["cx"] + ax * fp["hx"] * u + bx * fp["hy"] * v, fp["cy"] + ay * fp["hx"] * u + by * fp["hy"] * v)
+                    for u in (-1, 0, 1) for v in (-1, 0, 1))
+        rep.check("props", f"{fp['name']} on solid ground", None if worst <= 100 else f"a corner hangs {worst / 100:.1f} m over the slope",
+                  f"max {worst / 100:.1f} m under a corner")
 
 
 def check_furniture(ctx, rep):
