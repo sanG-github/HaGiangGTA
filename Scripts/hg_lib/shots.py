@@ -49,8 +49,10 @@ def shots(layout, scatter):
     bends = road[i0:vi + 1] or road[max(vi - 30, 0):vi + 1]
     bc = [sum(q[k_] for q in bends) / len(bends) for k_ in range(3)]
     dx, dy = _norm2(bc[0] - p1[0], bc[1] - p1[1])
-    out.append(("VP1_ThamMa_eye", [p1[0] + dx * 8.0, p1[1] + dy * 8.0, p1[2] + 3.0],
-                [bc[0] + dx * 40.0, bc[1] + dy * 40.0, bc[2] - 40.0], 66))
+    # Standing on the outer edge of the top hairpin, looking down the bends (the classic photo).
+    top_ = road[vi]
+    out.append(("VP1_ThamMa_eye", [p1[0] - dx * 6.0, p1[1] - dy * 6.0, p1[2] + 7.0],
+                [bc[0] + dx * 60.0, bc[1] + dy * 60.0, bc[2] - 45.0], 72))
     # Reference: drone above the valley looking up at the head-wall bends (Google Maps / drone photo).
     # Near top-down over the bends, like the satellite view (camera on the viewpoint side).
     out.append(("VP1_ThamMa_drone", [bc[0] - dx * 120.0, bc[1] - dy * 120.0, max(p1[2], bc[2]) + 280.0],

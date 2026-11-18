@@ -380,7 +380,7 @@ def generate():
     height = np.where(water, np.minimum(height, bed), height)
     bank = (depth > 0.02) & ~water
     # Steep banks: +0.6 m at the waterline rising ~15 m across the ~12 m shore ring.
-    height = np.where(bank, np.maximum(height, surf + 0.6 + np.clip(0.5 - depth, 0, 0.5) * 30.0), height).astype(np.float32)
+    height = np.where(bank, np.maximum(height, surf + 0.6 + np.clip(0.5 - depth, 0, 0.5) * 10.0), height).astype(np.float32)
     del depth, bed, bank, surf
     print(f"water {WATER_ASL_M} m / below dam {DOWN_ASL_M} m  {time.time() - t0:.1f}s")
 

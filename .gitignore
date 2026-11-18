@@ -45,3 +45,4 @@ __pycache__/
 .venv/
 Data/Geo/*.tif
 Data/Geo/*.json
+.claude/worktrees/

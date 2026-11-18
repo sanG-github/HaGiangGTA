@@ -214,8 +214,8 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # Limestone cliffs with rust and dark streaks running down the face.
     xy = g.add(g.mask(wp, r=True), g.mask(wp, g=True))
     streak = g.texture(tex["T_HG_Noise"], g.append(g.mul(xy, 1.0 / 900.0), g.mul(z, 1.0 / 5000.0)))
-    lime = g.mul(g.color("Limestone", (0.3, 0.29, 0.27)), g.add(0.7, g.mul((n_fine, "R"), 0.45)))
-    rust = g.saturate(g.mul(g.sub((streak, "G"), 0.62), 5.0))
+    lime = g.mul(g.color("Limestone", (0.27, 0.27, 0.265)), g.add(0.7, g.mul((n_fine, "R"), 0.45)))
+    rust = g.mul(g.saturate(g.mul(g.sub((streak, "G"), 0.72), 5.0)), 0.6)   # rust only in patches (photos: grey walls)
     dark = g.saturate(g.mul(g.sub((streak, "R"), 0.6), 4.0))
     rock_col = g.lerp(g.lerp(lime, g.color("Rust", (0.46, 0.2, 0.08)), rust), g.color("Stain", (0.09, 0.085, 0.075)), g.mul(dark, 0.7))
     # Even steep canyon slopes are grassed in the photos: bare rock only above ~68 deg.

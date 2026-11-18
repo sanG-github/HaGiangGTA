@@ -156,7 +156,7 @@ def main():
         near_vp |= np.hypot(x - vp[0], y - vp[1]) < 45.0
     # Exposed limestone wherever the real slope is cliff-steep (Tu San walls, karst faces);
     # vegetated slopes are left to the terrain material + trees.
-    keep = (slope > 50) & (road_dist(x, y) > 16) & (z > T.water + 5) & ~near_vp
+    keep = (slope > 52) & (rng.random(x.size) < np.clip((slope - 40.0) / 30.0, 0, 1)) & (road_dist(x, y) > 16) & (z > T.water + 5) & ~near_vp
     cliffs = []
     for xi, yi, zi, ri, ci in zip(x[keep], y[keep], z[keep], r[keep], c[keep]):
         gx, gy = float(T.gx[ri, ci]), float(T.gy[ri, ci])
