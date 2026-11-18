@@ -1,0 +1,42 @@
+# ---- Unreal Engine build / cache output (never commit) ----
+Binaries/
+Intermediate/
+Saved/
+DerivedDataCache/
+Build/
+Plugins/*/Binaries/
+Plugins/*/Intermediate/
+
+# ---- IDE / generated project files ----
+.vs/
+.vscode/
+.idea/
+*.sln
+*.suo
+*.sdf
+*.VC.db
+*.VC.opendb
+*.xcodeproj/
+*.xcworkspace/
+*.code-workspace
+compile_commands.json
+
+# ---- Heavy third-party art (re-downloaded via Fab/Quixel Bridge, never committed) ----
+Content/Megascans/
+Content/MSPresets/
+Content/Fab/
+Content/Quixel/
+
+# ---- Everything rebuilt by Scripts/Checkpoints/build_cp0X.py ----
+# Maps, generated landscapes, materials and heightmaps are code-generated,
+# so they are reproducible from the scripts in this repo.
+Content/Maps/
+Content/HaGiang/Generated/
+Generated/
+
+# ---- OS / misc ----
+.DS_Store
+Thumbs.db
+__pycache__/
+*.pyc
+*.log
