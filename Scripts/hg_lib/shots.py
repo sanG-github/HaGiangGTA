@@ -99,3 +99,24 @@ def shots(layout, scatter):
     out.append(("VP3_TuSan_flycam", [river[g][0] + fx * 200.0 - fy * 120.0, river[g][1] + fy * 200.0 + fx * 120.0, water_z + 520.0],
                 [river[max(g - 30, 0)][0], river[max(g - 30, 0)][1], water_z], 55))
     return out
+
+
+def write_review_cameras(gen_dir):
+    """Generated/Heightmaps/HaGiang_review_cameras.json: the review shots in cm for the game's -hgperf mode."""
+    import json
+    import os
+    with open(os.path.join(gen_dir, "HaGiang_layout.json"), encoding="utf-8") as f:
+        layout = json.load(f)
+    with open(os.path.join(gen_dir, "HaGiang_scatter.json"), encoding="utf-8") as f:
+        scatter = json.load(f)
+    cams = [{"name": n, "cam_cm": [c * 100.0 for c in cam], "look_cm": [c * 100.0 for c in look], "fov": fov}
+            for n, cam, look, fov in shots(layout, scatter)]
+    path = os.path.join(gen_dir, "HaGiang_review_cameras.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"cameras": cams}, f, indent=1)
+    return path, len(cams)
+
+
+if __name__ == "__main__":
+    import sys
+    print(*write_review_cameras(sys.argv[1] if len(sys.argv) > 1 else "Generated/Heightmaps"))

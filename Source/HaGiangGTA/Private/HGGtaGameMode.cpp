@@ -1,6 +1,15 @@
 #include "HGGtaGameMode.h"
 
 #include "Algo/Reverse.h"
+#include "Camera/CameraActor.h"
+#include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
+#include "Dom/JsonObject.h"
+#include "HGWaterBody.h"
+#include "Misc/FileHelper.h"
+#include "Serialization/JsonReader.h"
+#include "Serialization/JsonSerializer.h"
+#include "Sound/SoundBase.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
@@ -91,6 +100,7 @@ void AHGGtaGameMode::BeginPlay()
 	Super::BeginPlay();
 	bPerfRun = FParse::Param(FCommandLine::Get(), TEXT("hgperf"));
 	bPlayTest = FParse::Param(FCommandLine::Get(), TEXT("hgplaytest"));
+	StartAmbientAudio();
 	if (bPlayTest)
 	{
 		for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It)
@@ -107,22 +117,209 @@ void AHGGtaGameMode::BeginPlay()
 	{
 		return;
 	}
-	// Spot 0: wherever the player spawned (bottom of Doc Tham Ma); then each viewpoint, looking at its subject.
+	// Spot 0: wherever the player spawned (bottom of Doc Tham Ma), through the player's own camera; then the
+	// review cameras (same framing as the editor screenshots) through a camera actor.
 	if (APawn* Pawn = UGameplayStatics::GetPlayerPawn(this, 0))
 	{
 		PerfSpots.Add(Pawn->GetActorTransform());
 		PerfNames.Add(TEXT("Spawn_ThamMa"));
+		PerfFov.Add(0.f);
 	}
-	for (TActorIterator<AHGViewpointActor> It(GetWorld()); It; ++It)
+	FString Json;
+	const FString CamFile = FPaths::ProjectDir() / TEXT("Generated/Heightmaps/HaGiang_review_cameras.json");
+	TSharedPtr<FJsonObject> Root;
+	if (FFileHelper::LoadFileToString(Json, *CamFile) && FJsonSerializer::Deserialize(TJsonReaderFactory<>::Create(Json), Root) && Root.IsValid())
+	{
+		for (const TSharedPtr<FJsonValue>& V : Root->GetArrayField(TEXT("cameras")))
+		{
+			const TSharedPtr<FJsonObject> C = V->AsObject();
+			const TArray<TSharedPtr<FJsonValue>>& Cam = C->GetArrayField(TEXT("cam_cm"));
+			const TArray<TSharedPtr<FJsonValue>>& Look = C->GetArrayField(TEXT("look_cm"));
+			const FVector P(Cam[0]->AsNumber(), Cam[1]->AsNumber(), Cam[2]->AsNumber());
+			const FVector L(Look[0]->AsNumber(), Look[1]->AsNumber(), Look[2]->AsNumber());
+			PerfSpots.Add(FTransform((L - P).Rotation(), P));
+			PerfNames.Add(C->GetStringField(TEXT("name")));
+			PerfFov.Add(float(C->GetNumberField(TEXT("fov"))));
+		}
+	}
+	for (TActorIterator<AHGViewpointActor> It(GetWorld()); It && PerfSpots.Num() <= 1; ++It)
 	{
 		const FVector Loc = It->GetActorLocation() + FVector(0.f, 0.f, 150.f);
 		const FRotator Look = (It->OrbitCenter - Loc).Rotation();
 		PerfSpots.Add(FTransform(FRotator(0.f, Look.Yaw, 0.f), Loc));
 		PerfNames.Add(It->GetName());
+		PerfFov.Add(0.f);
 	}
 	PerfStage = 0;
 	PerfTime = -5.f; // warm-up (streaming, shader cache)
 	UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] benchmark start, %d spots"), PerfSpots.Num());
+}
+
+namespace
+{
+	USoundBase* LoadLoop(const TCHAR* Name)
+	{
+		return LoadObject<USoundBase>(nullptr, *FString::Printf(TEXT("/Game/HaGiang/Generated/Audio/%s.%s"), Name, Name));
+	}
+}
+
+void AHGGtaGameMode::StartAmbientAudio()
+{
+	auto Make = [this](const TCHAR* Name) -> UAudioComponent*
+	{
+		USoundBase* S = LoadLoop(Name);
+		if (!S)
+		{
+			UE_LOG(LogHaGiang, Warning, TEXT("Ambient audio: %s missing (run the CP05 build to import it)"), Name);
+			return nullptr;
+		}
+		UAudioComponent* A = UGameplayStatics::CreateSound2D(this, S, 0.f, 1.f, 0.f, nullptr, true, false);
+		if (A)
+		{
+			A->Play(FMath::FRand() * 2.f);
+		}
+		return A;
+	};
+	WindAudio = Make(TEXT("SW_HG_Wind_Loop"));
+	BirdsAudio = Make(TEXT("SW_HG_Birds_Loop"));
+	TyreAudio = Make(TEXT("SW_HG_Tyre_Loop"));
+}
+
+void AHGGtaGameMode::UpdateAmbientAudio(float DeltaSeconds)
+{
+	const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+	if (!Pawn)
+	{
+		return;
+	}
+	const AHGVehicleBase* Veh = Cast<AHGVehicleBase>(Pawn);
+	const AHGGroundVehicle* Ground = Cast<AHGGroundVehicle>(Pawn);
+	const float Kmh = Veh ? FMath::Abs(Veh->GetSpeedKmh()) : Pawn->GetVelocity().Size2D() * 0.036f;
+	// Altitude above the river (450 m) to the passes (~1500 m): more wind up high, even standing still.
+	const float AltM = Pawn->GetActorLocation().Z / 100.f;
+	const float High = FMath::GetMappedRangeValueClamped(FVector2D(600.f, 1500.f), FVector2D(0.f, 1.f), AltM);
+	const float SpeedWind = FMath::Clamp((Kmh - 8.f) / 60.f, 0.f, 1.f);
+	const float WindTarget = 0.08f + 0.12f * High + 0.65f * SpeedWind * SpeedWind;
+	// Birds and insects carry when on foot / slow, drowned by wind and engine at speed.
+	const float BirdsTarget = 0.35f * (1.f - FMath::Clamp(Kmh / 35.f, 0.f, 1.f)) * (Veh && Veh->IsWaterVehicle() ? 0.6f : 1.f);
+	// Tyres: hiss on asphalt, rumble on the concrete slabs (joints every 4 m), crunch off-road.
+	float TyreTarget = 0.f, TyrePitch = 1.f;
+	if (Ground && Ground->IsGrounded() && Kmh > 3.f)
+	{
+		const EHGSurface Surf = Ground->GetSurface();
+		const float SurfGain = Surf == EHGSurface::Concrete ? 0.55f : Surf == EHGSurface::OffRoad ? 0.75f : 0.25f;
+		TyreTarget = SurfGain * FMath::Clamp(Kmh / 50.f, 0.15f, 1.f);
+		TyrePitch = (Surf == EHGSurface::OffRoad ? 0.7f : 0.9f) + Kmh / 140.f;
+	}
+	WindVol = FMath::FInterpTo(WindVol, WindTarget, DeltaSeconds, 2.f);
+	BirdsVol = FMath::FInterpTo(BirdsVol, BirdsTarget, DeltaSeconds, 1.f);
+	TyreVol = FMath::FInterpTo(TyreVol, TyreTarget, DeltaSeconds, 4.f);
+	if (WindAudio) { WindAudio->SetVolumeMultiplier(WindVol); WindAudio->SetPitchMultiplier(0.85f + 0.4f * SpeedWind); }
+	if (BirdsAudio) { BirdsAudio->SetVolumeMultiplier(BirdsVol); }
+	if (TyreAudio) { TyreAudio->SetVolumeMultiplier(TyreVol); TyreAudio->SetPitchMultiplier(TyrePitch); }
+}
+
+FString AHGGtaGameMode::AudioState() const
+{
+	const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	const AHGVehicleBase* Veh = PC ? Cast<AHGVehicleBase>(PC->GetPawn()) : nullptr;
+	return FString::Printf(TEXT("audio: engine %s | wind %.2f%s | birds %.2f%s | tyres %.2f%s"),
+		Veh ? *FString::Printf(TEXT("pitch %.2f vol %.2f"), Veh->GetEnginePitch(), Veh->GetEngineVolumeNow()) : TEXT("-"),
+		WindVol, WindAudio && WindAudio->IsPlaying() ? TEXT("") : TEXT(" (not playing)"),
+		BirdsVol, BirdsAudio && BirdsAudio->IsPlaying() ? TEXT("") : TEXT(" (not playing)"),
+		TyreVol, TyreAudio && TyreAudio->IsPlaying() ? TEXT("") : TEXT(" (not playing)"));
+}
+
+void AHGGtaGameMode::PlayResetStageStats()
+{
+	PlayTotNear += PlayNearMiss;
+	PlayTotStops += PlayStops;
+	PlayTotOncoming += PlayOncoming;
+	PlayTotOvertookUs += PlayOvertookUs;
+	PlayNearMiss = PlayStops = PlayOncoming = PlayOvertookUs = 0;
+	PlayStopTime.Reset();
+	PlayLongOffset.Reset();
+	PlayMet.Reset();
+	PlayLaneErrSum = 0.0;
+	PlayLaneErrMax = 0.f;
+	PlayLaneSamples = 0;
+}
+
+FString AHGGtaGameMode::PlayTrafficSummary() const
+{
+	const AHGGroundVehicle::FTrafficStats& T = AHGGroundVehicle::TrafficStats;
+	return FString::Printf(TEXT("traffic: %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | session AI: %d overtakes, %d yields, %d go-arounds, %d unsticks%s"),
+		PlayNearMiss, PlayStops, PlayOncoming, PlayOvertookUs, T.Overtakes, T.Yields, T.GoArounds, T.Unsticks,
+		PlayLaneSamples > 0 ? *FString::Printf(TEXT(" | lane error mean %.2f m, max %.2f m"), PlayLaneErrSum / PlayLaneSamples / 100.0, PlayLaneErrMax / 100.f) : TEXT(""));
+}
+
+void AHGGtaGameMode::PlayTrafficTick(float DeltaSeconds)
+{
+	const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
+	const APawn* Me = PC ? PC->GetPawn() : nullptr;
+	if (!Me)
+	{
+		return;
+	}
+	const AHGGroundVehicle* MeV = Cast<AHGGroundVehicle>(Me);
+	if (MeV && MeV->IsAutoDriving())
+	{
+		const float E = FMath::Abs(MeV->GetCrossTrackError());
+		PlayLaneErrSum += E;
+		PlayLaneErrMax = FMath::Max(PlayLaneErrMax, E);
+		++PlayLaneSamples;
+	}
+	const FVector MyLoc = Me->GetActorLocation();
+	const FVector MyFwd = Me->GetActorForwardVector().GetSafeNormal2D();
+	const FVector MyVel = MeV ? MyFwd * MeV->GetSpeed() : Me->GetVelocity();
+	const double Now = GetWorld()->GetTimeSeconds();
+	for (TActorIterator<AHGGroundVehicle> It(GetWorld()); It; ++It)
+	{
+		AHGGroundVehicle* V = *It;
+		if (V == Me || !V->IsAutoDriving())
+		{
+			continue;
+		}
+		const FVector D = V->GetActorLocation() - MyLoc;
+		const float Dist = D.Size2D();
+		if (Dist > 30000.f)
+		{
+			continue;
+		}
+		const TWeakObjectPtr<AActor> Key(V);
+		const FVector VFwd = V->GetActorForwardVector().GetSafeNormal2D();
+		// Near miss: inside 2.2 m at more than 15 km/h relative speed.
+		const float Rel = (VFwd * V->GetSpeed() - MyVel).Size2D();
+		if (Dist < 220.f && Rel > 420.f && Now - PlayNearCooldown.FindRef(Key) > 3.0)
+		{
+			PlayNearCooldown.Add(Key, Now);
+			++PlayNearMiss;
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    near miss: %s at %.1f m, %.0f km/h relative"), *V->GetName(), Dist / 100.f, Rel * 0.036f);
+		}
+		// Dead stop: an AI vehicle within 300 m standing still for 4 s (yielding on a hairpin is allowed).
+		float& Stop = PlayStopTime.FindOrAdd(Key);
+		const float Before = Stop;
+		Stop = (FMath::Abs(V->GetSpeed()) < 50.f && !V->IsYielding()) ? Stop + DeltaSeconds : 0.f;
+		if (Before < 4.f && Stop >= 4.f)
+		{
+			++PlayStops;
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    AI dead stop: %s at road %.0f m, %.0f m from the player"), *V->GetName(), V->GetRoadDistance() / 100.f, Dist / 100.f);
+		}
+		// Oncoming met / overtook us: longitudinal offset along our heading changes sign close by.
+		const float Long = FVector::DotProduct(D, MyFwd);
+		const float Lat = FMath::Abs(FVector::DotProduct(D, FVector::CrossProduct(FVector::UpVector, MyFwd)));
+		if (const float* Prev = PlayLongOffset.Find(Key))
+		{
+			if (Lat < 1500.f)
+			{
+				const bool bOpposite = FVector::DotProduct(VFwd, MyFwd) < -0.3f;
+				if (bOpposite && *Prev > 0.f && Long <= 0.f && !PlayMet.Contains(Key)) { ++PlayOncoming; PlayMet.Add(Key); }
+				if (!bOpposite && *Prev < -100.f && Long >= 100.f) { ++PlayOvertookUs; }
+			}
+		}
+		PlayLongOffset.Add(Key, Long);
+	}
 }
 
 float AHGGtaGameMode::PlayFps() const
@@ -168,13 +365,22 @@ void AHGGtaGameMode::PlayCheck(const TCHAR* Label, bool bShot)
 	const float Moved = FVector::Dist(PawnLoc, PlayLastLoc) / 100.f;
 	PlayLastLoc = PawnLoc;
 	const bool bCamUnder = bCG && CamLoc.Z < CamGround - 20.f;
+	float CamWater = 0.f;
+	const bool bCamWet = AHGWaterBody::FindSurface(GetWorld(), CamLoc, CamWater) && CamLoc.Z < CamWater + 10.f;
 	UE_LOG(LogHaGiang, Display,
-		TEXT("[HG_PLAY] %s | moved %.1f m | pawn %s alt %.0f m, above ground %.1f m | cam pitch %.0f, cam above ground %.1f m%s | %s %.0f km/h | road offset %.1f m | %.0f FPS (game %.1f / draw %.1f / GPU %.1f ms, %d draws, %.1fM tris)"),
+		TEXT("[HG_PLAY] %s | moved %.1f m | pawn %s alt %.0f m, above ground %.1f m | cam pitch %.0f, cam above ground %.1f m%s%s | %s %.0f km/h | road offset %.1f m | %.0f FPS (game %.1f / draw %.1f / GPU %.1f ms, %d draws, %.1fM tris)"),
 		Label, Moved, *Pawn->GetClass()->GetName(), PawnLoc.Z / 100.f, bPG ? (PawnLoc.Z - PawnGround) / 100.f : -999.f,
-		CamRot.Pitch, bCG ? (CamLoc.Z - CamGround) / 100.f : -999.f, bCamUnder ? TEXT(" CAMERA UNDERGROUND") : TEXT(""),
+		CamRot.Pitch, bCG ? (CamLoc.Z - CamGround) / 100.f : -999.f, bCamUnder ? TEXT(" CAMERA UNDERGROUND") : TEXT(""), bCamWet ? TEXT(" CAMERA BELOW WATER") : TEXT(""),
 		Veh ? TEXT("vehicle") : TEXT("on foot"), Veh ? Veh->GetSpeedKmh() : 0.f, RoadOff,
 		PlayFps(), FPlatformTime::ToMilliseconds(GGameThreadTime), FPlatformTime::ToMilliseconds(GRenderThreadTime),
 		FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles()), GNumDrawCallsRHI[0], GNumPrimitivesDrawnRHI[0] / 1.0e6f);
+	{
+		const AHGGroundVehicle* GV = Cast<AHGGroundVehicle>(Pawn);
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    %s | %s%s"), *AudioState(),
+			GV && GV->IsAutoDriving() ? *FString::Printf(TEXT("lane: road offset %+.2f m, off its lane line %.2f m"), GV->GetLateralOffset() / 100.f, GV->GetCrossTrackError() / 100.f)
+			                         : TEXT(""),
+			Veh && (Veh->IsLookingBack() || FMath::Abs(Veh->GetOrbitYaw()) > 1.f) ? *FString::Printf(TEXT(" | orbit yaw %.0f%s"), Veh->GetOrbitYaw(), Veh->IsLookingBack() ? TEXT(" LOOK-BACK") : TEXT("")) : TEXT(""));
+	}
 	if (bShot)
 	{
 		const FString File = FPaths::ProjectSavedDir() / TEXT("HG_CI/Play") / FString::Printf(TEXT("%02d_%s.png"), PlayShot++, Label);
@@ -309,6 +515,7 @@ void AHGGtaGameMode::PlayDriveBoatKeys(float DeltaSeconds)
 	PlaySetKey(EKeys::D, Err > 5.f);
 	PlaySetKey(EKeys::A, Err < -5.f);
 	PlaySetKey(EKeys::W, FMath::Abs(Err) < 70.f);
+	PlaySetKey(EKeys::LeftShift, FMath::Abs(Err) < 12.f);   // open it up on the straights of the gorge
 }
 
 void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
@@ -332,6 +539,10 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	APawn* Pawn = PC ? PC->GetPawn() : nullptr;
 	AHGPlayerCharacter* Player = Cast<AHGPlayerCharacter>(Pawn);
+	if (PlayPhase >= 3)
+	{
+		PlayTrafficTick(DeltaSeconds);
+	}
 
 	// Auto-drive stages: (road distance m, label, seconds). Distances come from the route sections.
 	struct FStage { float StartM; const TCHAR* Label; float Secs; };
@@ -343,8 +554,9 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	auto LogStage = [this](const TCHAR* Label)
 	{
 		const AHGGroundVehicle* Bike = PlayBike.Get();
-		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] %s summary | %.0f m from stage start | top %.0f km/h | off road %.1f s"), Label,
-			Bike ? FVector::Dist(Bike->GetActorLocation(), PlayStageStart) / 100.f : -1.f, PlayMaxKmh, PlayOffRoadSecs);
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] %s summary | %.0f m from stage start | top %.0f km/h | off road %.1f s | %s"), Label,
+			Bike ? FVector::Dist(Bike->GetActorLocation(), PlayStageStart) / 100.f : -1.f, PlayMaxKmh, PlayOffRoadSecs, *PlayTrafficSummary());
+		PlayResetStageStats();
 	};
 	auto BeginKeyStage = [this]()
 	{
@@ -425,7 +637,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			PlayCheck(*FString::Printf(TEXT("keys_ThamMa_%02d"), int32(PlayTime)), true);
 			NextShot += 8.f;
 		}
-		if (PlayTime > 40.f)
+		if (PlayTime > 41.5f)   // never teleport in the frame a screenshot was requested
 		{
 			PlayReleaseKeys();
 			LogStage(TEXT("keys_ThamMa"));
@@ -437,9 +649,14 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	if (PlayPhase == 5)                    // 5: [R] recovery check
 	{
 		PlaySetKey(EKeys::R, false);
-		if (PlayTime > 2.f)
+		if (PlayTime > 2.f && NextShot >= 0.f)
 		{
 			PlayCheck(TEXT("after_R"), true);
+			NextShot = -1.f;
+		}
+		if (PlayTime > 3.5f)
+		{
+			NextShot = 0.f;
 			// Straightest 150 m of the route: hold W only, no steering (acceleration / top speed check).
 			const USplineComponent* Sp = PlayRoad->GetSpline();
 			float BestD = 10000.f, BestTurn = BIG_NUMBER;
@@ -475,11 +692,16 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			PlayCheckpointLoc = PlayBike->GetActorLocation();
 			PlayLastLoc = PlayCheckpointLoc;   // "moved" in the next check = distance covered with W held
 		}
-		if (PlayTime > 7.f)
+		if (PlayTime > 7.f && NextShot >= 0.f)
 		{
-			PlayCheck(TEXT("W_straight_6s"), true);
-			PlaySetKey(EKeys::W, false);
+			PlayCheck(TEXT("W_straight_6s"), true);   // W still held: the bike is moving in the shot
 			LogStage(TEXT("W_straight_6s"));
+			NextShot = -1.f;
+		}
+		if (PlayTime > 8.5f)
+		{
+			NextShot = 0.f;
+			PlaySetKey(EKeys::W, false);
 			PlayCheckpointLoc = FVector::ZeroVector;
 			// Ta Lang concrete hairpins, ridden on the keys.
 			const float From = PlayRoad->SecondaryFromDistance >= 0.f ? PlayRoad->SecondaryFromDistance + 40000.f : PlayRoad->GetRoadLength() * 0.8f;
@@ -490,15 +712,32 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		}
 		return;
 	}
-	if (PlayPhase == 6)                    // 6: keys on the Ta Lang hairpins
+	if (PlayPhase == 6)                    // 6: keys on the Ta Lang hairpins (+ mouse orbit and [C] look-back)
 	{
 		PlayDriveKeys(DeltaSeconds);
+		if (PlayTime > 18.f && PlayTime < 19.5f)
+		{
+			// Swing the camera to the right with the mouse (simulated mouse-X deltas through Enhanced Input).
+			PC->InputKey(FInputKeyEventArgs::CreateSimulated(EKeys::MouseX, IE_Axis, 6.f, 1));
+		}
+		if (PlayTime >= 19.6f && PlayOrbitShot == 0)
+		{
+			PlayOrbitShot = 1;
+			PlayCheck(TEXT("orbit_mouse"), true);
+		}
+		if (PlayTime >= 26.f && PlayTime < 28.5f) { PlaySetKey(EKeys::C, true); }
+		if (PlayTime >= 27.5f && PlayOrbitShot == 1)
+		{
+			PlayOrbitShot = 2;
+			PlayCheck(TEXT("look_back_C"), true);
+		}
+		if (PlayTime >= 28.5f) { PlaySetKey(EKeys::C, false); }
 		if (PlayTime >= NextShot)
 		{
 			PlayCheck(*FString::Printf(TEXT("keys_TaLang_%02d"), int32(PlayTime)), true);
 			NextShot += 8.f;
 		}
-		if (PlayTime > 40.f)
+		if (PlayTime > 41.5f)
 		{
 			PlayReleaseKeys();
 			LogStage(TEXT("keys_TaLang"));
@@ -528,7 +767,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 				}
 			}
 			PlayBike->bAutoDriveWithPlayer = true;
-			PlayBike->StartAutoDrive(PlayRoad.Get(), StartCm, +1, 38.f, 160.f);
+			PlayBike->StartAutoDrive(PlayRoad.Get(), StartCm, +1, 38.f, 140.f);
 			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] stage %s from %.0f m"), St.Label, StartCm / 100.f);
 			PlayMaxKmh = 0.f;
 			PlayStageStart = PlayBike->GetActorLocation();
@@ -540,7 +779,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			PlayCheck(*FString::Printf(TEXT("%s_%02d"), St.Label, int32(PlayTime)), true);
 			NextShot += 9.f;
 		}
-		if (PlayTime > St.Secs)
+		if (PlayTime > St.Secs + 1.5f)
 		{
 			PlayOffRoadSecs = 0.f;
 			LogStage(St.Label);
@@ -566,7 +805,8 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		for (TActorIterator<ANhoQueBoatPawn> It(GetWorld()); It; ++It)
 		{
 			if (It->bAutoCruise) { if (!Cruiser || It->GetBoatType() == EHGBoatType::Cano) { Cruiser = *It; } continue; }
-			if (It->GetBoatType() == EHGBoatType::Cano && (!Dock || It->GetActorLocation().Z < Dock->GetActorLocation().Z)) { Dock = *It; }
+			// The player's cano (Boat_Cano_*, world.build_vehicles), not one of the moored tour boats.
+			if (It->GetBoatType() == EHGBoatType::Cano && It->GetActorNameOrLabel().StartsWith(TEXT("Boat_Cano"))) { Dock = *It; }
 		}
 		if (!Walker || !Dock)
 		{
@@ -584,23 +824,39 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			Cruiser && Cruiser->CruisePoints.Num() ? *Cruiser->CruisePoints.Last().ToString() : TEXT("-"), *Dock->GetActorLocation().ToString());
 		PlayBoat = Dock;
 		PlayBoatPath = Cruiser ? Cruiser->CruisePoints : TArray<FVector>();
+		// Ride from the dock to the Ma Pi Leng bend: the cruise point closest to the Ma Pi Leng viewpoint
+		// (viewpoints sorted along the road: [1]). Trim the line to dock..bend, oriented that way.
+		auto Nearest = [this](const FVector& P)
+		{
+			int32 Best = 0;
+			for (int32 i = 1; i < PlayBoatPath.Num(); ++i)
+			{
+				if (FVector::DistSquared2D(PlayBoatPath[i], P) < FVector::DistSquared2D(PlayBoatPath[Best], P)) { Best = i; }
+			}
+			return Best;
+		};
+		TArray<TPair<float, FVector>> Vps;
+		for (TActorIterator<AHGViewpointActor> It(GetWorld()); It; ++It)
+		{
+			Vps.Add({ PlayRoad.IsValid() ? PlayRoad->GetDistanceAlongRoad(It->GetActorLocation()) : 0.f, It->GetActorLocation() });
+		}
+		Vps.Sort([](const TPair<float, FVector>& A, const TPair<float, FVector>& B) { return A.Key < B.Key; });
+		if (PlayBoatPath.Num() > 1 && Vps.Num() >= 2)
+		{
+			const int32 From = Nearest(Dock->GetActorLocation());
+			const int32 To = Nearest(Vps[1].Value);
+			TArray<FVector> Leg;
+			for (int32 i = From; i != To; i += (To > From ? 1 : -1)) { Leg.Add(PlayBoatPath[i]); }
+			Leg.Add(PlayBoatPath[To]);
+			PlayBoatPath = Leg;
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boat route: cruise points %d -> %d (Ma Pi Leng bend at %s)"), From, To, *PlayBoatPath.Last().ToString());
+		}
 		PlayBoatIndex = 0;
-		float BestD = BIG_NUMBER;
-		for (int32 i = 0; i < PlayBoatPath.Num(); ++i)
-		{
-			const float D = FVector::Dist2D(PlayBoatPath[i], Dock->GetActorLocation());
-			if (D < BestD) { BestD = D; PlayBoatIndex = i; }
-		}
-		// Head for the far end of the line (into the gorge) from the closest point.
-		if (PlayBoatPath.Num() > 1 && PlayBoatIndex > PlayBoatPath.Num() / 2)
-		{
-			Algo::Reverse(PlayBoatPath);
-			PlayBoatIndex = PlayBoatPath.Num() - 1 - PlayBoatIndex;
-		}
 		PlayPhase = 30; PlayTime = 0.f;
 		PlayMaxKmh = 0.f;
 		PlayStageStart = Dock->GetActorLocation();
-		NextShot = 2.f;
+		NextShot = 3.f;
+		PlayBoatCheckLoc = Dock->GetActorLocation();
 		return;
 	}
 	if (PlayPhase == 30)                   // boat ride on the keys
@@ -608,13 +864,22 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		if (PlayTime > 1.f) { PlayDriveBoatKeys(DeltaSeconds); }
 		if (PlayTime >= NextShot)
 		{
-			PlayCheck(*FString::Printf(TEXT("boat_%02d"), int32(PlayTime)), true);
-			NextShot += 9.f;
+			PlayCheck(*FString::Printf(TEXT("boat_%03d"), int32(PlayTime)), true);
+			NextShot += 25.f;
 		}
-		if (PlayTime > 38.f)
+		const bool bArrived = PlayBoatPath.Num() > 0 && PlayBoat.IsValid()
+			&& FVector::Dist2D(PlayBoat->GetActorLocation(), PlayBoatPath.Last()) < 3000.f;
+		if (bArrived && NextShot >= 0.f && PlayBoatArrivedAt < 0.f)
 		{
+			PlayBoatArrivedAt = PlayTime;
+			PlayCheck(TEXT("boat_MaPiLeng_bend"), true);
+		}
+		if ((PlayBoatArrivedAt >= 0.f && PlayTime > PlayBoatArrivedAt + 1.5f) || PlayTime > 300.f)
+		{
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boat %s after %.0f s"), PlayBoatArrivedAt >= 0.f ? TEXT("reached the Ma Pi Leng bend") : TEXT("did NOT reach the Ma Pi Leng bend"),
+				PlayBoatArrivedAt >= 0.f ? PlayBoatArrivedAt : PlayTime);
 			PlayReleaseKeys();
-			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boat summary | %.0f m from the dock | top %.0f km/h | cruise point %d/%d"),
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boat summary | %.0f m from the dock (straight line) | top %.0f km/h | cruise point %d/%d"),
 				PlayBoat.IsValid() ? FVector::Dist2D(PlayBoat->GetActorLocation(), PlayStageStart) / 100.f : -1.f, PlayMaxKmh, PlayBoatIndex, PlayBoatPath.Num());
 			PlayPhase = 99;
 		}
@@ -622,6 +887,9 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	}
 	if (PlayPhase == 99)
 	{
+		PlayResetStageStats();
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] traffic session | %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | %s"),
+			PlayTotNear, PlayTotStops, PlayTotOncoming, PlayTotOvertookUs, *PlayTrafficSummary());
 		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] done | average %.1f FPS over %d frames, worst frame %.0f ms"),
 			PlayTotalFrames / FMath::Max(PlayTotalTime, 1e-3f), PlayTotalFrames, PlayWorstMs);
 		PlayPhase = 100;
@@ -632,6 +900,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 void AHGGtaGameMode::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	UpdateAmbientAudio(DeltaSeconds);
 	if (bPlayTest)
 	{
 		TickPlayTest(DeltaSeconds);
@@ -650,7 +919,18 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 			bPerfMoved = true;
 			if (APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0))
 			{
-				if (APawn* Pawn = PC->GetPawn())
+				if (PerfFov.IsValidIndex(PerfStage) && PerfFov[PerfStage] > 0.f)
+				{
+					if (!PerfCamera)
+					{
+						PerfCamera = GetWorld()->SpawnActor<ACameraActor>();
+					}
+					PerfCamera->SetActorTransform(PerfSpots[PerfStage]);
+					PerfCamera->GetCameraComponent()->SetFieldOfView(PerfFov[PerfStage]);
+					PerfCamera->GetCameraComponent()->SetConstraintAspectRatio(false);
+					PC->SetViewTarget(PerfCamera);
+				}
+				else if (APawn* Pawn = PC->GetPawn())
 				{
 					Pawn->SetActorLocation(PerfSpots[PerfStage].GetLocation(), false, nullptr, ETeleportType::TeleportPhysics);
 					PC->SetControlRotation(FRotator(-15.f, PerfSpots[PerfStage].Rotator().Yaw, 0.f));
@@ -660,13 +940,19 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 		return;
 	}
 	PerfAccum += DeltaSeconds;
+	PerfGpuAccum += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles());
 	PerfWorst = FMath::Max(PerfWorst, (double)DeltaSeconds);
 	++PerfFrames;
 	if (PerfTime > 12.f)
 	{
 		const double AvgMs = 1000.0 * PerfAccum / FMath::Max(PerfFrames, 1);
-		UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] %s: avg %.1f ms (%.0f FPS), worst %.1f ms, %d frames"),
-			*PerfNames[PerfStage], AvgMs, 1000.0 / FMath::Max(AvgMs, 0.001), PerfWorst * 1000.0, PerfFrames);
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] %s: avg %.1f ms (%.0f FPS), GPU %.1f ms, worst %.1f ms, %d frames"),
+			*PerfNames[PerfStage], AvgMs, 1000.0 / FMath::Max(AvgMs, 0.001), PerfGpuAccum / FMath::Max(PerfFrames, 1), PerfWorst * 1000.0, PerfFrames);
+		{
+			const FString File = FPaths::ProjectSavedDir() / TEXT("HG_CI/Perf") / FString::Printf(TEXT("%02d_%s.png"), PerfStage, *PerfNames[PerfStage]);
+			FScreenshotRequest::RequestScreenshot(File, true, false);
+		}
+		PerfGpuAccum = 0.0;
 		++PerfStage;
 		bPerfMoved = false;
 		PerfTime = -4.f;

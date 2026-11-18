@@ -34,6 +34,13 @@ public:
 	virtual bool IsWaterVehicle() const override { return true; }
 	virtual void ResetToSpawn() override;
 
+	/** [R] on the water: back onto the nearest point of the tourist boats' cruise line, facing along it the way
+	 *  we were heading, stopped. Falls back to the spawn point when there is no cruise line. */
+	void RecoverToRoute();
+
+	/** Cruise line of any auto-cruising boat in the level (the Tu San route), or empty. */
+	static const TArray<FVector>* FindCruiseLine(const UWorld* World);
+
 	UFUNCTION(BlueprintPure, Category = "HaGiang|Boat")
 	EHGBoatType GetBoatType() const { return BoatType; }
 
@@ -59,6 +66,9 @@ public:
 	float CruiseAcceptRadius = 1200.f;
 
 protected:
+	virtual void HandleResetInput() override { RecoverToRoute(); }
+	/** Chase camera for the player: orbit / look-back, never below the water surface. */
+	void UpdateBoatCamera(float DeltaSeconds);
 	virtual void BeginPlay() override;
 	virtual FVector GetExitLocation() const override;
 

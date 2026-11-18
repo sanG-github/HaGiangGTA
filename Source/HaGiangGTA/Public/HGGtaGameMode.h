@@ -26,7 +26,20 @@ protected:
 	virtual void Tick(float DeltaSeconds) override;
 
 private:
-	// -hgperf benchmark: frame-time statistics at each viewpoint, written to the log, then quit.
+	// ---- Ambient audio (all modes): wind with speed / altitude, birds when slow, tyres by surface ----
+	UPROPERTY(Transient) TObjectPtr<class UAudioComponent> WindAudio;
+	UPROPERTY(Transient) TObjectPtr<class UAudioComponent> BirdsAudio;
+	UPROPERTY(Transient) TObjectPtr<class UAudioComponent> TyreAudio;
+	float WindVol = 0.f, BirdsVol = 0.f, TyreVol = 0.f;
+	void StartAmbientAudio();
+	void UpdateAmbientAudio(float DeltaSeconds);
+	FString AudioState() const;
+
+	// -hgperf benchmark: frame-time statistics at each review camera (Generated/Heightmaps/HaGiang_review_cameras.json,
+	// written by Scripts/hg_lib/shots.py) or, without it, at each viewpoint; written to the log, then quit.
+	TArray<float> PerfFov;
+	UPROPERTY(Transient) TObjectPtr<class ACameraActor> PerfCamera;
+	double PerfGpuAccum = 0.0;
 	bool bPerfRun = false;
 	bool bPerfMoved = false;
 	int32 PerfStage = -1;
@@ -51,6 +64,7 @@ private:
 	// Key-ridden stages: a "human" presses W/S/A/D (simulated key events through the real input stack).
 	TArray<FKey> PlayKeysDown;
 	float PlayMaxKmh = 0.f;
+	int32 PlayOrbitShot = 0;
 	float PlayOffRoadSecs = 0.f;
 	FVector PlayStageStart = FVector::ZeroVector;
 	FVector PlayCheckpointLoc = FVector::ZeroVector;
@@ -66,9 +80,24 @@ private:
 	TWeakObjectPtr<class ANhoQueBoatPawn> PlayBoat;
 	TArray<FVector> PlayBoatPath;
 	int32 PlayBoatIndex = 0;
-	float PlayBoatCheckTime = 0.f, PlayBoatReverse = 0.f;
+	float PlayBoatCheckTime = 0.f, PlayBoatReverse = 0.f, PlayBoatArrivedAt = -1.f;
 	FVector PlayBoatCheckLoc = FVector::ZeroVector;
 	void PlayDriveBoatKeys(float DeltaSeconds);
 	void TickPlayTest(float DeltaSeconds);
+
+	// Traffic around the player (per stage): near misses, AI dead stops, oncoming vehicles met, vehicles that
+	// overtook the player; lane error of the auto-driven bike.
+	int32 PlayNearMiss = 0, PlayStops = 0, PlayOncoming = 0, PlayOvertookUs = 0;
+	int32 PlayTotNear = 0, PlayTotStops = 0, PlayTotOncoming = 0, PlayTotOvertookUs = 0;
+	TMap<TWeakObjectPtr<AActor>, double> PlayNearCooldown;
+	TMap<TWeakObjectPtr<AActor>, float> PlayStopTime;
+	TMap<TWeakObjectPtr<AActor>, float> PlayLongOffset;
+	TSet<TWeakObjectPtr<AActor>> PlayMet;
+	double PlayLaneErrSum = 0.0;
+	float PlayLaneErrMax = 0.f;
+	int32 PlayLaneSamples = 0;
+	void PlayTrafficTick(float DeltaSeconds);
+	void PlayResetStageStats();
+	FString PlayTrafficSummary() const;
 	void PlayCheck(const TCHAR* Label, bool bShot);
 };

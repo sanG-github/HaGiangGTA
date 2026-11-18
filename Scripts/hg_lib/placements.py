@@ -19,7 +19,7 @@ import sys
 # ---------------------------------------------------------------------------
 # Gameplay constants mirrored from the C++ defaults (keep in sync).
 # ---------------------------------------------------------------------------
-LANE_OFFSET_CM = 170.0          # AHGTrafficSpawner::LaneOffset
+LANE_OFFSET_CM = 140.0          # AHGTrafficSpawner::LaneOffset
 LANE_EDGE_MARGIN_CM = 30.0      # AHGGroundVehicle::LaneEdgeMargin: body side stays this far inside the road edge
 BOAT_MIN_DEPTH_CM = 70.0        # ANhoQueBoatPawn::MinDepth (Cano)
 MAX_GROUND_SLOPE_DEG = 35.0     # nothing stands on steeper ground
@@ -436,6 +436,179 @@ def parked_bikes(ctx, road_m, count=5, pad=None):
     return out
 
 
+# ---------------------------------------------------------------------------
+# Road furniture: posts, chevrons, W-beam guardrails, rim stone walls - built from the road spline itself
+# ---------------------------------------------------------------------------
+
+FURNITURE_OFFSET_CM = {"post": 60.0, "chevron": 90.0, "rail": 60.0, "wall": 50.0}   # outside the road edge
+FURNITURE_MIN_CLEAR_CM = 35.0          # nothing may stand closer than this to ANY road edge (validate_layout)
+RAIL_LEN_CM = 400.0                    # SM_HG_Guardrail / SM_HG_StoneWall: one 4 m piece along +X from the pivot
+
+
+def _road_clear(ctx, x, y):
+    return min(ctx.road.edge_clearance(x, y), ctx.stubs.edge_clearance(x, y))
+
+
+def _edge_pt(ctx, m, side, off_cm):
+    """Point off_cm outside the road edge. The normal is taken from a 3 m central difference, not from the
+    polyline segment: the segment normal jumps at every 4 m vertex, and on a hairpin that made the offset curve
+    jump ~1 m (gaps between rail pieces on the outside of the bend)."""
+    x, y, z = ctx.road.frame(m)[:3]
+    a = ctx.road.frame(max(m - 1.5, 0.0))
+    b = ctx.road.frame(min(m + 1.5, ctx.road.length_m))
+    tx, ty = b[0] - a[0], b[1] - a[1]
+    d = math.hypot(tx, ty) or 1.0
+    nx, ny = -ty / d, tx / d
+    hw = ctx.road.half_width_at(m) + off_cm
+    return x + nx * side * hw, y + ny * side * hw, z
+
+
+def _drop_side(ctx, m, side, off_cm):
+    """True if the ground 6 m beyond the edge is at least 1.5 m below the road (valley / cliff side)."""
+    bx, by, z = _edge_pt(ctx, m, side, off_cm + 600.0)
+    return ctx.terrain.z(bx, by) < z - 150.0
+
+
+def _turn_sign(ctx, m, base_m=6.0):
+    """+1 if the road turns towards +n (yaw increasing), -1 the other way."""
+    a = ctx.road.yaw_deg(max(m - base_m * 0.5, 0.0))
+    b = ctx.road.yaw_deg(min(m + base_m * 0.5, ctx.road.length_m))
+    d = (b - a + 180.0) % 360.0 - 180.0
+    return 1.0 if d > 0 else -1.0
+
+
+def _chord_run(ctx, m0, m1, side, off_cm, ok, step_m=0.1):
+    """Pieces of RAIL_LEN_CM laid end to end along the offset edge curve from m0 to m1: each piece is the chord
+    between two points of that curve exactly RAIL_LEN_CM apart, so the run follows the bend with no gaps or
+    overlaps. ok(m_start, m_end, p0, p1) filters pieces (drop side, clearance). Returns [(p0, p1)]."""
+    out = []
+    m = m0
+    p0 = _edge_pt(ctx, m, side, off_cm)
+    while m < m1:
+        n = m + step_m
+        while n < m1 + 4.0:
+            p1 = _edge_pt(ctx, n, side, off_cm)
+            if math.dist(p1, p0) >= RAIL_LEN_CM:      # 3D: the tilted 4 m piece ends exactly at p1
+                break
+            n += step_m
+        else:
+            break
+        # Bisect back to exactly RAIL_LEN_CM (a 0.1 m step on the outside of a bend overshoots by up to ~10 cm,
+        # which left a visible gap at every joint).
+        lo, hi = n - step_m, n
+        for _ in range(12):
+            mid_ = 0.5 * (lo + hi)
+            if math.dist(_edge_pt(ctx, mid_, side, off_cm), p0) >= RAIL_LEN_CM:
+                hi = mid_
+            else:
+                lo = mid_
+        n = hi
+        p1 = _edge_pt(ctx, n, side, off_cm)
+        if ok(m, n, p0, p1):
+            out.append((p0, p1))
+        m, p0 = n, p1
+    return out
+
+
+def road_furniture(ctx):
+    """Road posts, curve chevrons, Doc Tham Ma guardrails and Ma Pi Leng rim walls placed against the UE road
+    spline (ctx.road) and its real width (concrete Ta Lang road included).
+
+    gen_scatter.py used to place them from its own 2 m polyline before the hairpins were rounded and the route was
+    re-sampled for the spline: 51 chevrons and 5 posts ended up on the carriageway, and the guardrails were 4 m
+    sticks placed at the centreline samples, which on the hairpins left gaps outside and overlaps inside.
+    Returns dict(posts, guardrails, stone_walls, chevrons) of scatter instances [x, y, z, yaw, pitch, roll, sx, sy, sz]."""
+    road = ctx.road
+    L = road.length_m
+    sec = ctx.layout["road"]["sections_m"]
+    tham_end = ctx.sec_m("tham_ma") + 300.0
+    concrete_from = ctx.layout["road"].get("concrete_from_m", 1e9) * ctx.sec_scale
+    mpl_m = ctx.viewpoint_road_m("ma_pi_leng")
+    inst = lambda x, y, z, yaw, pitch=0.0, sy=1.0, sz=1.0: [round(x, 1), round(y, 1), round(z, 1), round(yaw, 2), round(pitch, 2), 0.0, 1.0, sy, sz]
+
+    def piece_ok(off_cm, outer_only):
+        def ok(m0, m1, p0, p1):
+            mid = 0.5 * (m0 + m1)
+            side = ok.side
+            if not (_drop_side(ctx, m0, side, off_cm) and _drop_side(ctx, m1, side, off_cm)):
+                return False
+            if outer_only and road.radius_at(mid) < 3000.0 and _turn_sign(ctx, mid) == side:
+                return False      # inside of a bend: rails / walls go on the outer (drop) side only
+            mx, my = 0.5 * (p0[0] + p1[0]), 0.5 * (p0[1] + p1[1])
+            return min(_road_clear(ctx, p0[0], p0[1]), _road_clear(ctx, p1[0], p1[1]), _road_clear(ctx, mx, my)) >= FURNITURE_MIN_CLEAR_CM
+        return ok
+
+    def oriented(p0, p1, road_m, mesh_faces_road):
+        """(pivot, yaw, pitch) for a +X piece from p0 to p1. mesh_faces_road: the mesh's +Y side must face the road."""
+        rx, ry, _ = road.frame(road_m)[:3]
+        yaw = math.degrees(math.atan2(p1[1] - p0[1], p1[0] - p0[0]))
+        right = (-math.sin(math.radians(yaw)), math.cos(math.radians(yaw)))
+        mx, my = 0.5 * (p0[0] + p1[0]), 0.5 * (p0[1] + p1[1])
+        if mesh_faces_road and right[0] * (rx - mx) + right[1] * (ry - my) < 0.0:
+            p0, p1 = p1, p0
+            yaw += 180.0
+        pitch = math.degrees(math.asin(max(-1.0, min(1.0, (p1[2] - p0[2]) / RAIL_LEN_CM))))
+        return p0, yaw, pitch
+
+    rails, walls, posts, chevrons = [], [], [], []
+
+    # W-beam guardrails on the Doc Tham Ma hairpins: continuous runs on the drop side, outer side of the bends.
+    for side in (1.0, -1.0):
+        ok = piece_ok(FURNITURE_OFFSET_CM["rail"], True)
+        ok.side = side
+        for p0, p1 in _chord_run(ctx, 2.0, min(tham_end, L - 6.0), side, FURNITURE_OFFSET_CM["rail"], ok):
+            m = road.closest(0.5 * (p0[0] + p1[0]), 0.5 * (p0[1] + p1[1]))[0]
+            piv, yaw, pitch = oriented(p0, p1, m, True)
+            rails.append(inst(piv[0], piv[1], piv[2] - 15.0, yaw, pitch))
+
+    # Dry-stone walls along the Ma Pi Leng rim: 24 m runs with 12 m gaps (posts in the gaps), drop side.
+    in_wall = lambda m: 12.0 < abs(m - mpl_m) < 650.0
+    wall_lo, wall_hi = max(mpl_m - 650.0, 2.0), min(mpl_m + 650.0, L - 6.0)
+    for side in (1.0, -1.0):
+        base = piece_ok(FURNITURE_OFFSET_CM["wall"], True)
+        base.side = side
+
+        def wall_ok(m0, m1, p0, p1, base=base):
+            return in_wall(m0) and in_wall(m1) and (int(m0 // 4.0) % 9) < 6 and base(m0, m1, p0, p1)
+        for p0, p1 in _chord_run(ctx, wall_lo, wall_hi, side, FURNITURE_OFFSET_CM["wall"], wall_ok):
+            m = road.closest(0.5 * (p0[0] + p1[0]), 0.5 * (p0[1] + p1[1]))[0]
+            piv, yaw, pitch = oriented(p0, p1, m, False)
+            walls.append(inst(piv[0], piv[1], piv[2] - 25.0, yaw, pitch, 1.0, 0.95))
+
+    # Red/white posts every 8 m on the drop side (not where rails or walls stand, not on the concrete road).
+    wall_spans = [(road.closest(w[0], w[1])[0], w) for w in walls]
+    m = 2.0
+    while m < min(concrete_from - 10.0, L - 6.0):
+        if m >= tham_end:
+            for side in (1.0, -1.0):
+                if not _drop_side(ctx, m, side, FURNITURE_OFFSET_CM["post"]):
+                    continue
+                x, y, z = _edge_pt(ctx, m, side, FURNITURE_OFFSET_CM["post"])
+                if in_wall(m) and any(abs(wm - m) < 4.5 for wm, _ in wall_spans):
+                    continue
+                if _road_clear(ctx, x, y) >= FURNITURE_MIN_CLEAR_CM:
+                    posts.append(inst(x, y, z - 12.0, road.yaw_deg(m)))
+        m += 8.0
+
+    # Curve chevrons on the outside of every bend tighter than R 40 m (not on the Ta Lang concrete road, as
+    # before): three boards around the apex, 0.9 m (or 1.5 m if that is still too close) off the edge.
+    last = -1e9
+    m = 5.0
+    while m < min(concrete_from, L - 5.0):
+        if road.radius_at(m) < 4000.0 and m - last > 30.0:
+            last = m
+            out_side = -_turn_sign(ctx, m)
+            for k in (-1, 0, 1):
+                mj = min(max(m + 8.0 * k, 0.0), L)
+                for off in (FURNITURE_OFFSET_CM["chevron"], 150.0):
+                    x, y, z = _edge_pt(ctx, mj, out_side, off)
+                    if _road_clear(ctx, x, y) >= 60.0:
+                        chevrons.append(inst(x, y, z - 10.0, road.yaw_deg(mj) + 90.0 * out_side))
+                        break
+        m += 1.0
+    return {"posts": posts, "guardrails": rails, "stone_walls": walls, "chevrons": chevrons}
+
+
 PARAPET_SEG = (400.0, 55.0)       # length, thickness (cm) of one Tham Ma parapet block
 PARAPET_ROAD_CLEAR_CM = 80.0
 
@@ -730,13 +903,67 @@ def vehicle_spawns(ctx):
         bikes.append({"location_cm": (x, y, ctx.terrain.z(x, y) + 60.0), "yaw": b["yaw"]})
     boats = []
     yaw = sp["dock"]["yaw"] + 90
-    obstacles = river_traffic(ctx)["obstacles"][1:]        # pontoons + moored boats (not the pier)
+    obstacles = list(river_traffic(ctx)["obstacles"][1:])  # pontoons + moored boats (not the pier)
     for b in sp["boats"]:
         x, y, z = b["location_cm"]
         half = CANO_HALF if b["type"] == "Cano" else KAYAK_HALF
-        nx, ny = nudge_to_water(ctx, x, y, yaw, half, obstacles=obstacles)
-        boats.append({"type": b["type"], "location_cm": (nx, ny, z), "yaw": yaw})
+        dep = dock_departure(ctx, half, obstacles) if b["type"] == "Cano" else None
+        if dep:
+            nx, ny, byaw = dep
+        else:
+            nx, ny = nudge_to_water(ctx, x, y, yaw, half, obstacles=obstacles)
+            byaw = yaw
+        boats.append({"type": b["type"], "location_cm": (nx, ny, z), "yaw": byaw})
+        obstacles.append((nx, ny, byaw, *half))
     return {"bikes": bikes, "boats": boats}
+
+
+def hull_clearance(cx, cy, yaw, hx, hy, obstacles):
+    """Smallest distance (cm) from the outline of an oriented hull to any obstacle rectangle."""
+    r = math.radians(yaw)
+    c, s = math.cos(r), math.sin(r)
+    best = float("inf")
+    for a in (-1.0, -0.5, 0.0, 0.5, 1.0):
+        for b_ in (-1.0, 0.0, 1.0):
+            lx, ly = a * hx, b_ * hy
+            px, py = cx + lx * c - ly * s, cy + lx * s + ly * c
+            for o in obstacles:
+                best = min(best, rect_distance(px, py, *o))
+    return best
+
+
+def dock_departure(ctx, half, obstacles, clear_cm=150.0, lane_ahead=4):
+    """Player cano berth for a clean departure: on the cruise route next to the dock, bow pointing along it
+    towards the Tu San gorge / Ma Pi Leng, slid from the route towards the dock as far as the whole hull floats,
+    keeps clear_cm from every pontoon / moored boat and the next lane_ahead route points stay reachable in a
+    straight, navigable line. (It used to be pushed straight off the slipway into the pontoon line, boxed in
+    by Pontoon_0 and the moored canos.) Returns (x, y, yaw) or None."""
+    rt = river_traffic(ctx)
+    route = rt["route"]
+    if len(route) < lane_ahead + 2:
+        return None
+    dx, dy, _, _, _, _, _ = dock_frame(ctx.layout)
+    near = lambda x, y: min(range(len(route)), key=lambda i: (route[i][0] - x) ** 2 + (route[i][1] - y) ** 2)
+    k = near(dx, dy)
+    mpl = ctx.layout["viewpoints"]["ma_pi_leng"]["location_cm"]
+    step = 1 if near(mpl[0], mpl[1]) >= k else -1
+    j = max(0, min(len(route) - 1, k + 2 * step))
+    yaw = math.degrees(math.atan2(route[j][1] - route[k][1], route[j][0] - route[k][0]))
+    ax, ay = route[k]
+    d = math.hypot(dx - ax, dy - ay) or 1.0
+    ux, uy = (dx - ax) / d, (dy - ay) / d
+    ahead = route[max(0, min(len(route) - 1, k + lane_ahead * step))]
+    best = None
+    for t in range(0, int(d), 50):
+        px, py = ax + ux * t, ay + uy * t
+        if not rect_navigable(ctx, px, py, yaw, half[0], half[1], 60.0, BOAT_MIN_DEPTH_CM):
+            break
+        if hull_clearance(px, py, yaw, half[0], half[1], obstacles) < clear_cm:
+            break
+        if not segment_navigable(ctx.layout, ctx.terrain, (px, py), ahead, half[1] + 60.0):
+            break
+        best = (px, py, yaw)
+    return best
 
 
 def road_cusps(road, r_min_cm=600.0, step_m=1.0):

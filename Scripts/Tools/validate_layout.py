@@ -388,6 +388,12 @@ def check_spawns(ctx, g, rep, legacy, river):
         if ok and clash:
             ok = False
             rep.add("spawns", f"boat_{b['type']}_{i} berth", "FAIL", "overlaps a pontoon / moored boat")
+        if ok and b["type"] == "Cano" and not legacy:
+            # Departure lane: bow along the cruise route, nothing within 1.5 m of the hull.
+            cl = P.hull_clearance(x, y, b["yaw"], half[0], half[1], river_obstacles)
+            if cl < 140.0:
+                ok = False
+                rep.add("spawns", f"boat_{b['type']}_{i} lane", "FAIL", f"{cl / 100:.1f} m from a pontoon / moored boat")
         rep.check("spawns", f"boat_{b['type']}_{i}", None if ok else
                   f"aground: ground {(g.max_z(x, y, half[0]) - ctx.layout['water']['surface_z_cm']) / 100:+.1f} m vs surface",
                   f"afloat (moved {moved:.1f} m from the layout spawn)" if moved > 0.05 else "afloat")
@@ -471,6 +477,41 @@ def check_props(ctx, g, rep):
     for i, (x, y, z) in enumerate(buckets):
         c = ctx.road.edge_clearance(x, y)
         rep.check("props", f"flower bucket {i}", None if c >= 50 else f"{c / 100:.1f} m from the road edge")
+
+
+def check_furniture(ctx, rep):
+    """Posts, chevrons, guardrails and rim walls (placements.road_furniture): nothing within road half-width +
+    FURNITURE_MIN_CLEAR_CM of any road centreline; rails / walls hug the edge along every bend (midpoint and both
+    ends 0.35-1.2 m outside it) and their 4 m pieces join end to end (no gaps, no overlaps)."""
+    F = P.road_furniture(ctx)
+    clear = lambda x, y: min(ctx.road.edge_clearance(x, y), ctx.stubs.edge_clearance(x, y))
+    for kind in ("posts", "chevrons", "guardrails", "stone_walls"):
+        items = F[kind]
+        bad = [(i, clear(it[0], it[1])) for i, it in enumerate(items) if clear(it[0], it[1]) < P.FURNITURE_MIN_CLEAR_CM]
+        rep.check("furniture", f"{kind} off the road", None if not bad else
+                  f"{len(bad)}/{len(items)} within {P.FURNITURE_MIN_CLEAR_CM / 100:.2f} m of a road edge (worst {min(c for _, c in bad) / 100:+.2f} m)",
+                  f"{len(items)} items, all >= {P.FURNITURE_MIN_CLEAR_CM / 100:.2f} m outside the edge")
+
+    def ends(r):
+        a, c = math.radians(r[3]), math.cos(math.radians(r[4])) * P.RAIL_LEN_CM
+        return [(r[0], r[1]), (r[0] + c * math.cos(a), r[1] + c * math.sin(a))]
+    for kind in ("guardrails", "stone_walls"):
+        items = F[kind]
+        far = 0
+        for r in items:
+            (x0, y0), (x1, y1) = ends(r)
+            for x, y in ((x0, y0), (x1, y1), (0.5 * (x0 + x1), 0.5 * (y0 + y1))):
+                if not (P.FURNITURE_MIN_CLEAR_CM - 1.0 <= clear(x, y) <= 120.0):
+                    far += 1
+        rep.check("furniture", f"{kind} follow the edge", None if not far else f"{far} piece points off the 0.35-1.2 m band")
+        E = [e for r in items for e in ends(r)]
+        joints = 0
+        for i, e in enumerate(E):
+            d = min((math.hypot(e[0] - f[0], e[1] - f[1]) for j, f in enumerate(E) if j // 2 != i // 2), default=1e9)
+            if 3.0 <= d < 100.0:
+                joints += 1
+        rep.check("furniture", f"{kind} joints", None if not joints else f"{joints} piece ends 3-100 cm from the next piece (gap / overlap)",
+                  f"{len(items)} pieces joined end to end")
 
 
 def check_river(ctx, g, rep, river, legacy):
@@ -698,6 +739,7 @@ def main():
     check_cows(ctx, g, rep, cows)
     check_pickups(ctx, g, rep, pickups)
     check_props(ctx, g, rep)
+    check_furniture(ctx, rep)
     check_river(ctx, g, rep, river, args.legacy)
     check_traffic(ctx, rep, traffic, args.legacy, not args.no_sim, cusps)
     check_police(ctx, g, rep, args.legacy)
