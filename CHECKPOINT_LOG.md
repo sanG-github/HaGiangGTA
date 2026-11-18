@@ -8,7 +8,7 @@ time spent waiting for a usage-limit reset is excluded (`cooldown_wait_seconds`)
 | 01 | `checkpoint/01-10min-greybox` | `cp-01-10min` | 10 min | done (~7 min active) |
 | 02 | `checkpoint/02-1hr-heightmap-bike` | `cp-02-1hr` | 1 h | done (~26 min active) |
 | 03 | `checkpoint/03-6hr-3viewpoints-photoreal` | `cp-03-6hr` | 6 h | done (~35 min active) |
-| 04 | `checkpoint/04-12hr-living-world` | `cp-04-12hr` | 12 h | pending |
+| 04 | `checkpoint/04-12hr-living-world` | `cp-04-12hr` | 12 h | done (~42 min active) |
 | 05 | `checkpoint/05-24hr-full-gta-5star` | `cp-05-24hr` | 24 h | pending |
 
 ---
@@ -104,3 +104,38 @@ are flat colours until CP03 (materials, Nanite cliffs, Lumen sky).
 **Known limits:** written without a local UE 5.5 build (engine not installed yet). No CullDistanceVolume actor
 (brush volumes can't be sized from Python reliably — HISM cull distances are used instead). Megascans can replace the
 procedural meshes later by swapping the meshes passed to `world.build_scatter`.
+
+---
+
+## UE 5.8 retarget (`chore/ue-5.8`)
+Project switched from 5.5 to 5.8 at the user's request (`EngineAssociation`, `BuildSettingsVersion.Latest`,
+`EngineIncludeOrderVersion.Latest`, launcher script paths).
+
+---
+
+## CP04 — Living world (`cp-04-12hr`)
+
+**Rebuild:** run `Scripts/Checkpoints/build_cp04.py` → `/Game/Maps/L_HaGiang_CP04` (= CP03 scene + the systems below).
+`gen_assets.py` now also synthesizes `SW_HG_AirHorn`, `SW_HG_Scream`, `SW_HG_Moo` (formant / reed synthesis).
+
+**C++**
+- `AHGGroundVehicle` auto-drive: pure-pursuit steering on the road spline, right-hand lane offset,
+  curve speed limit v = √(a·R) from the tightest radius ahead, convoy gap keeping, pawn sweep → brake,
+  turn-around / loop at road ends. Stops automatically when the player hijacks the vehicle (`[F]`).
+- `AHGTrafficSpawner`: convoys of 8–12 Honda Wins (`FHGConvoySpec`) + dump trucks (`FHGTruckSpec`).
+- `AHGBikePawn`: NPC Easy Rider in a reflective vest (hidden when the player rides), backpacker in a red T-shirt with
+  the yellow star, nylon-wrapped backpack; screams with arms up near drop-offs (>25 m within 6.5 m sideways at
+  >40 km/h) or when airborne.
+- `AHGTruckPawn`: blue Thaco-style dump truck, air horn before blind hairpins (R < 30 m ahead) with the player near,
+  or when its lane is blocked.
+- `AHGCowActor`: road-blocking cows that wander, graze, follow the terrain and moo at the player.
+- `AHGTouristNPC`: check-in crowds (backpacker / Easy Rider / local) looking at the view and taking phone photos.
+- Happy Water: `AHGHappyWaterPickup` (2 L corn-liquor bottle) → `UHGHappyWaterSubsystem`: 12 s of 2× nitro,
+  inverted steering/walking, unbound `PostProcessVolume` (chromatic smear, motion blur, bloom, colour wobble) +
+  `UHGDrunkCameraModifier` (rolling horizon, breathing FOV). HUD countdown.
+
+**Test:** follow / overtake the Thẩm Mã convoy, steal a bike with `F`, meet the trucks on the hairpins, slalom the
+cows, grab a bottle, ride the rim at speed to hear the passenger scream.
+
+**Known limits:** not compiled yet (UE 5.8 still installing). Greybox NPC bodies; traffic loops by turning around at
+the road ends.

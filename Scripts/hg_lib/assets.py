@@ -40,7 +40,7 @@ def run_generator(script: str, check_file: str) -> None:
 
 
 def ensure_generated() -> None:
-    run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_RoadPost.obj")
+    run_generator("gen_assets.py", "Generated/Assets/Audio/SW_HG_Moo.wav")
     run_generator("gen_scatter.py", "Generated/Heightmaps/HaGiang_scatter.json")
 
 
@@ -115,12 +115,21 @@ def import_meshes(force: bool = False) -> dict:
     return out
 
 
-def import_flute(force: bool = False):
+def import_sound(name: str, force: bool = False):
     folder = f"{DEST}/Audio"
-    path = f"{folder}/SW_HG_SaoMong"
+    path = f"{folder}/{name}"
     if not force and unreal.EditorAssetLibrary.does_asset_exist(path):
         return unreal.EditorAssetLibrary.load_asset(path)
-    src = os.path.join(hg.project_dir(), "Generated", "Assets", "Audio", "SW_HG_SaoMong.wav")
-    snd = _import(src, folder, "SW_HG_SaoMong")
+    src = os.path.join(hg.project_dir(), "Generated", "Assets", "Audio", f"{name}.wav")
+    snd = _import(src, folder, name)
     unreal.EditorAssetLibrary.save_loaded_asset(snd)
     return snd
+
+
+def import_flute(force: bool = False):
+    return import_sound("SW_HG_SaoMong", force)
+
+
+def import_sfx(force: bool = False) -> dict:
+    """CP04 sounds; C++ loads them by path (/Game/HaGiang/Generated/Audio/<name>)."""
+    return {n: import_sound(n, force) for n in ("SW_HG_AirHorn", "SW_HG_Scream", "SW_HG_Moo")}

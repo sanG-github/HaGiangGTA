@@ -39,71 +39,22 @@ _add_scripts_path()
 
 import importlib  # noqa: E402
 
-from hg_lib import assets, materials, world  # noqa: E402
+from hg_lib import assets, materials, scenes, world  # noqa: E402
 from hg_lib import editor_utils as hg  # noqa: E402
 
-for _m in (hg, world, assets, materials):
+for _m in (hg, world, assets, materials, scenes):
     importlib.reload(_m)
 
 LEVEL_PATH = "/Game/Maps/L_HaGiang_CP03"
 TAG = "HG_CP03"
-GAME_MODE = "/Script/HaGiangGTA.HGOpenWorldGameMode"
 
 
 def build():
-    world.require_cpp("HGLandscapeBuilder", "HGRoadSplineActor", "HGWaterBody", "HGBikePawn", "NhoQueBoatPawn",
-                      "HGInstancedScatterActor", "HGViewpointActor")
-    with unreal.ScopedSlowTask(10, "Building HaGiang CP03 (photoreal)") as task:
+    with unreal.ScopedSlowTask(scenes.PHOTOREAL_STEPS + 1, "Building HaGiang CP03 (photoreal)") as task:
         task.make_dialog(True)
-
-        task.enter_progress_frame(1, "Generated data (heightmap, assets, scatter)")
-        layout = hg.ensure_generated_heightmap()
-        assets.ensure_generated()
-        scatter = world.load_scatter()
-
-        task.enter_progress_frame(1, "Importing textures, Nanite meshes, flute")
-        tex = assets.import_textures()
-        meshes = assets.import_meshes()
-        flute = assets.import_flute()
-
-        task.enter_progress_frame(1, "Building materials")
-        mats = materials.build_all(tex)
-        mat_ring = hg.color_material("MI_GB_CheckIn", (1.0, 0.75, 0.05))
-        mat_wood = hg.color_material("MI_GB_Wood", (0.25, 0.14, 0.06))
-
-        task.enter_progress_frame(1, "Opening level")
-        hg.open_or_create_level(LEVEL_PATH)
-        hg.clear_tagged(TAG)
-
-        task.enter_progress_frame(1, "Importing Nanite landscape (slow)")
-        landscape = world.build_landscape(layout, TAG, "CP03/Landscape", mats["terrain"])
-        try:
-            landscape.set_editor_property("enable_nanite", True)
-        except Exception as exc:
-            hg.warn(f"Nanite landscape: {exc} (enable it in the Landscape details panel)")
-
-        task.enter_progress_frame(1, "Road, river, dock, vehicles")
-        world.build_road(layout, mats["asphalt"], TAG, "CP03/Road")
-        world.build_water(layout, mats["water"], TAG, "CP03/Water")
-        world.build_dock(layout, mat_wood, TAG, "CP03/Dock")
-        world.build_checkin_rings(layout, mat_ring, TAG, "CP03/Viewpoints")
-        world.build_vehicles(layout, TAG, "CP03/Vehicles")
-
-        task.enter_progress_frame(1, "Scatter: cliffs, summits, boulders, shrubs, posts")
-        world.build_scatter(scatter, meshes, mats, TAG, "CP03/Scatter")
-
-        task.enter_progress_frame(1, "Golden hour atmosphere")
-        world.build_golden_hour(TAG, "CP03/Lighting")
-
-        task.enter_progress_frame(1, "Viewpoints + PlayerStart")
-        world.build_viewpoints(scatter, flute, TAG, "CP03/Viewpoints")
-        world.build_player_start(layout, TAG, "CP03/Gameplay")
-
+        scenes.build_photoreal_world(LEVEL_PATH, TAG, "CP03", task)
         task.enter_progress_frame(1, "World settings + save")
-        hg.set_world_game_mode(GAME_MODE)
-        hg.editor_world().get_world_settings().set_editor_property("kill_z", 60000.0)
-        hg.save_current_level()
-
+        scenes.finish_level()
     hg.log("CP03 built. Ride to a check-in ring and press V for the flycam.")
 
 

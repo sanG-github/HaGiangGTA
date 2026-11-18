@@ -14,6 +14,9 @@ Everything is deterministic and regenerated from code:
     SM_HG_RoadPost          Vietnamese road post (coc tieu), V = height for paint bands
   Generated/Assets/Audio/
     SW_HG_SaoMong.wav       synthesized Hmong-flute style pentatonic phrase (~14 s)
+    SW_HG_AirHorn.wav       dump-truck air horn (CP04)
+    SW_HG_Scream.wav        backpacker scream (CP04)
+    SW_HG_Moo.wav           cow (CP04)
 
 Usage: .venv/bin/python Scripts/Tools/gen_assets.py
 """
@@ -339,6 +342,87 @@ def make_flute(rng, sr=44100):
         w.writeframes(pcm.tobytes())
 
 
+# ---------------------------------------------------------------------------
+# Audio: SFX (CP04) - air horn, tourist scream, cow moo
+# ---------------------------------------------------------------------------
+
+def _write_wav(path, y, sr=44100):
+    y = y / (np.max(np.abs(y)) * 1.05 + 1e-9)
+    with wave.open(str(path), "wb") as w:
+        w.setnchannels(1)
+        w.setsampwidth(2)
+        w.setframerate(sr)
+        w.writeframes((y * 32767).astype("<i2").tobytes())
+
+
+def _resonator(x, freq, bw, sr):
+    """2-pole resonant band-pass (formant)."""
+    r = math.exp(-math.pi * bw / sr)
+    a1, a2 = -2 * r * math.cos(2 * math.pi * freq / sr), r * r
+    g = (1 - r * r) * 0.5
+    y = np.zeros_like(x)
+    y1 = y2 = 0.0
+    for i, xi in enumerate(x):
+        yi = g * xi - a1 * y1 - a2 * y2
+        y[i] = yi
+        y2, y1 = y1, yi
+    return y
+
+
+def _glottal(f0, sr, rng, jitter=0.01):
+    """Band-limited-ish sawtooth source following an f0 contour."""
+    f = f0 * (1 + jitter * rng.normal(size=len(f0)).cumsum() / np.sqrt(np.arange(1, len(f0) + 1)))
+    phase = np.cumsum(f) / sr
+    saw = 2 * (phase - np.floor(phase)) - 1
+    return saw - np.convolve(saw, np.ones(4) / 4, mode="same") * 0.6
+
+
+def _voice(f0, formants, sr, rng, breath=0.08):
+    src = _glottal(f0, sr, rng) + rng.normal(size=len(f0)) * breath
+    out = np.zeros_like(src)
+    for freq, bw, gain in formants:
+        out += gain * _resonator(src, freq, bw, sr)
+    return out
+
+
+def make_sfx(rng, sr=44100):
+    out = OUT / "Audio"
+    out.mkdir(parents=True, exist_ok=True)
+
+    # Thaco dump-truck air horn: two detuned reeds, saturated, with valley echo.
+    t = np.arange(int(1.9 * sr)) / sr
+    env = np.clip(t / 0.04, 0, 1) * np.clip((1.55 - t) / 0.25, 0, 1)
+    drop = 1 - 0.03 * np.clip((t - 1.2) / 0.35, 0, 1)
+    horn = np.zeros_like(t)
+    for f in (311.0, 392.0, 466.0):
+        ph = 2 * np.pi * np.cumsum(f * drop * (1 + 0.003 * np.sin(2 * np.pi * 6 * t))) / sr
+        horn += sum(np.sin(k * ph) / k for k in range(1, 9))
+    horn = np.tanh(horn * 1.4) * env
+    for d, gain in ((0.35, 0.35), (0.8, 0.2)):
+        k = int(d * sr)
+        horn[k:] += horn[:-k] * gain
+    _write_wav(out / "SW_HG_AirHorn.wav", horn, sr)
+
+    # Tourist scream "aaaah!": two voices, rising then falling pitch, vowel /a/.
+    n = int(1.7 * sr)
+    t = np.arange(n) / sr
+    env = np.clip(t / 0.06, 0, 1) * np.clip((1.7 - t) / 0.5, 0, 1)
+    contour = np.interp(t, [0, 0.25, 0.9, 1.7], [1.0, 1.35, 1.25, 0.8])
+    vib = 1 + 0.03 * np.sin(2 * np.pi * 7.5 * t)
+    a_formants = [(820, 90, 1.0), (1220, 110, 0.6), (2900, 160, 0.25)]
+    scream = _voice(420 * contour * vib, a_formants, sr, rng, 0.15) + \
+        0.8 * _voice(260 * contour * vib, [(760, 90, 1.0), (1150, 110, 0.55), (2600, 160, 0.2)], sr, rng, 0.12)
+    _write_wav(out / "SW_HG_Scream.wav", scream * env, sr)
+
+    # Cow "mooo": low f0 sliding down, closed /u/ opening to /o/.
+    n = int(2.2 * sr)
+    t = np.arange(n) / sr
+    env = np.clip(t / 0.25, 0, 1) * np.clip((2.2 - t) / 0.6, 0, 1)
+    f0 = np.interp(t, [0, 0.4, 1.6, 2.2], [118, 128, 104, 92])
+    moo = _voice(f0, [(320, 80, 1.0), (760, 100, 0.5), (2300, 200, 0.08)], sr, rng, 0.04)
+    _write_wav(out / "SW_HG_Moo.wav", moo * env, sr)
+
+
 def main():
     t0 = time.time()
     rng = np.random.default_rng(SEED)
@@ -347,6 +431,7 @@ def main():
     make_meshes(rng)
     print(f"meshes {time.time() - t0:.1f}s")
     make_flute(rng)
+    make_sfx(rng)
     print(f"audio {time.time() - t0:.1f}s -> {OUT}")
 
 

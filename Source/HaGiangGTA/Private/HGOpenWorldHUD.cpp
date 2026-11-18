@@ -5,6 +5,7 @@
 #include "Engine/Font.h"
 #include "GameFramework/PlayerController.h"
 #include "HGPlayerCharacter.h"
+#include "HGHappyWaterSubsystem.h"
 #include "HGVehicleBase.h"
 #include "HGViewpointActor.h"
 
@@ -76,6 +77,16 @@ void AHGOpenWorldHUD::DrawHUD()
 	{
 		const FString Prompt = FString::Printf(TEXT("[V]  FLYCAM  -  %s"), *Near->ViewpointName.ToString());
 		DrawText(Prompt, FLinearColor(1.f, 0.82f, 0.25f), 30.f * S, 70.f * S, SmallFont, 1.5f * S);
+	}
+
+	if (const UHGHappyWaterSubsystem* HW = GetWorld()->GetSubsystem<UHGHappyWaterSubsystem>())
+	{
+		if (HW->IsActive())
+		{
+			const float Pulse = 0.75f + 0.25f * FMath::Sin(GetWorld()->GetTimeSeconds() * 8.f);
+			DrawText(FString::Printf(TEXT("HAPPY WATER!  NITRO x2  -  LAI NGUOC  %2.0fs"), HW->GetRemaining()),
+				FLinearColor(1.f, 0.6f * Pulse, 0.1f, 1.f), 30.f * S, 110.f * S, LargeFont, 1.3f * S);
+		}
 	}
 
 	// Altitude: world Z (cm) == metres above sea level (see gen_heightmap.py).

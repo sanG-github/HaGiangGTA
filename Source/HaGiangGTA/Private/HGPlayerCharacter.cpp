@@ -13,6 +13,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "HaGiangGTA.h"
 #include "HGInputFactory.h"
+#include "HGHappyWaterSubsystem.h"
 #include "HGVehicleBase.h"
 #include "HGViewpointActor.h"
 #include "HGWaterBody.h"
@@ -165,7 +166,14 @@ void AHGPlayerCharacter::Move(const FInputActionValue& Value)
 	{
 		return;
 	}
-	const FVector2D Axis = Value.Get<FVector2D>();
+	FVector2D Axis = Value.Get<FVector2D>();
+	if (const UHGHappyWaterSubsystem* HW = GetWorld()->GetSubsystem<UHGHappyWaterSubsystem>())
+	{
+		if (HW->AreControlsInverted())
+		{
+			Axis = -Axis; // rượu ngô
+		}
+	}
 	const FRotator YawRot(0.f, Controller->GetControlRotation().Yaw, 0.f);
 	const FVector Forward = FRotationMatrix(YawRot).GetUnitAxis(EAxis::X);
 	const FVector Right = FRotationMatrix(YawRot).GetUnitAxis(EAxis::Y);
@@ -208,8 +216,10 @@ void AHGPlayerCharacter::SprintOff(const FInputActionValue& /*Value*/)
 void AHGPlayerCharacter::ApplyMaxSpeed()
 {
 	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
-	MoveComp->MaxWalkSpeed = bSprinting ? SprintSpeed : WalkSpeed;
-	MoveComp->MaxFlySpeed = bSprinting ? SwimSprintSpeed : SwimSpeed;
+	const UHGHappyWaterSubsystem* HW = GetWorld() ? GetWorld()->GetSubsystem<UHGHappyWaterSubsystem>() : nullptr;
+	const float Nitro = HW ? HW->GetSpeedMultiplier() : 1.f;
+	MoveComp->MaxWalkSpeed = (bSprinting ? SprintSpeed : WalkSpeed) * Nitro;
+	MoveComp->MaxFlySpeed = (bSprinting ? SwimSprintSpeed : SwimSpeed) * Nitro;
 }
 
 void AHGPlayerCharacter::ToggleFlycam(const FInputActionValue& /*Value*/)
@@ -258,6 +268,7 @@ void AHGPlayerCharacter::Tick(float DeltaSeconds)
 	}
 	UpdateSwimming(DeltaSeconds);
 	UpdateFocusedVehicle();
+	ApplyMaxSpeed(); // Happy Water can change the multiplier at any time
 }
 
 void AHGPlayerCharacter::UpdateFocusedVehicle()
