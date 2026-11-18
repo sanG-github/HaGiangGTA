@@ -198,16 +198,16 @@ def build_golden_hour(tag, folder):
     clouds' seen from the pass - while the VolumetricCloud layer sits above the peaks.
     (Composition checked with Scripts/Tools/render_viewpoints.py.)"""
     # Bright dry-season afternoon like the reference photos: sun 38 deg up from the south-east.
-    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun", (0, 0, 200000), (-52.0, 100.0, 0), tag, folder)
+    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun", (0, 0, 200000), (-62.0, 95.0, 0), tag, folder)   # near-midday, like the photos
     sc = sun.get_component_by_class(unreal.DirectionalLightComponent)
     sc.set_mobility(unreal.ComponentMobility.MOVABLE)
     for k, v in (("intensity", 10.0), ("use_temperature", True), ("temperature", 5600.0),
                  ("atmosphere_sun_light", True), ("cast_cloud_shadows", True),
                  ("enable_light_shaft_bloom", True), ("enable_light_shaft_occlusion", True),
                  ("bloom_scale", 0.25), ("volumetric_scattering_intensity", 1.6),
-                 # Cheap shadows for M1: 3 cascades to 120 m, distance-field shadows beyond (to 3 km).
-                 ("dynamic_shadow_cascades", 3), ("dynamic_shadow_distance_movable_light", 12000.0),
-                 ("use_ray_traced_distance_field_shadows", True), ("distance_field_shadow_distance", 300000.0)):
+                 # M1: 3 cascaded shadow maps out to 400 m; no distance-field shadows (banding on steep landscape).
+                 ("dynamic_shadow_cascades", 3), ("dynamic_shadow_distance_movable_light", 40000.0),
+                 ("cascade_distribution_exponent", 3.0), ("use_ray_traced_distance_field_shadows", False)):
         try:
             sc.set_editor_property(k, v)
         except Exception as exc:  # property names differ slightly between engine versions
@@ -241,13 +241,13 @@ def build_golden_hour(tag, folder):
     fog = hg.spawn_actor(unreal.ExponentialHeightFog, "ValleyMist", (0, 0, 82000), (0, 0, 0), tag, folder)
     fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
     # UE falloff is per 1000 uu: 0.08 -> density e-folds every ~125 m above the fog actor.
-    for k, v in (("fog_density", 0.008), ("fog_height_falloff", 0.06),
+    for k, v in (("fog_density", 0.0035), ("fog_height_falloff", 0.05),
                  ("fog_inscattering_luminance", unreal.LinearColor(0.32, 0.38, 0.45, 1.0)),
                  ("directional_inscattering_luminance", unreal.LinearColor(0.9, 0.6, 0.35, 1.0)),
                  ("directional_inscattering_exponent", 6.0),
                  ("enable_volumetric_fog", True), ("volumetric_fog_scattering_distribution", 0.65),
                  ("volumetric_fog_extinction_scale", 1.2), ("volumetric_fog_distance", 25000.0),
-                 ("fog_max_opacity", 0.92), ("start_distance", 300.0)):
+                 ("fog_max_opacity", 0.75), ("start_distance", 1500.0)):
         try:
             fc.set_editor_property(k, v)
         except Exception as exc:
@@ -370,6 +370,8 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
     ranges = hg.spawn_mesh("DistantRanges", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantRanges.SM_HG_DistantRanges",
                            (0, 0, 60000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
     ranges.static_mesh_component.set_editor_property("cast_shadow", False)
+    origin, extent = ranges.get_actor_bounds(False)
+    hg.log(f"DistantRanges bounds: origin {origin} extent {extent}")
     spawn_scatter("Scatter_chevrons", meshes["SM_HG_Chevron"], mats["chevron"], scatter.get("chevrons", []), tag, folder,
                   cull=(20000.0, 30000.0), collision=True, extra_tags=("RoadPosts",))
     spawn_scatter("Scatter_poles", meshes["SM_HG_UtilityPole"], mats["pole"], scatter.get("poles", []), tag, folder,

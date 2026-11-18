@@ -81,15 +81,14 @@ def import_textures(force: bool = False) -> dict:
         if tex is None:
             src = os.path.join(hg.project_dir(), "Generated", "Assets", "Textures", f"{name}.png")
             tex = _import(src, folder, name)
+        # Always (re)apply settings so older imports get fixed too. All non-normal textures are
+        # TC_Masks (linear) -> sampled with the Masks sampler in hg_lib.materials.
+        want_cs = unreal.TextureCompressionSettings.TC_NORMALMAP if kind == "normal" else unreal.TextureCompressionSettings.TC_MASKS
+        if tex.get_editor_property("compression_settings") != want_cs or tex.get_editor_property("srgb"):
             tex.set_editor_property("srgb", False)
-            if name == "T_HG_PathMask":
-                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_GRAYSCALE)
-                tex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_FROM_TEXTURE_GROUP)
+            tex.set_editor_property("compression_settings", want_cs)
             if kind == "normal":
-                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)
                 tex.set_editor_property("flip_green_channel", True)
-            elif name != "T_HG_PathMask":
-                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)
             unreal.EditorAssetLibrary.save_loaded_asset(tex)
         out[name] = tex
     return out

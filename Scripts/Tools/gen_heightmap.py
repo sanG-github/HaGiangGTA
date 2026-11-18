@@ -335,8 +335,8 @@ def canyon_params(y):
 
     # Tu San narrows (the 1.7 km gorge under Ma Pi Leng, y ~ -600..600) have near-vertical walls;
     # elsewhere the canyon is a steep V of vegetated slopes (~35-45 deg), as in the photos.
-    W = smooth_interp([420, 380, 300, 300, 440, 440])
-    k = smooth_interp([0.95, 0.85, 0.45, 0.45, 0.8, 0.8])
+    W = smooth_interp([520, 470, 300, 300, 430, 430])     # wider V outside the narrows (~40 deg slopes)
+    k = smooth_interp([1.0, 1.0, 0.45, 0.45, 0.95, 0.95])
     rim = smooth_interp([1250, 1245, 1235, 1235, 1260, 1260])
     return W.astype(np.float32), k.astype(np.float32), rim.astype(np.float32)
 
@@ -443,7 +443,7 @@ def thamma_hillside():
     return hill, (mx * my).astype(np.float32)
 
 
-def droplet_erosion(h, rng, drops=800_000, batch=200_000, steps=70):
+def droplet_erosion(h, rng, drops=450_000, batch=150_000, steps=60):
     """Vectorised particle hydraulic erosion on the coarse grid (heights in metres)."""
     # Work in scaled units (metres / 20) so slopes look like Lague's 0..1 heightfields: stable rates.
     scale = 20.0
@@ -548,7 +548,7 @@ def generate():
 
     # --- hydraulic erosion: gullies, debris fans, softened valley floors ---
     eroded = droplet_erosion(coarse, rng)
-    delta = blur3(eroded - coarse)
+    delta = blur3(blur3(eroded - coarse)) * 0.8         # softer: gullies, not melted blobs
     print(f"erosion {time.time() - t0:.1f}s (mean |dz| {np.abs(delta).mean():.2f} m, max cut {delta.min():.1f} m)")
     height = upsample(coarse + delta, N)
     del coarse, eroded, delta, base, karst, relief, hill, hill_mask, karst_mask, road_c
@@ -679,7 +679,7 @@ def generate():
                         "location_cm": cm3(*pad_end, dock_z)},
         },
         "spawns": {
-            "player_start": {"location_cm": cm3(road_xy[start_i, 0], road_xy[start_i, 1] + 6.0, road_z[start_i] + 1.2),
+            "player_start": {"location_cm": cm3(road_xy[start_i, 0], road_xy[start_i, 1] + 2.0, road_z[start_i] + 1.6),
                              "yaw": road_heading(start_i)},
             "bikes": [
                 {"location_cm": cm3(road_xy[start_i + 4, 0], road_xy[start_i + 4, 1], road_z[start_i + 4] + 0.6),

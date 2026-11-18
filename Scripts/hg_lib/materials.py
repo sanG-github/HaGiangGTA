@@ -169,13 +169,15 @@ def terrain(tex) -> unreal.Material:
     lush = g.lerp(g.scalar("CanyonGreenness", 0.5), 1.0,
                   g.saturate(g.mul(g.sub(g.scalar("LushWestX", -20000.0), x), 1.0 / 90000.0)))
 
-    dry = g.lerp(g.color("DryGrass", (0.16, 0.1, 0.09)), g.color("DryKhaki", (0.17, 0.13, 0.08)), (n_mid, "G"))
-    green = g.lerp(g.color("Shrub", (0.022, 0.055, 0.017)), g.color("ShrubLight", (0.055, 0.1, 0.03)), (n_fine, "G"))
+    dry = g.lerp(g.color("DryGrass", (0.2, 0.13, 0.115)), g.color("DryKhaki", (0.2, 0.155, 0.095)), (n_mid, "G"))
+    green = g.lerp(g.color("Shrub", (0.015, 0.04, 0.012)), g.color("ShrubLight", (0.045, 0.085, 0.025)), (n_fine, "G"))
     green_amt = g.saturate(g.add(g.add(g.sub(g.mul(lush, 1.5), 0.62), g.mul(g.sub((n_far, "R"), 0.5), 1.3)),
                                  g.mul(g.sub((n_fine, "R"), 0.5), 0.7)))
     # Shrub speckle (3-8 m clumps): the dotted look of the dry Nho Que slopes, readable from far away.
     n_dots = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 900.0))
-    dots = g.saturate(g.mul(g.sub((n_dots, "G"), g.sub(0.66, g.mul(lush, 0.2))), 7.0))
+    dots = g.saturate(g.mul(g.sub((n_dots, "G"), g.sub(0.6, g.mul(lush, 0.2))), 9.0))
+    n_dots2 = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 330.0))
+    dots = g.saturate(g.add(dots, g.mul(g.saturate(g.mul(g.sub((n_dots2, "R"), 0.62), 9.0)), 0.8)))
     # Greener lower slopes near the water (photos): +shrubs below ~800 m.
     low = g.saturate(g.mul(g.sub(80000.0, z), 1.0 / 8000.0))
     green_amt = g.saturate(g.add(g.add(green_amt, dots), g.mul(low, 0.35)))
@@ -275,10 +277,10 @@ def river_water(tex) -> unreal.Material:
     n2 = panned(700.0, -0.011, 0.003)
     normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), g.add(n1, n2), g.scalar("WaveStrength", 0.22)))
     tint = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 6000.0))
-    col = g.lerp(g.color("Turquoise", (0.025, 0.21, 0.2)), g.color("TurquoiseLight", (0.04, 0.28, 0.25)), (tint, "R"))
+    col = g.lerp(g.color("Turquoise", (0.012, 0.12, 0.11)), g.color("TurquoiseLight", (0.02, 0.16, 0.14)), (tint, "R"))
     g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
-    g.out(g.scalar("Roughness", 0.06), unreal.MaterialProperty.MP_ROUGHNESS)
-    g.out(g.const(0.4), unreal.MaterialProperty.MP_SPECULAR)
+    g.out(g.scalar("Roughness", 0.09), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.const(0.3), unreal.MaterialProperty.MP_SPECULAR)
     g.out(normal, unreal.MaterialProperty.MP_NORMAL)
     return g.finish()
 
@@ -332,9 +334,11 @@ def road_post() -> unreal.Material:
     return g.finish()
 
 
-def foliage(tex, name, dark, light, rough=0.85):
+def foliage(tex, name, dark, light, rough=0.85, two_sided=False):
     """Leaf / flower clumps: colour varies per instance and with world noise, light normal detail."""
     g = Graph(name)
+    if two_sided:
+        g.mat.set_editor_property("two_sided", True)
     wp = g.world_pos()
     n = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 120.0))
     rnd = g.node(unreal.MaterialExpressionPerInstanceRandom)
@@ -414,5 +418,5 @@ def build_all(tex) -> dict:
         "roof_grey": metal("M_HG_RoofGrey", (0.32, 0.33, 0.34), 0.5),
         "roof_green": metal("M_HG_RoofGreen", (0.06, 0.24, 0.13), 0.55),
         "roof_blue": metal("M_HG_RoofBlue", (0.07, 0.17, 0.34), 0.55),
-        "ranges": foliage(tex, "M_HG_DistantRanges", (0.05, 0.08, 0.05), (0.09, 0.12, 0.08), 0.95),
+        "ranges": foliage(tex, "M_HG_DistantRanges", (0.05, 0.08, 0.05), (0.09, 0.12, 0.08), 0.95, two_sided=True),
     }

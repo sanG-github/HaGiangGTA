@@ -109,7 +109,9 @@ class Shooter:
             unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(MAP)
             # Editor-only helpers (camera proxy meshes, trigger spheres) must not show up in the shots.
             for a in unreal.get_editor_subsystem(unreal.EditorActorSubsystem).get_all_level_actors():
-                if isinstance(a, (unreal.HGViewpointActor, unreal.PlayerStart)):
+                # NPCs / vehicles are only painted at BeginPlay (dynamic materials): hide them in editor shots.
+                if isinstance(a, (unreal.HGViewpointActor, unreal.PlayerStart, unreal.HGTouristNPC,
+                                  unreal.HGVehicleBase, unreal.HGCowActor, unreal.HGHappyWaterPickup)):
                     a.set_is_temporarily_hidden_in_editor(True)
             self.state, self.wait = "warm", 0
             return
