@@ -574,11 +574,20 @@ namespace HGPeople
 			const FVector Nape = J.NeckA + FRotator(-J.TorsoPitch, 0.f, 0.f).RotateVector(FVector(-7.f, 0.f, 3.f));
 			Rig.ScarfTail = FHGMeshKit::AddComponent(Owner, Rig.Body, Tail, *(Name.ToString() + TEXT("_Scarf")), Nape);
 		}
+		// Render-thread budget: people stop drawing at 150 m; only the core and the legs cast shadows (heads,
+		// arms and scarves add a shadow draw per part per cascade for a few pixels of shadow).
+		for (UStaticMeshComponent* C : { Rig.Head, Rig.Arm[0], Rig.Arm[1], Rig.ScarfTail })
+		{
+			if (C)
+			{
+				C->SetCastShadow(false);
+			}
+		}
 		for (UStaticMeshComponent* C : { Rig.Body, Rig.Head, Rig.Arm[0], Rig.Arm[1], Rig.Leg[0], Rig.Leg[1], Rig.ScarfTail })
 		{
 			if (C)
 			{
-				C->SetCullDistance(25000.f);
+				C->SetCullDistance(15000.f);
 			}
 		}
 		return Rig;
@@ -612,13 +621,23 @@ void FHGPersonRig::Animate(AActor* Owner, float DeltaSeconds)
 		bNear = true;
 		if (APlayerCameraManager* Cam = Owner ? UGameplayStatics::GetPlayerCameraManager(Owner, 0) : nullptr)
 		{
-			bNear = FVector::DistSquared(Cam->GetCameraLocation(), Body->GetComponentLocation()) < FMath::Square(6000.f);
+			const float D2 = FVector::DistSquared(Cam->GetCameraLocation(), Body->GetComponentLocation());
+			bNear = D2 < FMath::Square(6000.f);
+			bClose = D2 < FMath::Square(2000.f);
 		}
 	}
 	if (!bNear)
 	{
 		return;
 	}
+	// Past 20 m the pose updates at half rate (each update re-sends every part's transform to the renderer).
+	PendingDt += DeltaSeconds;
+	if (!bClose && (++FrameCounter & 1))
+	{
+		return;
+	}
+	DeltaSeconds = PendingDt;
+	PendingDt = 0.f;
 	const float T = Clock + IdleSeed;
 	FVector D[2] = { Rest[0], Rest[1] };
 	float ArmRoll[2] = { 0.f, 0.f };

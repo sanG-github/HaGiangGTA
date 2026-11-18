@@ -156,8 +156,8 @@ void AHGTruckPawn::UpdateVisuals(float DeltaSeconds, float Steer)
 
 void AHGTruckPawn::BuildKit()
 {
-	using FLC = FLinearColor;
-	const FLC Dark(0.015f, 0.015f, 0.016f), Steel(0.3f, 0.31f, 0.32f), Glass(0.02f, 0.03f, 0.035f), Chrome(0.7f, 0.7f, 0.72f);
+	using FTC = FLinearColor;
+	const FTC Dark(0.015f, 0.015f, 0.016f), Steel(0.3f, 0.31f, 0.32f), Glass(0.02f, 0.03f, 0.035f);
 	UStaticMesh* BodyMesh = FHGMeshKit::Cached(TEXT("SM_HGTruckBody"), [&](FHGMeshKit& K)
 	{
 		// Chassis, fuel tank, mudguards.
@@ -179,11 +179,11 @@ void AHGTruckPawn::BuildKit()
 			}
 		}
 		// Cab-over cab (tinted blue), roof, white belt line.
-		K.Paint(FLC::White, HGSurf::Gloss, true);
+		K.Paint(FTC::White, HGSurf::Gloss, true);
 		K.Box(FVector(278.f, 0.f, 168.f), FVector(170.f, 236.f, 150.f));
 		K.Box(FVector(270.f, 0.f, 262.f), FVector(150.f, 230.f, 40.f), FRotator(-4.f, 0.f, 0.f));
 		K.Ellipsoid(FVector(265.f, 0.f, 282.f), FVector(78.f, 114.f, 10.f), FRotator::ZeroRotator, 12, 4, 0.f);
-		K.Paint(FLC(0.8f, 0.8f, 0.78f), HGSurf::Gloss);
+		K.Paint(FTC(0.8f, 0.8f, 0.78f), HGSurf::Gloss);
 		K.Box(FVector(278.f, 0.f, 192.f), FVector(172.f, 238.f, 6.f));
 		// Windscreen, side windows, door seams, step.
 		K.Paint(Glass, HGSurf::Chrome);
@@ -202,22 +202,22 @@ void AHGTruckPawn::BuildKit()
 		{
 			K.Box(FVector(366.f, 0.f, 122.f + i * 9.f), FVector(2.f, 146.f, 2.5f));
 		}
-		K.Paint(FLC(0.55f, 0.55f, 0.55f), HGSurf::Satin);
+		K.Paint(FTC(0.55f, 0.55f, 0.55f), HGSurf::Satin);
 		K.Box(FVector(370.f, 0.f, 88.f), FVector(16.f, 244.f, 28.f));
 		for (const float S : { -1.f, 1.f })
 		{
-			K.Paint(FLC(0.85f, 0.85f, 0.82f), HGSurf::Gloss);
+			K.Paint(FTC(0.85f, 0.85f, 0.82f), HGSurf::Gloss);
 			K.Box(FVector(366.f, S * 88.f, 115.f), FVector(3.f, 34.f, 15.f));
-			K.Paint(FLC(0.85f, 0.4f, 0.02f), HGSurf::Gloss);
+			K.Paint(FTC(0.85f, 0.4f, 0.02f), HGSurf::Gloss);
 			K.Box(FVector(366.f, S * 112.f, 115.f), FVector(3.f, 10.f, 15.f));
 			K.Paint(Dark, HGSurf::Satin);
 			K.Tube(FVector(345.f, S * 118.f, 250.f), FVector(355.f, S * 142.f, 250.f), 1.2f, 1.2f, 5, false);
 			K.Box(FVector(356.f, S * 145.f, 228.f), FVector(4.f, 14.f, 34.f));
 		}
 		// Dump body with side ribs and a gravel load.
-		K.Paint(FLC(0.42f, 0.34f, 0.08f), HGSurf::Satin);
+		K.Paint(FTC(0.42f, 0.34f, 0.08f), HGSurf::Satin);
 		K.Box(FVector(-110.f, 0.f, 168.f), FVector(500.f, 246.f, 120.f));
-		K.Paint(FLC(0.32f, 0.26f, 0.06f), HGSurf::Satin);
+		K.Paint(FTC(0.32f, 0.26f, 0.06f), HGSurf::Satin);
 		for (int32 i = 0; i < 8; ++i)
 		{
 			for (const float S : { -1.f, 1.f })
@@ -226,18 +226,18 @@ void AHGTruckPawn::BuildKit()
 			}
 		}
 		K.Box(FVector(-110.f, 0.f, 230.f), FVector(504.f, 250.f, 6.f));
-		K.Paint(FLC(0.33f, 0.27f, 0.2f));
+		K.Paint(FTC(0.33f, 0.27f, 0.2f));
 		K.Ellipsoid(FVector(-110.f, 0.f, 228.f), FVector(240.f, 115.f, 34.f), FRotator::ZeroRotator, 14, 6, 0.f);
-		K.Paint(FLC(0.25f, 0.22f, 0.18f));
+		K.Paint(FTC(0.25f, 0.22f, 0.18f));
 		for (int32 i = 0; i < 9; ++i)
 		{
 			K.Ellipsoid(FVector(-300.f + i * 45.f, (i % 3 - 1) * 50.f, 248.f + (i % 2) * 6.f), FVector(16.f, 13.f, 9.f), FRotator(0.f, i * 40.f, 0.f), 6, 4);
 		}
 		// Rear lamps and plate.
-		K.Paint(FLC(0.6f, 0.03f, 0.02f), HGSurf::Gloss);
+		K.Paint(FTC(0.6f, 0.03f, 0.02f), HGSurf::Gloss);
 		K.Box(FVector(-361.f, -100.f, 105.f), FVector(3.f, 22.f, 10.f));
 		K.Box(FVector(-361.f, 100.f, 105.f), FVector(3.f, 22.f, 10.f));
-		K.Paint(FLC(0.8f, 0.7f, 0.1f), HGSurf::Satin);
+		K.Paint(FTC(0.8f, 0.7f, 0.1f), HGSurf::Satin);
 		K.Box(FVector(-362.f, 0.f, 100.f), FVector(2.f, 52.f, 18.f));
 	});
 	auto MakeWheel = [&](bool bDual)
@@ -246,12 +246,12 @@ void AHGTruckPawn::BuildKit()
 		{
 			for (const float Y : bDual ? TArray<float>{ -15.f, 15.f } : TArray<float>{ 0.f })
 			{
-				K.Paint(FLC(0.02f, 0.02f, 0.02f));
+				K.Paint(FTC(0.02f, 0.02f, 0.02f));
 				K.Torus(FTransform(FVector(0.f, Y, 0.f)), 37.f, 13.f, 24, 8);
-				K.Paint(FLC(0.45f, 0.45f, 0.46f), HGSurf::Satin);
+				K.Paint(FTC(0.45f, 0.45f, 0.46f), HGSurf::Satin);
 				K.Tube(FVector(0.f, Y - 10.f, 0.f), FVector(0.f, Y + 10.f, 0.f), 27.f, 27.f, 16, true);
 			}
-			K.Paint(FLC(0.2f, 0.2f, 0.2f), HGSurf::Satin);
+			K.Paint(FTC(0.2f, 0.2f, 0.2f), HGSurf::Satin);
 			K.Tube(FVector(0.f, bDual ? -27.f : -13.f, 0.f), FVector(0.f, bDual ? 27.f : 13.f, 0.f), 9.f, 9.f, 8, true);
 		});
 	};
@@ -263,7 +263,7 @@ void AHGTruckPawn::BuildKit()
 	KitBody->SetCullDistance(60000.f);
 	if (UMaterialInstanceDynamic* MID = KitBody->CreateDynamicMaterialInstance(0, FHGMeshKit::VertexColorMaterial()))
 	{
-		const FLC Cabs[3] = { FLC(0.03f, 0.16f, 0.5f), FLC(0.04f, 0.22f, 0.1f), FLC(0.6f, 0.6f, 0.58f) };
+		const FTC Cabs[3] = { FTC(0.03f, 0.16f, 0.5f), FTC(0.04f, 0.22f, 0.1f), FTC(0.6f, 0.6f, 0.58f) };
 		MID->SetVectorParameterValue(TEXT("Tint"), Cabs[GetTypeHash(GetName()) % 3]);
 	}
 	const float WheelX[] = { 270.f, -90.f, -250.f };

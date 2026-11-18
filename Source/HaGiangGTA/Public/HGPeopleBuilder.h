@@ -64,6 +64,9 @@ struct HAGIANGGTA_API FHGPersonRig
 	float IdleSeed = 0.f;
 	float NearTimer = 0.f;
 	bool bNear = true;
+	bool bClose = true;
+	uint32 FrameCounter = 0;
+	float PendingDt = 0.f;
 	FVector Rest[2];           // arm rest directions (body frame)
 };
 

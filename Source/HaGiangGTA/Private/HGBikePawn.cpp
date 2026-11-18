@@ -298,7 +298,7 @@ void AHGBikePawn::BuildVisuals()
 		Rider == EHGPersonLook::EasyRider);
 	for (UStaticMeshComponent* C : { RiderRig.Body, RiderRig.Head, RiderRig.Arm[0], RiderRig.Arm[1], RiderRig.ScarfTail })
 	{
-		Keep(C, 25000.f);
+		Keep(C, 15000.f);
 	}
 	RiderRig.SetVisible(bRiderVisible);
 
@@ -310,7 +310,7 @@ void AHGBikePawn::BuildVisuals()
 	bPassengerShown = false;
 	for (UStaticMeshComponent* C : { PassengerRig.Body, PassengerRig.Head, PassengerRig.Arm[0], PassengerRig.Arm[1], PassengerRig.ScarfTail })
 	{
-		Keep(C, 25000.f);
+		Keep(C, 15000.f);
 	}
 	SetHasPassenger(bHasPassenger);
 	WaveTimer = 4.f + float(Seed % 9);
