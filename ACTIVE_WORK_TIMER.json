@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 17,
+  "active_work_seconds": 406,
   "cooldown_wait_seconds": 0,
   "state": "running",
-  "segment_started_at": 1794973192,
-  "current_branch": "main",
+  "segment_started_at": 1794973581,
+  "current_branch": "checkpoint/01-10min-greybox",
   "current_checkpoint": "cp-01-10min",
-  "last_completed_step": "git init + timer + readme",
-  "next_pending_step": "scaffold UE5.5 project",
+  "last_completed_step": "CP01 C++ greybox car + build_cp01.py",
+  "next_pending_step": "commit/tag/merge CP01",
   "pause_reason": null,
   "history": [
     {
@@ -21,6 +21,13 @@
       "active": 17,
       "done": "git init + timer + readme",
       "next": "scaffold UE5.5 project"
+    },
+    {
+      "t": 1794973581,
+      "event": "step",
+      "active": 406,
+      "done": "CP01 C++ greybox car + build_cp01.py",
+      "next": "commit/tag/merge CP01"
     }
   ]
 }

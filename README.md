@@ -18,7 +18,7 @@ git checkout cp-01-10min            # or any checkpoint tag / branch
    then open the `.uproject` and let UE compile the `HaGiangGTA` module.
 2. In the editor: **Tools → Execute Python Script…** → pick
    `Scripts/Checkpoints/build_cp0X.py` for that checkpoint.
-   (Or from the Output Log, Python mode: `exec(open('Scripts/Checkpoints/build_cp01.py').read())`.)
+   (Or in the Output Log, switch the command box to **Python** and type the script's full path.)
 3. The script creates/overwrites the checkpoint map under `/Game/Maps/` and
    saves it. Press **Play**.
 
