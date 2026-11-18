@@ -30,4 +30,13 @@ public:
 	/** Set (or clear) the material on an existing landscape and refresh it. */
 	UFUNCTION(BlueprintCallable, Category = "HaGiang|Editor")
 	static void SetLandscapeMaterial(ALandscape* Landscape, UMaterialInterface* Material);
+
+	/**
+	 * Keep every mip of the landscape heightmaps / weightmaps resident (NeverStream). Streamed heightmaps
+	 * are sampled from a coarse mip until the streamer catches up, so after any teleport (respawn, [R],
+	 * the playtest stages) the terrain showed 6-50 m stair-stepped terraces and flat slabs for a second or
+	 * two. 4033^2 heights x 4 B + mips is ~90 MB. Call before saving the level; returns textures changed.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "HaGiang|Editor")
+	static int32 PinLandscapeTextures();
 };

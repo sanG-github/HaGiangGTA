@@ -79,6 +79,9 @@ PHOTOREAL_STEPS = 9
 def finish_level(game_mode: str = GAME_MODE) -> None:
     hg.set_world_game_mode(game_mode)
     hg.editor_world().get_world_settings().set_editor_property("kill_z", 30000.0)   # river is at 420 m
+    # All heightmap mips resident: streamed ones showed stair-stepped terrain after every teleport.
+    if hasattr(unreal, "HGLandscapeBuilder"):
+        hg.log(f"Landscape textures pinned: {unreal.HGLandscapeBuilder.pin_landscape_textures()}")
     hg.save_current_level()
 
 
