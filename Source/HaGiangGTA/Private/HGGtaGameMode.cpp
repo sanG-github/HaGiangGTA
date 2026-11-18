@@ -706,6 +706,12 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		PlayIntroT += DeltaSeconds;
 		if (PlayIntroT < 0.2f) { PlaySetKey(EKeys::Enter, true); }
 		else { PlaySetKey(EKeys::Enter, false); }
+		if (PlayIntroT < 0.25f)
+		{
+			// Diagnostic: does the simulated Enter reach the player input at all while unpaused?
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    intro Enter t=%.2f: down %d, just pressed %d, pawn %s, paused %d"), PlayIntroT,
+				PC->IsInputKeyDown(EKeys::Enter), PC->WasInputKeyJustPressed(EKeys::Enter), PC->GetPawn() ? *PC->GetPawn()->GetClass()->GetName() : TEXT("-"), GetWorld()->IsPaused());
+		}
 		if (PlayIntroT > 0.6f && PlayIntroT < 1.2f && !bPlayIntroLogged)
 		{
 			if (const UHGMissionSubsystem* MSk = GetWorld()->GetSubsystem<UHGMissionSubsystem>())
