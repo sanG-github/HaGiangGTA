@@ -66,6 +66,13 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	float LoopRestartDistance = -1.f;
 
+	/**
+	 * Stretch of road (cm along the spline) the AI keeps to: it turns around at these ends instead of the
+	 * road ends. < 0 = no limit. Trucks use it to stay on QL4C (they never take the narrow Ta Lang road).
+	 */
+	UFUNCTION(BlueprintCallable, Category = "HaGiang|AI")
+	void SetAutoDriveRange(float MinCm, float MaxCm) { AutoDriveRangeMin = MinCm; AutoDriveRangeMax = MaxCm; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -81,12 +88,22 @@ protected:
 	/** AI saw something blocking the lane (trucks honk). */
 	virtual void OnAutoDriveObstacle(AActor* Obstacle) {}
 
-	/** Tightest radius (cm) of the road in the next LookCm, for speed limits and blind-curve horns. */
-	float GetMinRadiusAhead(float LookCm) const;
+	/** Tightest radius (cm) of the road in the next LookCm (sampled every StepCm), for speed limits and blind-curve horns. */
+	float GetMinRadiusAhead(float LookCm, float StepCm = 600.f) const;
+
+	/** Lane offset (cm, signed like AutoDriveLane) at a distance: shrunk on narrow roads so the body stays
+	 *  LaneEdgeMargin inside the edge (the 4 m Ta Lang concrete road has 2 m per direction, not 1.7 m + 0.6 m). */
+	float GetLaneOffsetAt(float DistanceCm) const;
 
 	UPROPERTY(EditAnywhere, Category = "AI") float AutoDriveLateralAccel = 380.f;   // cm/s^2 allowed in curves
-	UPROPERTY(EditAnywhere, Category = "AI") float AutoDriveLookahead = 1300.f;
 	UPROPERTY(EditAnywhere, Category = "AI") float ConvoyGap = 1000.f;
+	/** Lane keeping: cross-track gain (Stanley k) and how far ahead (seconds of travel) the road heading is read. */
+	UPROPERTY(EditAnywhere, Category = "AI") float LaneKeepGain = 1.5f;
+	UPROPERTY(EditAnywhere, Category = "AI") float LanePreviewSeconds = 0.3f;
+	/** Minimum gap (cm) between the side of the vehicle and the road edge when it drives its lane. */
+	UPROPERTY(EditAnywhere, Category = "AI") float LaneEdgeMargin = 30.f;
+	UPROPERTY(EditAnywhere, Category = "AI") float AutoDriveRangeMin = -1.f;
+	UPROPERTY(EditAnywhere, Category = "AI") float AutoDriveRangeMax = -1.f;
 
 	UPROPERTY(Transient) bool bAutoDrive = false;
 	UPROPERTY(Transient) TObjectPtr<AHGRoadSplineActor> AutoDriveRoad;

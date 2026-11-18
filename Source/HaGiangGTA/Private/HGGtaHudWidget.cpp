@@ -99,27 +99,27 @@ namespace
 
 void UHGGtaHudWidget::CacheRoad()
 {
-	if (RoadPoints.Num() > 0)
+	if (RoadLines.Num() > 0)
 	{
 		return;
 	}
-	// Minimap: the main route (longest road) - stubs would draw stray lines between polylines.
-	const AHGRoadSplineActor* Main = nullptr;
+	// Every road actor as its own polyline (joining them drew stray lines between the route and the QL4C
+	// stubs); the main route (longest) first. 6 m samples keep the 8 m Ta Lang hairpins readable.
+	TArray<const AHGRoadSplineActor*> Roads;
 	for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It)
 	{
-		if (!Main || It->GetRoadLength() > Main->GetRoadLength())
-		{
-			Main = *It;
-		}
+		Roads.Add(*It);
 	}
-	if (Main)
+	Roads.Sort([](const AHGRoadSplineActor& A, const AHGRoadSplineActor& B) { return A.GetRoadLength() > B.GetRoadLength(); });
+	for (const AHGRoadSplineActor* Road : Roads)
 	{
-		const USplineComponent* Spline = Main->GetSpline();
+		const USplineComponent* Spline = Road->GetSpline();
 		const float Len = Spline->GetSplineLength();
-		for (float D = 0.f; D <= Len; D += 1200.f)
+		TArray<FVector2D>& Line = RoadLines.AddDefaulted_GetRef();
+		for (float D = 0.f; D < Len + 600.f; D += 600.f)
 		{
-			const FVector P = Spline->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
-			RoadPoints.Add(FVector2D(P.X, P.Y));
+			const FVector P = Spline->GetLocationAtDistanceAlongSpline(FMath::Min(D, Len), ESplineCoordinateSpace::World);
+			Line.Add(FVector2D(P.X, P.Y));
 		}
 	}
 }
@@ -197,9 +197,14 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 		HappyRemaining = HW->GetRemaining();
 	}
 
+	// Minimap zoom: 350 m to the edge on foot / in the hairpins, out to 750 m at 90+ km/h on the long QL4C
+	// stretches of the 19.5 km route (the old fixed 400 m showed under 25 s of road at speed).
+	const float WantRange = FMath::GetMappedRangeValueClamped(FVector2D(25.f, 90.f), FVector2D(35000.f, 75000.f), SpeedKmh);
+	MapRange = FMath::FInterpTo(MapRange, WantRange, InDeltaTime, 1.5f);
+
 	// Minimap blips.
 	Blips.Reset();
-	const float RangeSq = FMath::Square(60000.f);
+	const float RangeSq = FMath::Square(MapRange * 1.5f);
 	const bool bBlink = FMath::Fmod(Time, 0.5f) < 0.25f;
 	for (TActorIterator<AActor> It(World); It; ++It)
 	{
@@ -319,7 +324,7 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	const float MY = H - 30.f * S - MapSize;
 	const float CX = MX + MapSize * 0.5f;
 	const float CY = MY + MapSize * 0.58f;
-	const float Scale = (MapSize * 0.5f) / 40000.f;   // 400 m to the edge
+	const float Scale = (MapSize * 0.5f) / MapRange;
 	Box(Out, L, G, MX - 4.f * S, MY - 4.f * S, MapSize + 8.f * S, MapSize + 8.f * S, FLinearColor(0.f, 0.f, 0.f, 0.85f));
 	Box(Out, L + 1, G, MX, MY, MapSize, MapSize, FLinearColor(0.12f, 0.17f, 0.12f, 0.85f));
 
@@ -335,14 +340,32 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	const FGeometry MapGeo = G.MakeChild(FVector2D(MapSize, MapSize), FSlateLayoutTransform(FVector2D(MX, MY)));
 	Out.PushClip(FSlateClippingZone(MapGeo));
 	{
-		TArray<FVector2f> Road;
-		Road.Reserve(RoadPoints.Num());
-		for (const FVector2D& P : RoadPoints)
+		// Only the parts of each road near the player (the route alone is ~3,200 samples).
+		const float CullSq = FMath::Square(MapRange * 1.6f);
+		for (int32 R = 0; R < RoadLines.Num(); ++R)
 		{
-			Road.Add(ToMap(P));
+			const float Width = R == 0 ? 1.f : 0.75f;   // QL4C stubs a little thinner than the route
+			TArray<FVector2f> Run;
+			auto Flush = [&]()
+			{
+				Lines(Out, L + 2, G, Run, FLinearColor(0.02f, 0.02f, 0.02f), 7.f * S * Width);
+				Lines(Out, L + 3, G, Run, FLinearColor(0.85f, 0.82f, 0.75f), 3.5f * S * Width);
+				Run.Reset();
+			};
+			for (const FVector2D& P : RoadLines[R])
+			{
+				if (FVector2D::DistSquared(P, PlayerXY) <= CullSq)
+				{
+					Run.Add(ToMap(P));
+				}
+				else if (Run.Num() > 0)
+				{
+					Run.Add(ToMap(P));   // finish the segment towards the edge
+					Flush();
+				}
+			}
+			Flush();
 		}
-		Lines(Out, L + 2, G, Road, FLinearColor(0.02f, 0.02f, 0.02f), 7.f * S);
-		Lines(Out, L + 3, G, Road, FLinearColor(0.85f, 0.82f, 0.75f), 3.5f * S);
 
 		for (const FBlip& B : Blips)
 		{
@@ -372,6 +395,19 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	}
 	Out.PopClip();
 	Text(Out, L + 8, G, FString::Printf(TEXT("%.0f m"), AltitudeM), MX + 8.f * S, MY + 6.f * S, Font(int32(14 * S)), FLinearColor(0.75f, 1.f, 0.75f));
+	{
+		// North marker on the rim of the rotating map (the real map has north = -Y).
+		const FVector2f N = ToMap(PlayerXY + FVector2D(0.0, -1.0e7));
+		const FVector2f C(CX, CY);
+		const FVector2f Dir = (N - C).GetSafeNormal();
+		const float Edge = MapSize * 0.5f - 12.f * S;
+		const float T = FMath::Min(Dir.X != 0.f ? FMath::Abs((Dir.X > 0.f ? MX + MapSize - 12.f * S - CX : CX - MX - 12.f * S) / Dir.X) : BIG_NUMBER,
+			Dir.Y != 0.f ? FMath::Abs((Dir.Y > 0.f ? MY + MapSize - 12.f * S - CY : CY - MY - 12.f * S) / Dir.Y) : BIG_NUMBER);
+		const FVector2f At = C + Dir * FMath::Min(T, Edge * 2.f);
+		const FSlateFontInfo NF = Font(int32(15 * S));
+		const FVector2D NS = Measure(TEXT("B"), NF);   // Bắc
+		Text(Out, L + 8, G, TEXT("B"), At.X - NS.X * 0.5f, At.Y - NS.Y * 0.5f, NF, FLinearColor(1.f, 0.35f, 0.3f));
+	}
 
 	// ---------------- Speedometer (bottom right) ----------------
 	const float SR = 110.f * S;

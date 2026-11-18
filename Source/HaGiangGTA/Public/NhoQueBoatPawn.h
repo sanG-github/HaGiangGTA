@@ -53,6 +53,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boat|AI")
 	float CruiseThrottle = 0.5f;
 
+	/** A cruise point counts as reached within this distance (cm). Must stay well under the point spacing
+	 *  (~30 m) or the boat skips points and cuts across the bends of the gorge onto the banks. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boat|AI")
+	float CruiseAcceptRadius = 1200.f;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual FVector GetExitLocation() const override;

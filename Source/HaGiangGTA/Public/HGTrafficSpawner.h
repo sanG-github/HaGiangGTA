@@ -30,6 +30,10 @@ struct FHGTruckSpec
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truck") float StartMeters = 6000.f;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truck") int32 Direction = -1;
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truck") float CruiseKmh = 38.f;
+	/** Stretch of road (metres) the truck ping-pongs on; < 0 = road end. Keeps trucks off the narrow
+	 *  Ta Lang concrete road (real trucks do not take its 8 m hairpins). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truck") float MinMeters = -1.f;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Truck") float MaxMeters = -1.f;
 };
 
 /**

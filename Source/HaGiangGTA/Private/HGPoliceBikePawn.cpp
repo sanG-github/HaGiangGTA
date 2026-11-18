@@ -83,12 +83,18 @@ void AHGPoliceBikePawn::ComputeAutoDriveInput(float DeltaSeconds, float& OutThro
 
 	const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
 	const float Dist = ToTarget.Size2D();
-	if (Dist > 5000.f)
+	// "Close" also needs the player close along the road: on the switchbacks the player can be 40 m away
+	// straight down the slope but 300 m away by road, and steering straight at them drives off the cliff.
+	const bool bCloseOnRoad = FMath::Abs(TargetRoadDistance - RoadDistance) < 8000.f;
+	if (Dist > 5000.f || !bCloseOnRoad)
 	{
-		// Far: race along the road.
+		// Far: race along the road (still braking for hairpins - only open throttle is floored).
 		AutoDriveCruise = MaxForwardSpeed;
 		Super::ComputeAutoDriveInput(DeltaSeconds, OutThrottle, OutSteer, OutHandbrake);
-		OutThrottle = FMath::Max(OutThrottle, 0.6f);
+		if (OutThrottle > 0.f)
+		{
+			OutThrottle = FMath::Max(OutThrottle, 0.6f);
+		}
 		return;
 	}
 

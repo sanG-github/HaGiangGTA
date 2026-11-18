@@ -12,6 +12,7 @@ import os
 import unreal
 
 from . import editor_utils as hg
+from . import placements
 
 ROAD_MESH_OFFSET_CM = -11.0   # landscape is carved 15 cm under the road profile; asphalt top 4 cm above it
 
@@ -166,7 +167,9 @@ def build_checkin_rings(layout, mat_ring, tag, folder):
 
 
 def build_vehicles(layout, tag, folder):
-    spawns = layout["spawns"]
+    """Parked Honda Wins + the dock cano / kayak. Positions go through placements.vehicle_spawns: bikes are
+    dropped onto the landscape, boats pushed off the slipway until the whole hull floats (validate_layout.py)."""
+    spawns = placements.vehicle_spawns(placements.ctx_for(layout))
     colors = [unreal.LinearColor(0.55, 0.02, 0.02, 1), unreal.LinearColor(0.05, 0.08, 0.35, 1),
               unreal.LinearColor(0.08, 0.08, 0.08, 1)]
     for i, bike in enumerate(spawns["bikes"]):
@@ -176,7 +179,7 @@ def build_vehicles(layout, tag, folder):
     for i, boat in enumerate(spawns["boats"]):
         x, y, z = boat["location_cm"]
         actor = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_{boat['type']}_{i:02d}", (x, y, z),
-                               (0, spawns["dock"]["yaw"] + 90, 0), tag, folder)
+                               (0, boat["yaw"], 0), tag, folder)
         boat_type = unreal.HGBoatType.CANO if boat["type"] == "Cano" else unreal.HGBoatType.KAYAK
         actor.set_editor_property("boat_type", boat_type)
         rerun(actor)
@@ -453,19 +456,14 @@ def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
 
 
 def build_river_traffic(layout, tag, folder):
-    """Ta Lang: green-roofed floating pontoons, moored tourist boats, and boats cruising the gorge."""
-    dock = layout["spawns"]["dock"]
-    dx, dy, _ = dock["location_cm"]
-    yaw = dock["yaw"]
-    fx, fy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
-    sx, sy = -fy, fx                                    # along the bank
+    """Ta Lang: green-roofed floating pontoons, moored tourist boats, and boats cruising the gorge.
+    Placement (placements.river_traffic) keeps every hull and deck on water deep enough for it: the reservoir
+    at the dock is only ~35 m wide, so the old fixed 30 m / 48 m offsets put the moored boats on the far bank."""
+    river = placements.river_traffic(placements.ctx_for(layout))
     water_z = layout["water"]["surface_z_cm"]
     deck = hg.color_material("MI_GB_PontoonDeck", (0.18, 0.16, 0.14))
     roof_green = hg.color_material("MI_GB_RoofGreen", (0.05, 0.25, 0.12))
-    for i in range(3):
-        along = (i - 1) * 2600.0
-        cx, cy = dx + fx * 3000 + sx * along, dy + fy * 3000 + sy * along
-        ryaw = yaw + 90
+    for i, (cx, cy, ryaw) in enumerate(river["pontoons"]):
         hg.box(f"Pontoon_{i}", (cx, cy, water_z + 30), (1800, 900, 60), yaw=ryaw, material=deck, tag=tag, folder=folder)
         hg.box(f"PontoonRoof_{i}", (cx, cy, water_z + 380), (1600, 800, 20), yaw=ryaw, material=roof_green, tag=tag,
                folder=folder, collision=False)
@@ -475,26 +473,26 @@ def build_river_traffic(layout, tag, folder):
             py_ = cy + ox_ * math.sin(r) + oy_ * math.cos(r)
             hg.spawn_mesh(f"PontoonPost_{i}_{k}", hg.CYLINDER, (px_, py_, water_z + 205), scale=(0.15, 0.15, 3.5),
                           material=deck, tag=tag, folder=folder, collision=False)
-    # Moored boats, side by side off the pontoons.
-    for i in range(6):
-        along = (i - 2.5) * 420.0
-        bx, by = dx + fx * 4800 + sx * along, dy + fy * 4800 + sy * along
-        boat = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_Moored_{i}", (bx, by, water_z), (0, yaw, 0), tag, folder)
+    # Moored boats alongside the pontoons.
+    for i, (bx, by, byaw) in enumerate(river["moored"]):
+        boat = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_Moored_{i}", (bx, by, water_z), (0, byaw, 0), tag, folder)
         boat.set_editor_property("boat_type", unreal.HGBoatType.CANO)
         rerun(boat)
-    # Cruising boats ping-pong along the river through the gorge.
-    river = layout["water"]["river_cm"]
-    pts = [unreal.Vector(p[0], p[1], water_z) for p in river[::8]]
-    n = len(pts)
-    for i, start in enumerate((int(n * 0.25), int(n * 0.45), int(n * 0.62))):
-        p0 = pts[start]
-        boat = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_Cruise_{i}", (p0.x, p0.y, water_z), (0, 90, 0), tag, folder)
+    # Cruising boats ping-pong along the navigable stretch of the reservoir through the gorge.
+    route = river["route"]
+    if len(route) < 2:
+        hg.warn("River traffic: no navigable cruise route (see Scripts/Tools/validate_layout.py)")
+        return
+    pts = [unreal.Vector(p[0], p[1], water_z) for p in route]
+    for i, start in enumerate(river["starts"]):
+        p0, p1 = route[start], route[min(start + 1, len(route) - 1)]
+        yaw = math.degrees(math.atan2(p1[1] - p0[1], p1[0] - p0[0]))
+        boat = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_Cruise_{i}", (p0[0], p0[1], water_z), (0, yaw, 0), tag, folder)
         boat.set_editor_property("boat_type", unreal.HGBoatType.CANO)
         boat.set_editor_property("cruise_points", pts)
         boat.set_editor_property("auto_cruise", True)
         boat.set_editor_property("cruise_throttle", 0.45 + 0.1 * i)
         rerun(boat)
-
 
 
 def build_set_dressing(scatter, meshes, mats, tag, folder):
