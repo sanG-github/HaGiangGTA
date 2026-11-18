@@ -1,0 +1,90 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "HGVehicleBase.h"
+#include "NhoQueBoatPawn.generated.h"
+
+class UStaticMeshComponent;
+
+UENUM(BlueprintType)
+enum class EHGBoatType : uint8
+{
+	/** Tourist motor boat (cano may du lich). */
+	Cano,
+	/** Two-seat paddle kayak. */
+	Kayak
+};
+
+/**
+ * Boat on the Nho Que river. Arcade water model: floats on the surface with
+ * a buoyancy spring, bow lifts with speed/throttle, rolls into turns, slides
+ * off the canyon walls and refuses to beach (needs MinDepth of water).
+ */
+UCLASS()
+class HAGIANGGTA_API ANhoQueBoatPawn : public AHGVehicleBase
+{
+	GENERATED_BODY()
+
+public:
+	ANhoQueBoatPawn();
+
+	virtual void Tick(float DeltaSeconds) override;
+	virtual void OnConstruction(const FTransform& Transform) override;
+	virtual float GetSpeedKmh() const override { return Speed * 0.036f; }
+	virtual bool IsWaterVehicle() const override { return true; }
+	virtual void ResetToSpawn() override;
+
+	UFUNCTION(BlueprintPure, Category = "HaGiang|Boat")
+	EHGBoatType GetBoatType() const { return BoatType; }
+
+	UFUNCTION(BlueprintPure, Category = "HaGiang|Boat")
+	bool IsFloating() const { return bFloating; }
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boat")
+	EHGBoatType BoatType = EHGBoatType::Cano;
+
+protected:
+	virtual void BeginPlay() override;
+	virtual FVector GetExitLocation() const override;
+
+	void ApplyBoatType();
+	UStaticMeshComponent* AddPart(FName Name, UStaticMesh* Mesh);
+	void SetPart(UStaticMeshComponent* Part, bool bVisible, const FVector& Location = FVector::ZeroVector,
+		const FRotator& Rotation = FRotator::ZeroRotator, const FVector& SizeCm = FVector(100.f));
+
+	/** Everything visual pitches/rolls under this (the collision box stays level). */
+	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
+	TObjectPtr<USceneComponent> HullRoot;
+
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Hull;
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Bow;
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Deck;
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Canopy;
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> CanopyPostL;
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> CanopyPostR;
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Motor;
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Paddle;
+
+	// ---- Tuning (set from BoatType) ----
+	UPROPERTY(EditAnywhere, Category = "Tuning") float MaxForwardSpeed = 1600.f;
+	UPROPERTY(EditAnywhere, Category = "Tuning") float MaxReverseSpeed = 300.f;
+	UPROPERTY(EditAnywhere, Category = "Tuning") float Acceleration = 500.f;
+	UPROPERTY(EditAnywhere, Category = "Tuning") float WaterDrag = 0.35f;        // 1/s
+	UPROPERTY(EditAnywhere, Category = "Tuning") float TurnRateDeg = 55.f;
+	UPROPERTY(EditAnywhere, Category = "Tuning") float BoostMultiplier = 1.35f;
+	UPROPERTY(EditAnywhere, Category = "Tuning") float Draft = 25.f;              // collision centre below surface
+	UPROPERTY(EditAnywhere, Category = "Tuning") float MinDepth = 70.f;
+	UPROPERTY(EditAnywhere, Category = "Tuning") float BowLiftDeg = 7.f;
+	UPROPERTY(EditAnywhere, Category = "Tuning") float TurnRollDeg = 9.f;
+
+private:
+	bool HasWaterDepthAt(const FVector& Location, float SurfaceZ) const;
+
+	float Speed = 0.f;
+	float HeadingYaw = 0.f;
+	float VerticalVelocity = 0.f;
+	float VisualPitch = 0.f;
+	float VisualRoll = 0.f;
+	float PaddlePhase = 0.f;
+	bool bFloating = false;
+};

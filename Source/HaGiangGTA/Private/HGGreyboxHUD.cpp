@@ -3,7 +3,7 @@
 #include "Engine/Canvas.h"
 #include "Engine/Engine.h"
 #include "Engine/Font.h"
-#include "HGGreyboxCarPawn.h"
+#include "HGGroundVehicle.h"
 
 void AHGGreyboxHUD::DrawHUD()
 {
@@ -21,7 +21,7 @@ void AHGGreyboxHUD::DrawHUD()
 
 	DrawText(TEXT("HA GIANG GTA  |  CP01 GREYBOX"), FLinearColor(1.f, 0.85f, 0.2f), 30.f * UIScale, 24.f * UIScale, LargeFont, 1.2f * UIScale);
 
-	if (const AHGGreyboxCarPawn* Car = Cast<AHGGreyboxCarPawn>(GetOwningPawn()))
+	if (const AHGGroundVehicle* Car = Cast<AHGGroundVehicle>(GetOwningPawn()))
 	{
 		const FString SpeedText = FString::Printf(TEXT("%3.0f km/h"), FMath::Abs(Car->GetSpeedKmh()));
 		DrawText(SpeedText, FLinearColor::White, W - 260.f * UIScale, H - 110.f * UIScale, LargeFont, 2.2f * UIScale);
