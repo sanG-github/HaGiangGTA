@@ -120,6 +120,8 @@ private:
 	bool bPlayIntroLogged = false;
 	float PlayIntroT = 0.f;
 	int32 PlayIntroFrames = 0;
+	TMap<FString, int32> PlayTaps;
+	TMap<FString, int32> PlayTapFrames;
 	double LastShotRequestTime = -10.0;
 	bool bPerfQuitPending = false;
 	bool bPlayProfileChecked = false;

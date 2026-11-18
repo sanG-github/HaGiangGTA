@@ -1038,7 +1038,9 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 				NextShot = 1.f;
 				PlayCheck(TEXT("mission_chase_ride"), true);
 			}
-			if (Chase->State != EHGMissionState::Active || PlayTime > 60.f)
+			// 120 s: below 20 FPS the vehicles' 50 ms step cap slows game time against PlayTime (60 s timed out on a
+			// loaded machine with the bike still riding).
+			if (Chase->State != EHGMissionState::Active || PlayTime > 120.f)
 			{
 				Bike->StopAutoDrive();
 				Bike->bAutoDriveWithPlayer = false;
@@ -1066,10 +1068,14 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			PlayPhase = 10; PlayTime = 0.f; NextShot = 0.f;
 			return;
 		}
+		// Taps by state, not by a 0.2 s time window: at 20 FPS with 400 ms hitches the window was skipped and the
+		// pause menu's Enter never came (the auto stages then ran with the game paused).
 		auto Tap = [this](const FKey& Key, float At)
 		{
-			if (PlayTime >= At && PlayTime < At + 0.2f) { PlaySetKey(Key, true); }
-			if (PlayTime >= At + 0.2f) { PlaySetKey(Key, false); }
+			const FString Id = FString::Printf(TEXT("%d:%s:%.1f"), PlayPhase, *Key.ToString(), At);
+			int32& St = PlayTaps.FindOrAdd(Id);
+			if (St == 0 && PlayTime >= At) { PlaySetKey(Key, true); St = 1; PlayTapFrames.Add(Id, 0); return; }
+			if (St == 1 && ++PlayTapFrames.FindOrAdd(Id) >= 3) { PlaySetKey(Key, false); St = 2; }
 		};
 		if (PlayPhase == 50 || PlayPhase == 52)   // 15 s on the Ta Lang concrete, cruise 90 km/h: top speed
 		{
@@ -1149,6 +1155,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 				const bool bOk = !GetWorld()->IsPaused() && Me && Me->IsA<AHGPlayerCharacter>() && Best < 4000.f;
 				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] restart at viewpoint: %s (%s, %.0f m away, %s)"), bOk ? TEXT("PASS") : TEXT("FAIL"),
 					Target ? *Target->ViewpointName.ToString() : TEXT("-"), Best / 100.f, GetWorld()->IsPaused() ? TEXT("still paused") : TEXT("running"));
+				if (GetWorld()->IsPaused()) { MS->SetPaused(false); }   // never run the next stages paused
 				if (AHGPlayerCharacter* Walker = Cast<AHGPlayerCharacter>(PC->GetPawn())) { Bike->EnterVehicle(Walker); }
 				PlayPhase = 10; PlayTime = 0.f; NextShot = 0.f;
 			}
