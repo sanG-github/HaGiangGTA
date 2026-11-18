@@ -604,6 +604,58 @@ def make_road_furniture():
     write_obj(out / "SM_HG_Guardrail.obj", np.vstack(vs), np.vstack(fs))
 
 
+# ---------------------------------------------------------------------------
+# Reference-photo set dressing: distant ranges, chevrons, utility poles, Hmong houses
+# ---------------------------------------------------------------------------
+
+def make_set_dressing(rng):
+    out = OUT / "Meshes"
+    # Distant karst ranges: a ring 5-14 km from the map centre (outside the 4 km landscape) so the
+    # views from the pass end in layered blue mountains instead of an empty horizon.
+    seg, rings = 256, 18
+    ang = np.linspace(0, 2 * np.pi, seg, endpoint=False)
+    radii = np.linspace(520000.0, 1400000.0, rings)
+    # One coherent noise field over (angle, ring) so ridges continue between neighbouring vertices.
+    A, J = np.meshgrid(ang, np.arange(rings))
+    pts = np.stack([np.cos(A).ravel() * 2.2, np.sin(A).ravel() * 2.2, J.ravel() * 0.35], axis=1)
+    ridge = wave_noise(pts, rng, octaves=4, waves=7, base=2.5, ridged=True).reshape(rings, seg)
+    envelope = np.sin(np.pi * np.arange(rings) / (rings - 1)) ** 0.6
+    verts, faces = [], []
+    for j, r in enumerate(radii):
+        for i, a in enumerate(ang):
+            h = (30000.0 + 110000.0 * ridge[j, i]) * envelope[j]
+            verts.append((np.cos(a) * r, np.sin(a) * r, h))
+    for j in range(rings - 1):
+        for i in range(seg):
+            a0, a1 = j * seg + i, j * seg + (i + 1) % seg
+            b0, b1 = a0 + seg, a1 + seg
+            faces += [(a0, b0, b1), (a0, b1, a1)]
+    write_obj(out / "SM_HG_DistantRanges.obj", np.array(verts), np.array(faces))
+
+    def boxes(spec):
+        vs, fs, off = [], [], 0
+        for cx, cy, cz, sx, sy, sz in spec:
+            x0, x1, y0, y1, z0, z1 = cx - sx / 2, cx + sx / 2, cy - sy / 2, cy + sy / 2, cz - sz / 2, cz + sz / 2
+            bv = np.array([(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)])
+            bf = np.array([(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)])
+            vs.append(bv); fs.append(bf + off); off += 8
+        return np.vstack(vs), np.vstack(fs)
+
+    # Curve chevron sign (black board, the white arrows are painted by UV in the material).
+    v, f = boxes([(0, 0, 60, 6, 6, 140), (0, -4, 150, 60, 3, 45)])
+    uv = np.stack([(v[:, 0] + 30) / 60.0, (v[:, 2] - 127) / 45.0], axis=1)
+    write_obj(out / "SM_HG_Chevron.obj", v, f, uv=uv)
+    # Concrete utility pole with a cross-arm.
+    v, f = boxes([(0, 0, 450, 22, 22, 960), (0, 0, 880, 160, 10, 10)])
+    write_obj(out / "SM_HG_UtilityPole.obj", v, f)
+    # Hmong house: stone/earth walls + low pitched tin roof (separate roof mesh -> grey/green/blue roofs).
+    v, f = boxes([(0, 0, 150, 900, 600, 320)])
+    write_obj(out / "SM_HG_HouseWalls.obj", v, f)
+    rv = np.array([(-520, -380, 300), (520, -380, 300), (520, 380, 300), (-520, 380, 300), (-520, 0, 470), (520, 0, 470)], float)
+    rf = np.array([(0, 1, 5), (0, 5, 4), (3, 4, 5), (3, 5, 2), (0, 4, 3), (1, 2, 5)])
+    write_obj(out / "SM_HG_HouseRoof.obj", rv, rf)
+
+
 def main():
     t0 = time.time()
     rng = np.random.default_rng(SEED)
@@ -612,6 +664,7 @@ def main():
     make_meshes(rng)
     make_trees(np.random.default_rng(SEED + 7))
     make_road_furniture()
+    make_set_dressing(np.random.default_rng(SEED + 11))
     print(f"meshes {time.time() - t0:.1f}s")
     make_flute(rng)
     make_sfx(rng)

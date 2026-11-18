@@ -152,7 +152,7 @@ def main():
     # Exposed cliff only where the photos show it: the Tu San narrows (y ~ -800..800 m) and very
     # steep faces elsewhere; vegetated slopes are left to the terrain material + trees.
     gorge = (y > -800) & (y < 800)
-    keep = (((slope > 55) & gorge) | (slope > 66)) & (road_dist(x, y) > 16) & (z > T.water + 5) & ~near_vp
+    keep = (slope > 62) & gorge & (road_dist(x, y) > 16) & (z > T.water + 5) & ~near_vp     # Tu San narrows only
     cliffs = []
     for xi, yi, zi, ri, ci in zip(x[keep], y[keep], z[keep], r[keep], c[keep]):
         gx, gy = float(T.gx[ri, ci]), float(T.gy[ri, ci])
@@ -169,7 +169,7 @@ def main():
         sy = rng.uniform(0.8, 1.3)
         thick = dims[1] * sy
         height = dims[2] * sz
-        center = np.array([xi, yi, zi]) - n * (0.15 * thick)
+        center = np.array([xi, yi, zi]) - n * (0.35 * thick)                # mostly buried: a rock face, not a plate
         base = center - Zax * (0.5 * height)                                    # mesh pivot is at its base
         cliffs.append(inst(base[0], base[1], base[2], yaw, pitch, roll, sx, sy, sz))
     out["cliffs"] = cliffs
@@ -208,7 +208,7 @@ def main():
     x, y = jitter_grid(7.0, T.half - 5, rng)
     r, c = T.idx(x, y)
     z = T.height(x, y)
-    keep = (T.slope[r, c] < 34) & (road_dist(x, y) > 5.5) & (z > T.water + 1.5) & (rng.random(x.size) < 0.55)
+    keep = (T.slope[r, c] < 58) & (road_dist(x, y) > 5.5) & (z > T.water + 4.5) & (rng.random(x.size) < 0.55)
     out["bushes"] = [inst(xi, yi, zi - 0.1, rng.uniform(0, 360), 0, 0, *([rng.uniform(0.6, 1.5)] * 3))
                      for xi, yi, zi in zip(x[keep], y[keep], z[keep])]
 
@@ -218,11 +218,12 @@ def main():
     z = T.height(x, y)
     sl = T.slope[r, c]
     lush = np.clip((-200.0 - x) / 900.0, 0, 1) * 0.75 + 0.18          # tree density by region
-    ok = (sl < 42) & (road_dist(x, y) > 7) & (z > T.water + 6)
+    ok = (sl < np.where(x > -200, 56, 42)) & (road_dist(x, y) > 7) & (z > T.water + 6)
     near_vp = np.zeros(x.size, bool)
     for vp in vp_pts:
         near_vp |= np.hypot(x - vp[0], y - vp[1]) < 25.0
-    pick = ok & ~near_vp & (rng.random(x.size) < lush * 0.55)
+    low = np.clip((830.0 - z) / 100.0, 0, 1) * (x > -200)                 # greener strip above the water
+    pick = ok & ~near_vp & (rng.random(x.size) < (lush + low * 0.35) * 0.55)
     kinds = rng.random(x.size)
     canyon = x > -200
     trees = {"kapok": [], "broadleaf": [], "pine": []}
@@ -273,6 +274,100 @@ def main():
     out["posts"] = posts
     out["guardrails"] = rails
 
+
+    # ---- set dressing from the reference photos ----
+    # Curve chevrons on the outside of every sharp bend (radius < 40 m), facing the traffic.
+    seg_s = s_road
+    hd = np.unwrap(np.arctan2(np.gradient(road[:, 1]), np.gradient(road[:, 0])))
+    curv = np.abs(np.gradient(hd) / np.maximum(np.gradient(seg_s), 1e-3))           # 1/m
+    chevrons = []
+    last = -1e9
+    for i in range(5, len(road) - 5):
+        if curv[i] > 1.0 / 40.0 and seg_s[i] - last > 30.0:
+            last = seg_s[i]
+            turn = np.sign(np.gradient(hd)[i])                      # +1 = turning left
+            nx_, ny_ = -np.sin(hd[i]), np.cos(hd[i])                # left normal
+            out_side = -turn                                       # outside of the bend
+            for k in (-1, 0, 1):
+                j = min(max(i + k * 4, 0), len(road) - 1)
+                ox, oy = road[j, 0] + nx_ * out_side * (half_w + 1.2), road[j, 1] + ny_ * out_side * (half_w + 1.2)
+                yaw = math.degrees(hd[j]) + 90.0 * out_side
+                chevrons.append(inst(ox, oy, road[j, 2] - 0.1, yaw, 0, 0, 1, 1, 1))
+    out["chevrons"] = chevrons
+
+    # Concrete utility poles every ~45 m on the uphill side.
+    poles = []
+    for t in np.arange(20.0, s_road[-1] - 20.0, 45.0):
+        x0 = np.interp(t, s_road, road[:, 0]); y0 = np.interp(t, s_road, road[:, 1]); z0 = np.interp(t, s_road, road[:, 2])
+        dx_ = np.interp(t + 1, s_road, road[:, 0]) - np.interp(t - 1, s_road, road[:, 0])
+        dy_ = np.interp(t + 1, s_road, road[:, 1]) - np.interp(t - 1, s_road, road[:, 1])
+        n_ = np.hypot(dx_, dy_) + 1e-9
+        for side in (1, -1):
+            px_, py_ = x0 - dy_ / n_ * side * (half_w + 3.0), y0 + dx_ / n_ * side * (half_w + 3.0)
+            if T.height(px_, py_) > z0 + 0.5:                         # uphill side
+                poles.append(inst(px_, py_, T.height(px_, py_) - 0.3, math.degrees(math.atan2(dy_, dx_)), 0, 0, 1, 1, 1))
+                break
+    out["poles"] = poles
+
+    # Hmong / Tay hamlets on gentle ground: above the Ta Lang dock, on the canyon rim, at the foot of Tham Ma.
+    dock_xy = np.array(layout["spawns"]["dock"]["location_cm"][:2]) / 100.0
+    rim_xy = np.array(layout["viewpoints"]["ma_pi_leng"]["road_cm"][:2]) / 100.0
+    base_xy = road_xy[min(60, len(road_xy) - 1)]
+    houses = {"grey": [], "green": [], "blue": []}
+    for centre, n_houses, radius in ((dock_xy + [-60, 40], 14, 160), (rim_xy + [-180, 380], 10, 140), (base_xy + [80, -120], 9, 150)):
+        placed = []
+        for _ in range(400):
+            if len(placed) >= n_houses:
+                break
+            hx, hy = centre + rng.uniform(-radius, radius, 2)
+            r_, c_ = T.idx(hx, hy)
+            hz = float(T.height(hx, hy))
+            if T.slope[r_, c_] > 24 or road_dist(hx, hy) < 9 or hz < T.water + 8:
+                continue
+            if any(np.hypot(hx - qx, hy - qy) < 16 for qx, qy in placed):
+                continue
+            placed.append((hx, hy))
+            gx_, gy_ = float(T.gx[r_, c_]), float(T.gy[r_, c_])
+            yaw = math.degrees(math.atan2(gy_, gx_)) + 90.0 + rng.uniform(-10, 10)   # ridge along the contour
+            sc = rng.uniform(0.8, 1.2)
+            houses[rng.choice(["grey", "grey", "green", "blue"])].append(inst(hx, hy, hz - 0.8, yaw, 0, 0, sc, sc * rng.uniform(0.8, 1.1), 1))
+    out["houses"] = houses
+
+    # Footpath mask (2 m / px): zig-zag trails across the canyon slopes and around the hamlets,
+    # the pale lines that stand out on the dry grass in the Nho Que photos.
+    res = 2016
+    mask = np.zeros((res, res), np.float32)
+    def plot(px_, py_, val=1.0):
+        c_ = int((px_ + T.half) / 2.0); r_ = int((py_ + T.half) / 2.0)
+        if 0 <= c_ < res and 0 <= r_ < res:
+            mask[r_, c_] = max(mask[r_, c_], val)
+    river = np.array(layout["water"]["river_cm"]) / 100.0
+    starts = list(river[::14, :2]) + [np.array(h) for h in (dock_xy, rim_xy)]
+    for sx0, sy0 in starts:
+        for side in (-1, 1):
+            px_, py_ = sx0 + side * rng.uniform(110, 260), sy0 + rng.uniform(-60, 60)
+            heading = rng.choice([-1, 1])
+            leg = rng.uniform(60, 150)
+            walked = 0.0
+            for _ in range(900):
+                r_, c_ = T.idx(px_, py_)
+                gx_, gy_ = float(T.gx[r_, c_]), float(T.gy[r_, c_])
+                g_ = math.hypot(gx_, gy_) + 1e-6
+                if T.height(px_, py_) > 1300 or T.height(px_, py_) < T.water + 2:
+                    break
+                cx_, cy_ = -gy_ / g_ * heading, gx_ / g_ * heading          # along the contour
+                ux_, uy_ = gx_ / g_, gy_ / g_                                # uphill
+                dx_, dy_ = cx_ * 0.93 + ux_ * 0.37, cy_ * 0.93 + uy_ * 0.37  # ~20 deg climb
+                px_ += dx_ * 1.0; py_ += dy_ * 1.0
+                walked += 1.0
+                plot(px_, py_)
+                if walked > leg:                                            # switchback
+                    heading = -heading; walked = 0.0; leg = rng.uniform(50, 140)
+    mask = np.maximum(mask, 0.5 * (np.roll(mask, 1, 0) + np.roll(mask, 1, 1)))   # soften 1 px
+    from PIL import Image
+    (ROOT / "Generated/Assets/Textures").mkdir(parents=True, exist_ok=True)
+    Image.fromarray((np.clip(mask, 0, 1) * 255).astype(np.uint8)).save(ROOT / "Generated/Assets/Textures/T_HG_PathMask.png")
+
     # ---- Mom Da Tu Than ----
     vp2 = layout["viewpoints"]["ma_pi_leng"]
     sx2, sy2, sz2 = (np.array(vp2["location_cm"]) / 100.0)
@@ -316,6 +411,7 @@ def main():
     (HM_DIR / "HaGiang_scatter.json").write_text(json.dumps(out, separators=(",", ":")))
     counts = {k: len(v) for k, v in out.items() if isinstance(v, list)}
     counts.update({f"tree_{k}": len(v) for k, v in out["trees"].items()})
+    counts.update({f"house_{k}": len(v) for k, v in out["houses"].items()})
     print(f"scatter {counts} in {time.time() - t0:.1f}s")
 
 

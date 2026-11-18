@@ -7,6 +7,7 @@
 #include "HGHappyWaterSubsystem.h"
 #include "HGRoadSplineActor.h"
 #include "HGWantedSubsystem.h"
+#include "HGWaterBody.h"
 
 namespace
 {
@@ -310,6 +311,28 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 	SnapToGround(Dt, MoveDir);
 	UpdateOrientation(Dt);
 	UpdateVisuals(Dt, Steer);
+
+	// Splash-down: a bike that lands in the river sinks; the rider bails out and swims,
+	// the bike is recovered to its last spawn point a few seconds later.
+	float SurfaceZ = 0.f;
+	if (AHGWaterBody::FindSurface(GetWorld(), GetActorLocation(), SurfaceZ) && GetActorLocation().Z < SurfaceZ + 20.f)
+	{
+		SubmergedTime += Dt;
+		Speed = FMath::FInterpTo(Speed, 0.f, Dt, 3.f);
+		if (SubmergedTime > 0.25f && GetDriver())
+		{
+			ExitVehicle();
+		}
+		if (SubmergedTime > 6.f && !GetDriver())
+		{
+			SubmergedTime = 0.f;
+			ResetToSpawn();
+		}
+	}
+	else
+	{
+		SubmergedTime = 0.f;
+	}
 
 	if (GetActorLocation().Z < SpawnTransform.GetLocation().Z - KillDepth)
 	{

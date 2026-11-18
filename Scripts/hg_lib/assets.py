@@ -14,11 +14,14 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
           "SM_HG_Boulder_01", "SM_HG_Boulder_02", "SM_HG_Boulder_03",
           "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost",
           "SM_HG_Kapok_Trunk", "SM_HG_Kapok_Bloom", "SM_HG_Tree_Trunk", "SM_HG_Tree_Crown",
-          "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail"]
-NANITE = {m for m in MESHES if m not in ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail")}
+          "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
+          "SM_HG_DistantRanges", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof"]
+PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_Chevron",
+         "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof")
+NANITE = {m for m in MESHES if m not in PROPS}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
 COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
-TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask"}
+TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask", "T_HG_PathMask": "mask"}
 
 
 def _python():
@@ -43,8 +46,8 @@ def run_generator(script: str, check_file: str) -> None:
 
 
 def ensure_generated() -> None:
-    run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_Guardrail.obj")
-    run_generator("gen_scatter.py", "Generated/Heightmaps/HaGiang_scatter.json")
+    run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_HouseRoof.obj")
+    run_generator("gen_scatter.py", "Generated/Assets/Textures/T_HG_PathMask.png")
 
 
 def _import(src: str, dest_folder: str, name: str):
@@ -79,10 +82,13 @@ def import_textures(force: bool = False) -> dict:
             src = os.path.join(hg.project_dir(), "Generated", "Assets", "Textures", f"{name}.png")
             tex = _import(src, folder, name)
             tex.set_editor_property("srgb", False)
+            if name == "T_HG_PathMask":
+                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_GRAYSCALE)
+                tex.set_editor_property("mip_gen_settings", unreal.TextureMipGenSettings.TMGS_FROM_TEXTURE_GROUP)
             if kind == "normal":
                 tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)
                 tex.set_editor_property("flip_green_channel", True)
-            else:
+            elif name != "T_HG_PathMask":
                 tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)
             unreal.EditorAssetLibrary.save_loaded_asset(tex)
         out[name] = tex
@@ -147,7 +153,7 @@ def import_meshes(force: bool = False) -> dict:
             body = mesh.get_editor_property("body_setup")
             if name in COMPLEX_COLLISION and body is not None:
                 body.set_editor_property("collision_trace_flag", unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
-            elif name in ("SM_HG_RoadPost", "SM_HG_Guardrail"):
+            elif name in ("SM_HG_RoadPost", "SM_HG_Guardrail", "SM_HG_UtilityPole", "SM_HG_HouseWalls"):
                 sm_sub.remove_collisions(mesh)
                 sm_sub.add_simple_collisions(mesh, unreal.ScriptCollisionShapeType.BOX)
             unreal.EditorAssetLibrary.save_loaded_asset(mesh)

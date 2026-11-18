@@ -180,7 +180,7 @@ def build_scatter(scatter, meshes, mats, tag, folder):
         items = scatter.get("trees", {}).get(kind, [])
         for mesh_name, mat_name in parts:
             spawn_scatter(f"Scatter_tree_{kind}_{mesh_name[6:]}", meshes[mesh_name], mats[mat_name], items, tag, folder,
-                          cull=(60000.0, 90000.0) if m1 else (0.0, 0.0), collision=("Trunk" in mesh_name),
+                          cull=(110000.0, 150000.0) if m1 else (0.0, 0.0), collision=("Trunk" in mesh_name),
                           shadows=True)
     spawn_scatter("Scatter_road_posts", meshes["SM_HG_RoadPost"], mats["post"], scatter["posts"], tag, folder,
                   cull=(15000.0, 22000.0), collision=True, shadows=True, extra_tags=("RoadPosts",))
@@ -198,7 +198,7 @@ def build_golden_hour(tag, folder):
     clouds' seen from the pass - while the VolumetricCloud layer sits above the peaks.
     (Composition checked with Scripts/Tools/render_viewpoints.py.)"""
     # Bright dry-season afternoon like the reference photos: sun 38 deg up from the south-east.
-    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun", (0, 0, 200000), (-38.0, 120.0, 0), tag, folder)
+    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun", (0, 0, 200000), (-52.0, 100.0, 0), tag, folder)
     sc = sun.get_component_by_class(unreal.DirectionalLightComponent)
     sc.set_mobility(unreal.ComponentMobility.MOVABLE)
     for k, v in (("intensity", 10.0), ("use_temperature", True), ("temperature", 5600.0),
@@ -224,6 +224,7 @@ def build_golden_hour(tag, folder):
     skc = sky.get_component_by_class(unreal.SkyLightComponent)
     skc.set_mobility(unreal.ComponentMobility.MOVABLE)
     skc.set_editor_property("real_time_capture", True)
+    skc.set_editor_property("intensity", 1.35)      # brighter shade on the west-facing canyon walls
 
     cloud = hg.spawn_actor(unreal.VolumetricCloud, "SeaOfClouds", (0, 0, 0), (0, 0, 0), tag, folder)
     cc = cloud.get_component_by_class(unreal.VolumetricCloudComponent)
@@ -361,3 +362,20 @@ def build_river_traffic(layout, tag, folder):
         boat.set_editor_property("auto_cruise", True)
         boat.set_editor_property("cruise_throttle", 0.45 + 0.1 * i)
         rerun(boat)
+
+
+
+def build_set_dressing(scatter, meshes, mats, tag, folder):
+    """Reference-photo dressing: distant blue ranges, chevrons on the bends, utility poles, hamlets."""
+    ranges = hg.spawn_mesh("DistantRanges", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantRanges.SM_HG_DistantRanges",
+                           (0, 0, 60000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
+    ranges.static_mesh_component.set_editor_property("cast_shadow", False)
+    spawn_scatter("Scatter_chevrons", meshes["SM_HG_Chevron"], mats["chevron"], scatter.get("chevrons", []), tag, folder,
+                  cull=(20000.0, 30000.0), collision=True, extra_tags=("RoadPosts",))
+    spawn_scatter("Scatter_poles", meshes["SM_HG_UtilityPole"], mats["pole"], scatter.get("poles", []), tag, folder,
+                  cull=(50000.0, 70000.0), collision=True)
+    for colour, items in scatter.get("houses", {}).items():
+        spawn_scatter(f"Scatter_houses_{colour}_walls", meshes["SM_HG_HouseWalls"], mats["house_wall"], items, tag, folder,
+                      cull=(0.0, 0.0), collision=True)
+        spawn_scatter(f"Scatter_houses_{colour}_roofs", meshes["SM_HG_HouseRoof"], mats[f"roof_{colour}"], items, tag, folder,
+                      cull=(0.0, 0.0), collision=False)

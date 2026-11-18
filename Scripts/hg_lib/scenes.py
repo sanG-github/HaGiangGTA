@@ -66,6 +66,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
     step("Viewpoints + PlayerStart")
     world.build_viewpoints(scatter, flute, tag, f"{prefix}/Viewpoints", viewpoint_names)
     world.build_viewpoint_props(layout, scatter, meshes, mats, tag, f"{prefix}/Viewpoints")
+    world.build_set_dressing(scatter, meshes, mats, tag, f"{prefix}/Dressing")
     world.build_river_traffic(layout, tag, f"{prefix}/River")
     world.build_player_start(layout, tag, f"{prefix}/Gameplay")
 

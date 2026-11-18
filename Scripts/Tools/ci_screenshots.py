@@ -57,6 +57,17 @@ def cameras():
     shots.append(("VP2_MaPiLeng_drone", v(river[j][0] + 6000, river[j][1] - 26000, p2[2] + 4000),
                   v((p2[0] + river[j][0]) / 2, (p2[1] + river[j][1]) / 2, 98000), 60))
 
+    # Classic photo: from the Ma Pi Leng rim down onto the river and the Ta Lang dock.
+    dock = layout["spawns"]["dock"]["location_cm"]
+    rim_pts = layout["road"]["points_cm"]
+    near = [p for p in rim_pts if (p[0] - dock[0]) ** 2 + (p[1] - dock[1]) ** 2 < 70000.0 ** 2] or rim_pts
+    top = max(near, key=lambda p: p[2])          # highest road point within 700 m of the dock
+    ox, oy = norm2(dock[0] - top[0], dock[1] - top[1])
+    shots.append(("VP3_TaLang_from_rim", v(top[0] + ox * 2500, top[1] + oy * 2500, top[2] + 2500), v(dock[0], dock[1], dock[2]), 55))
+    # Tham Ma like the reference photo: standing at the parapet, looking out level over the bends.
+    shots.append(("VP1_ThamMa_parapet", v(p1[0] + dx * 750, p1[1] + dy * 750, p1[2] + 165),
+                  v(c1[0] + dx * 30000, c1[1] + dy * 30000, c1[2] - 3000), 75))
+
     b = layout["spawns"]["boats"][0]["location_cm"]; k = nearest(b)
     ahead = river[max(k - 45, 0)]
     # Just behind and above the cano (not inside its hull), looking up-canyon.
@@ -96,6 +107,10 @@ class Shooter:
     def step(self):
         if self.state == "load":
             unreal.get_editor_subsystem(unreal.LevelEditorSubsystem).load_level(MAP)
+            # Editor-only helpers (camera proxy meshes, trigger spheres) must not show up in the shots.
+            for a in unreal.get_editor_subsystem(unreal.EditorActorSubsystem).get_all_level_actors():
+                if isinstance(a, (unreal.HGViewpointActor, unreal.PlayerStart)):
+                    a.set_is_temporarily_hidden_in_editor(True)
             self.state, self.wait = "warm", 0
             return
         if self.state == "warm":

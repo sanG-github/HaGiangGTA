@@ -118,6 +118,9 @@ protected:
 	/** Last throttle input actually applied (for subclasses). */
 	float LastThrottle = 0.f;
 
+	/** Seconds spent under water (jumped off the Ma Pi Leng cliff into the Nho Que...). */
+	float SubmergedTime = 0.f;
+
 private:
 	bool TraceGround(const FVector& From, FHitResult& OutHit) const;
 	void UpdateSpeed(float DeltaSeconds, float Throttle, bool bHandbrake, bool bBoost, const FVector& MoveDir);
