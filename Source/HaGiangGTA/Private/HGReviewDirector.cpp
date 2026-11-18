@@ -8,6 +8,7 @@
 #include "HGBikePawn.h"
 #include "HGTouristNPC.h"
 #include "HGDressingProp.h"
+#include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "HGViewpointActor.h"
 #include "HGCowActor.h"
 #include "HGTruckPawn.h"
@@ -25,6 +26,27 @@ AHGReviewDirector::AHGReviewDirector()
 
 void AHGReviewDirector::EnsureFor(UWorld* World)
 {
+	// Diagnostics (Round 4B): -hghide=FarTerrain,RangeLayer hides every actor whose name / label contains one of
+	// the comma-separated words, for A/B screenshots of the distant scenery.
+	static TWeakObjectPtr<UWorld> HiddenFor;
+	FString HideList;
+	if (World && World->IsGameWorld() && HiddenFor.Get() != World && FParse::Value(FCommandLine::Get(), TEXT("hghide="), HideList))
+	{
+		HiddenFor = World;
+		TArray<FString> Words;
+		HideList.ParseIntoArray(Words, TEXT(","));
+		for (TActorIterator<AActor> It(World); It; ++It)
+		{
+			for (const FString& W : Words)
+			{
+				if (It->GetActorNameOrLabel().Contains(W))
+				{
+					It->SetActorHiddenInGame(true);
+					UE_LOG(LogTemp, Display, TEXT("[HG_REVIEW] hidden %s"), *It->GetActorNameOrLabel());
+				}
+			}
+		}
+	}
 	if (!World || !World->IsGameWorld() || !FParse::Param(FCommandLine::Get(), TEXT("hgreview")))
 	{
 		return;
@@ -112,8 +134,8 @@ void AHGReviewDirector::BuildShots()
 		{
 			if (!It->bAutoCruise && It->BoatType == EHGBoatType::Cano)
 			{
-				// The player's hire cano at the dock, from the boat camera's distance (~19 m back, 3.3 m up).
-				AddActorShot(*It, TEXT("player_cano_chase"), FVector(-1900.f, 0.f, 330.f), FVector(0.f, 0.f, 80.f));
+				// The player's hire cano at the dock, from the boat camera's distance (A, round 4: 12 m back, 3 m up).
+				AddActorShot(*It, TEXT("player_cano_chase"), FVector(-1200.f, 0.f, 300.f), FVector(0.f, 0.f, 80.f));
 				AddActorShot(*It, TEXT("player_cano_side"), FVector(200.f, 1100.f, 250.f), FVector(0.f, 0.f, 80.f));
 				break;
 			}
@@ -174,9 +196,47 @@ void AHGReviewDirector::BuildShots()
 					AddActorShot(*It, TEXT("corn_terraces"), FVector(-3000.f, -3000.f, 2500.f), FVector(0.f, 0.f, 0.f));
 				}
 				break;
-			case EHGDressingKind::FlagPole:
-				AddActorShot(*It, TEXT("flag_pole"), FVector(-900.f, 1400.f, 400.f), FVector(0.f, 0.f, 700.f));
+			case EHGDressingKind::RoadsideLife:
+		{
+			// Round 4B: first corn rack / fence / wood stack instance of the first two hamlets, from the road.
+			static int32 LifeShots = 0;
+			if (LifeShots >= 2)
+			{
 				break;
+			}
+			TArray<UHierarchicalInstancedStaticMeshComponent*> Hisms;
+			It->GetComponents(Hisms);
+			for (UHierarchicalInstancedStaticMeshComponent* H : Hisms)
+			{
+				FTransform Xf;
+				if (H->GetInstanceCount() > 0 && H->GetInstanceTransform(H->GetInstanceCount() / 2, Xf, true))
+				{
+					FShot S;
+					S.Label = FString::Printf(TEXT("roadside_%d_%s"), LifeShots, *H->GetName());
+					const FVector Side = Xf.GetRotation().GetRightVector();
+					S.Loc = Xf.GetLocation() + Xf.GetRotation().GetForwardVector() * 700.f - Side * 450.f + FVector(0.f, 0.f, 220.f);
+					S.LookAt = Xf.GetLocation() + FVector(0.f, 0.f, 80.f);
+					Shots.Add(S);
+				}
+			}
+			++LifeShots;
+			break;
+		}
+		case EHGDressingKind::FlagPole:
+		{
+				AddActorShot(*It, TEXT("flag_pole"), FVector(-900.f, 1400.f, 400.f), FVector(0.f, 0.f, 700.f));
+			// Round 4B: the Ma Pi Leng rim horizon, level, all round (far terrain / ridge layers / haze check).
+			const FVector Eye = It->GetActorLocation() + FVector(0.f, 0.f, 250.f);
+			for (int32 k = 0; k < 6; ++k)
+			{
+				FShot S;
+				S.Label = FString::Printf(TEXT("rim_%03d"), k * 60);
+				S.Loc = Eye;
+				S.LookAt = Eye + FRotator(-3.f, k * 60.f, 0.f).Vector() * 10000.f;
+				Shots.Add(S);
+			}
+			break;
+		}
 			default:
 				AddActorShot(*It, *(TEXT("sign_") + It->GetName()), FVector(0.f, 650.f, 180.f), FVector(0.f, 0.f, 110.f));
 				break;

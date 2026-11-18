@@ -22,6 +22,8 @@ FENCE_ROAD_CLEAR_CM = 2200.0     # yard wall reaches ~11 m in front of the house
 PROP_ROAD_CLEAR_CM = 650.0
 HOUSE_HALF_CM = (570.0, 380.0)   # walls 10 x 6.2 m + 0.7 m eaves (HGDressingProp BuildHouse)
 HOUSE_MAX_RELIEF_CM = 250.0      # more than this across the footprint: too steep for a house (round 5, agent A)
+HOUSE_TERRACE_MAX_CM = 900.0     # Round 4B: up to this relief the house keeps its spot on a dry-stone terrace wall
+HOUSE_DIG_IN_CM = 100.0          # uphill side dug in this much on a terrace plot
 
 
 def _house_ground(terrain, x, y, yaw):
@@ -81,6 +83,7 @@ def build(layout, scatter, tag, folder):
         hg.warn(f"house ground snap skipped: {exc}")
         terrain = None
     skipped = 0
+    terraced = 0
 
     # --- H'Mong houses on the grey-roofed scatter spots ---
     houses = []
@@ -102,15 +105,25 @@ def build(layout, scatter, tag, folder):
                 if best is None or (hi_c - lo_c) < best[0] - 20.0:
                     best = (hi_c - lo_c, cand, lo_c, hi_c)
             _, yaw, lo, hi = best
-            if hi - lo > HOUSE_MAX_RELIEF_CM:
+            plinth = 0.0
+            if hi - lo > HOUSE_TERRACE_MAX_CM:
                 skipped += 1
                 continue
-            z = lo
+            if hi - lo > HOUSE_MAX_RELIEF_CM:
+                # Round 4B (coordinator): steep spots keep their house on a terrace - uphill side dug in 1 m, the
+                # 2.6 m platform plus a dry-stone terrace wall down to the low side (as on the Ha Giang hillsides).
+                z = hi - HOUSE_DIG_IN_CM
+                plinth = max(0.0, (z - 260.0) - lo + 40.0)
+                terraced += 1
+            else:
+                z = lo
         variant = i % 6
         if d < FENCE_ROAD_CLEAR_CM and variant % 3 != 2:
             variant = 2 if variant < 3 else 5            # no yard wall this close to the road
         # The front (door, yard) faces the road side where possible.
-        _spawn(K.HMONG_HOUSE, f"HmongHouse_{i:02d}", (x, y, z), yaw, tag, folder, variant)
+        house = _spawn(K.HMONG_HOUSE, f"HmongHouse_{i:02d}", (x, y, z), yaw, tag, folder, variant)
+        if terrain is not None and plinth > 0.0:
+            house.set_editor_property("plinth_depth", float(plinth))
         houses.append((x, y, z))
 
     # --- Corn terraces: one plot per hamlet cluster (houses within 250 m) ---
@@ -129,6 +142,11 @@ def build(layout, scatter, tag, folder):
         corn = _spawn(K.CORN_FIELD, f"CornTerraces_{i:02d}", (cx, cy, cz), 0.0, tag, folder,
                       radius=3000.0 + 500.0 * min(len(c), 5))   # 30-55 m around the hamlet
         corn.set_editor_property("min_z", float(layout["water"]["surface_z_cm"]) + 1500.0)   # off the river banks
+        # Round 4B: stone fences, corn drying racks and firewood stacks along the road through the hamlet.
+        if hasattr(K, "ROADSIDE_LIFE"):
+            life = _spawn(K.ROADSIDE_LIFE, f"RoadsideLife_{i:02d}", (cx, cy, cz), 0.0, tag, folder,
+                          radius=6000.0 + 800.0 * min(len(c), 5))
+            life.set_editor_property("min_z", float(layout["water"]["surface_z_cm"]) + 1500.0)
 
     # --- Viewpoint props ---
     marks = layout.get("landmarks", {})
@@ -172,4 +190,5 @@ def build(layout, scatter, tag, folder):
             if clear(loc):
                 _spawn(K.WOOD_SIGN, "TaLang_DockBoard", loc, face, tag, folder, text="SÔNG NHO QUẾ · TU SẢN", sign="TuSan")
                 break
-    hg.log(f"Set dressing: {len(houses)} H'Mong houses ({skipped} slope spots skipped), {len(clusters)} corn terraces, Ma Pi Leng flag + name stone, 2 boards")
+    hg.log(f"Set dressing: {len(houses)} H'Mong houses ({terraced} on terrace walls, {skipped} slope spots skipped), "
+           f"{len(clusters)} corn terraces + roadside life, Ma Pi Leng flag + name stone, 2 boards")

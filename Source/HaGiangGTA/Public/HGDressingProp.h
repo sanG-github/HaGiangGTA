@@ -22,7 +22,10 @@ enum class EHGDressingKind : uint8
 	/** Wooden board on two posts (SignText). */
 	WoodSign,
 	/** Terraced corn plot: young corn on the contour terraces of the slope within Radius (late-March sowing). */
-	CornField
+	CornField,
+	/** Round 4B: roadside life along the road through a hamlet (within Radius): dry-stone fence runs, corn
+	 *  drying racks, firewood stacks - three instanced draws per hamlet. */
+	RoadsideLife
 };
 
 /**
@@ -47,6 +50,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
 	FText SignText;
 
+	/** HmongHouse: dry-stone terrace wall under the platform, this deep below its 2.6 m foot (steep plots). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
+	float PlinthDepth = 0.f;
+
 	/** CornField: radius (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
 	float Radius = 5000.f;
@@ -64,9 +71,12 @@ protected:
 
 private:
 	void BuildCornField();
+	void BuildRoadside();
+	UHierarchicalInstancedStaticMeshComponent* MakeHism(FName Name, UStaticMesh* Mesh, int32 Cull);
 
 	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<USceneComponent> Root;
 	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> Flag;
 	UPROPERTY(Transient) TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Corn;
+	UPROPERTY(Transient) TArray<TObjectPtr<UHierarchicalInstancedStaticMeshComponent>> Roadside;
 	float Clock = 0.f;
 };

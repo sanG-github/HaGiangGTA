@@ -69,6 +69,13 @@ def main():
         np.add.at(nrm, f[:, k], fn)
     nrm /= np.linalg.norm(nrm, axis=1, keepdims=True) + 1e-9
     OUT.mkdir(parents=True, exist_ok=True)
+    # Round 4B: the OBJ import (right-handed file -> left-handed Unreal) mirrors Y. The landscape and the
+    # layout are in Unreal axes (+Y south), so the round-3B mesh came in north-south mirrored: its edges stood
+    # tens to hundreds of metres off the landscape border - sheets of terrain floating over voids (the "arch"
+    # past Ma Pi Leng, slivers in the sky). Write Y negated (and the winding reversed) so the import restores it.
+    verts = verts * np.array([1.0, -1.0, 1.0])
+    nrm = nrm * np.array([1.0, -1.0, 1.0])
+    f = f[:, [0, 2, 1]]
     with open(OUT / "SM_HG_FarTerrain.obj", "w") as fh:
         fh.write("# Ha Giang terrain beyond the map edge (gen_farterrain.py)\n")
         for p in verts:

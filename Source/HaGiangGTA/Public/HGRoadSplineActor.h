@@ -16,6 +16,8 @@ class UStaticMesh;
  * mesh floats a few cm above it. Later checkpoints reuse the spline for
  * posts, convoy AI and the minimap.
  */
+class UMaterialInstanceDynamic;
+
 UCLASS()
 class HAGIANGGTA_API AHGRoadSplineActor : public AActor
 {
@@ -87,4 +89,7 @@ protected:
 	 *  -hgroadcull=<m> overrides it (A/B). */
 	UPROPERTY(EditAnywhere, Category = "Road") float RuntimeCullDistance = 90000.f;
 	virtual void BeginPlay() override;
+
+	/** Round 4B: road MIDs shared by marking phase (see BuildSegments). */
+	UPROPERTY(Transient) TMap<FString, TObjectPtr<UMaterialInstanceDynamic>> SharedMIDs;
 };

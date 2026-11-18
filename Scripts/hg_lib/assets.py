@@ -18,12 +18,13 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
           "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
           "SM_HG_StoneWall", "SM_HG_Monument"]
 # Round 3B: layered distant ranges (Scripts/Tools/gen_ranges.py) replace the single SM_HG_DistantRanges ring.
-RANGE_LAYERS = [f"SM_HG_RangeLayer_{i}" for i in range(4)]
+RANGE_LAYERS = [f"SM_HG_RangeLayer_{i}" for i in range(3)]
 MESHES += RANGE_LAYERS + ["SM_HG_FarTerrain"]
 PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron",
          "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument",
          *RANGE_LAYERS, "SM_HG_FarTerrain")
 NANITE = {m for m in MESHES if m not in PROPS}
+DISTANT = set(RANGE_LAYERS) | {"SM_HG_FarTerrain", "SM_HG_DistantApron", "SM_HG_DistantRanges"}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
 COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
 TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask", "T_HG_PathMask": "mask",
@@ -55,7 +56,7 @@ def run_generator(script: str, check_file: str) -> None:
 def ensure_generated() -> None:
     run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_Monument.obj")
     run_generator("gen_scatter.py", "Generated/Assets/Textures/T_HG_PathMask.png")
-    run_generator("gen_ranges.py", "Generated/Assets/Meshes/SM_HG_RangeLayer_3.obj")
+    run_generator("gen_ranges.py", "Generated/Assets/Meshes/SM_HG_RangeLayer_2.obj")
     run_generator("gen_farterrain.py", "Generated/Assets/Meshes/SM_HG_FarTerrain.obj")
     run_generator("gen_signs.py", "Generated/Assets/Textures/T_HG_Sign_TuSan.png")
 
@@ -125,6 +126,14 @@ LOD_CHAINS = {
 def _apply_profile(mesh: unreal.StaticMesh, name: str) -> None:
     """Nanite on SM6 hardware; on M1 (SM5) Nanite is unavailable, so build reduced LODs instead."""
     if name not in NANITE:
+        if name in DISTANT and not hg.USE_NANITE:
+            # Round 4B: distant scenery must render its full mesh on SM5. An import-time Nanite flag makes SM5
+            # draw the coarse Nanite fallback (big flat triangles: the far terrain's "arch" and sky "slivers").
+            _set_nanite(mesh, False)
+            sm_sub = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
+            nanite = mesh.get_editor_property("nanite_settings").get_editor_property("enabled")
+            hg.log(f"{name}: nanite {nanite}, {sm_sub.get_lod_count(mesh)} LODs, "
+                   f"{sm_sub.get_number_verts(mesh, 0)} verts in LOD0")
         return
     if hg.USE_NANITE:
         _set_nanite(mesh, True)
