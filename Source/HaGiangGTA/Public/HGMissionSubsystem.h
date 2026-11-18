@@ -158,5 +158,5 @@ private:
 	bool bIntroShown = false;
 	bool bBoatLegBack = false;
 	FVector BoatBend = FVector::ZeroVector;
-	TArray<TWeakObjectPtr<AActor>> BoatGuests;
+	TArray<TWeakObjectPtr<UActorComponent>> BoatGuests;
 };

@@ -1313,6 +1313,10 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	}
 	if (PlayPhase == 99)
 	{
+		if (FScreenshotRequest::IsScreenshotRequested() || FPlatformTime::Seconds() - LastShotRequestTime < 2.0)
+		{
+			return;   // let the last screenshot's readback finish before quitting (same freeze as -hgperf)
+		}
 		PlayResetStageStats();
 		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] traffic session | %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | %s"),
 			PlayTotNear, PlayTotStops, PlayTotOncoming, PlayTotOvertookUs, *PlayTrafficSummary());
@@ -1382,6 +1386,15 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 	if (bPlayTest)
 	{
 		TickPlayTest(DeltaSeconds);
+		return;
+	}
+	if (bPerfQuitPending)
+	{
+		if (!FScreenshotRequest::IsScreenshotRequested() && FPlatformTime::Seconds() - LastShotRequestTime > 2.0)
+		{
+			bPerfQuitPending = false;
+			UKismetSystemLibrary::QuitGame(this, nullptr, EQuitPreference::Quit, false);
+		}
 		return;
 	}
 	if (!bPerfRun || PerfStage < 0 || PerfStage >= PerfSpots.Num())
@@ -1490,7 +1503,9 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 			}
 			UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] SUMMARY %s: %d cameras, min %.0f FPS%s"), Low.IsEmpty() ? TEXT("PASS") : TEXT("FAIL"),
 				PerfFps.Num(), MinFps, Low.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(", under 60:%s"), *Low));
-			UKismetSystemLibrary::QuitGame(this, nullptr, EQuitPreference::Quit, false);
+			// Quit once the last camera's screenshot readback is done: quitting in the frame that requested it
+			// froze the game thread for good (one-camera -hgperfonly runs hung until the 15 min timeout).
+			bPerfQuitPending = true;
 		}
 	}
 }

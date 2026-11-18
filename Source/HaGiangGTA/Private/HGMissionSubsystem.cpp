@@ -15,7 +15,7 @@
 #include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "NhoQueBoatPawn.h"
-#include "HGTouristNPC.h"
+#include "HGPeopleBuilder.h"
 #include "Components/CapsuleComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/CommandLine.h"
@@ -451,34 +451,41 @@ void UHGMissionSubsystem::SpawnBoatGuests(ANhoQueBoatPawn* Boat)
 	{
 		return;
 	}
-	// Two backpackers standing in the cano (deck top at +18 cm in the boat's frame; the NPC origin is its capsule
-	// centre, 90 cm over the feet). Static: no strolling or ground snapping on a moving boat.
-	const FVector Seats[] = { FVector(70.f, 0.f, 108.f), FVector(-70.f, 0.f, 108.f) };
-	for (int32 i = 0; i < 2; ++i)
+	// Two backpackers seated on the cano's benches (the player's hire cano has none of the tour boats' crew), built
+	// like that crew (HGPeople, Passenger pose, on the hull frame so they pitch and roll with it).
+	USceneComponent* Parent = Boat->GetRootComponent();
+	TArray<USceneComponent*> Scene;
+	Boat->GetComponents(Scene);
+	for (USceneComponent* C : Scene)
 	{
-		const FTransform T = FTransform(FRotator(0.f, i == 0 ? 20.f : -30.f, 0.f), Seats[i]) * Boat->GetActorTransform();
-		AHGTouristNPC* Npc = GetWorld()->SpawnActorDeferred<AHGTouristNPC>(AHGTouristNPC::StaticClass(), T, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-		if (!Npc)
+		if (C->GetFName() == TEXT("HullRoot"))
 		{
-			continue;
+			Parent = C;
 		}
-		Npc->Style = EHGTouristStyle::Backpacker;
-		Npc->bWander = false;
-		Npc->FinishSpawning(T);
-		Npc->SetActorEnableCollision(false);
-		Npc->SetActorTickEnabled(false);
-		Npc->AttachToActor(Boat, FAttachmentTransformRules::KeepWorldTransform);
-		BoatGuests.Add(Npc);
+	}
+	TArray<UActorComponent*> Before;
+	Boat->GetComponents(Before);
+	static int32 GuestSerial = 0;
+	HGPeople::Spawn(Boat, Parent, EHGPersonLook::Backpacker, EHGPersonPose::Passenger, 1, *FString::Printf(TEXT("TourGuest%d"), GuestSerial++), FVector(-122.f, -60.f, 83.f), true);
+	HGPeople::Spawn(Boat, Parent, EHGPersonLook::Backpacker, EHGPersonPose::Passenger, 2, *FString::Printf(TEXT("TourGuest%d"), GuestSerial++), FVector(18.f, 60.f, 83.f), false);
+	TArray<UActorComponent*> After;
+	Boat->GetComponents(After);
+	for (UActorComponent* C : After)
+	{
+		if (!Before.Contains(C))
+		{
+			BoatGuests.Add(C);
+		}
 	}
 }
 
 void UHGMissionSubsystem::ClearBoatGuests()
 {
-	for (const TWeakObjectPtr<AActor>& G : BoatGuests)
+	for (const TWeakObjectPtr<UActorComponent>& G : BoatGuests)
 	{
-		if (AActor* A = G.Get())
+		if (UActorComponent* C = G.Get())
 		{
-			A->Destroy();
+			C->DestroyComponent();
 		}
 	}
 	BoatGuests.Reset();
