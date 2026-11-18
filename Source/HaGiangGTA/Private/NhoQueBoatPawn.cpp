@@ -496,7 +496,7 @@ void ANhoQueBoatPawn::BuildCrew()
 	});
 	if (UStaticMeshComponent* B = FHGMeshKit::AddComponent(this, HullRoot, Benches, TEXT("Benches"), FVector::ZeroVector))
 	{
-		B->SetCullDistance(25000.f);
+		B->SetCullDistance(12000.f);
 	}
 	// Boatman at the stern wheel.
 	FHGPersonRig Boatman = HGPeople::Spawn(this, DriverSeat, EHGPersonLook::LocalMan, EHGPersonPose::Rider, Seed % 4, TEXT("Boatman"));
@@ -509,7 +509,7 @@ void ANhoQueBoatPawn::BuildCrew()
 		{
 			const int32 h = (Seed >> ((n % 12) + 1)) + n * 7;
 			++n;
-			if ((h % 5) == 0)
+			if ((h % 5) < 2)   // ~60 % of the seats taken
 			{
 				continue;
 			}
@@ -526,7 +526,7 @@ void ANhoQueBoatPawn::BuildCrew()
 		{
 			if (C)
 			{
-				C->SetCullDistance(25000.f);
+				C->SetCullDistance(7000.f);   // a few pixels under the roof past 70 m (boat stage was 5-15 FPS down)
 			}
 		}
 	}
