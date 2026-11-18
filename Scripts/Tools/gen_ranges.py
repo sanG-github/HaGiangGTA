@@ -2,7 +2,7 @@
 """Layered distant karst ranges (Round 3B): Generated/Assets/Meshes/SM_HG_RangeLayer_0..3.obj
 
 Replaces the single flat ring (SM_HG_DistantRanges) that read as one pale blue band on the horizon.
-Four rings at 14 / 17.5 / 21 / 26 km from the map centre (beyond the real-terrain mesh), each a ridge silhouette with sloped, gullied faces
+Three rings at 14 / 17.5 / 21.5 km from the map centre (beyond the real-terrain mesh), each a ridge silhouette with sloped, gullied faces
 (so the sun gives every layer lit and shaded flanks) and peaks that rise with distance so each layer shows
 above the one in front. Absolute world Z (cm = altitude ASL * 100); spawn at the origin.
 
@@ -21,13 +21,13 @@ OUT = ROOT / "Generated" / "Assets" / "Meshes"
 LAYERS = [
     # radius m, ridge base ASL m, ridge amplitude m, seed
     # Beyond the real DEM terrain mesh (gen_farterrain.py, out to 12 km).
-    (14000.0, 1500.0, 650.0, 11),
-    (17500.0, 1700.0, 720.0, 23),
-    (21000.0, 1900.0, 780.0, 37),
-    (26000.0, 2100.0, 850.0, 53),
+    # Round 4B: the 26 km ring dropped (its spikes floated as slivers above the nearer layers).
+    (14000.0, 1450.0, 600.0, 11),
+    (17500.0, 1600.0, 650.0, 23),
+    (21500.0, 1750.0, 700.0, 37),
 ]
 SEG = 420          # around the ring (~90-200 m per segment)
-ROWS = 6           # foot -> ridge
+ROWS = 8           # foot -> ridge
 FOOT_ASL = 250.0   # below every horizon seen from the map
 
 
@@ -45,7 +45,7 @@ def ridge_profile(a, seed):
     peaks = rng.uniform(0, 2 * math.pi, 9)
     for p in peaks:
         d = np.angle(np.exp(1j * (a - p)))
-        h += 0.35 * np.exp(-(d / 0.035) ** 2)
+        h += 0.22 * np.exp(-(d / 0.07) ** 2)      # broad karst summits, no needle spikes
     return np.clip((h - h.min()) / (h.max() - h.min()), 0, 1)
 
 
@@ -73,11 +73,16 @@ def build_layer(radius_m, base_m, amp_m, seed):
     a = np.linspace(0, 2 * math.pi, SEG, endpoint=False)
     ridge = base_m + amp_m * ridge_profile(a, seed)                       # ASL m
     verts = []
+    prev = None
     for r in range(ROWS):
         t = r / (ROWS - 1)                                                 # 0 foot .. 1 ridge
         z = FOOT_ASL + (ridge - FOOT_ASL) * (1.0 - (1.0 - t) ** 1.6)       # concave slope, steep near the top
-        # Foot ~900 m nearer than the ridge: faces slope back like real mountain flanks.
-        rad = radius_m - (1.0 - t) ** 1.3 * 900.0 + gully(a, t, seed) * 160.0 * (1.0 - t * 0.8)
+        # Foot ~900 m nearer than the ridge: faces slope back like real mountain flanks. Gullies keep one phase
+        # per column and the radius only grows upwards (Round 4B: folded rows read as arches / floating slivers).
+        rad = radius_m - (1.0 - t) ** 1.3 * 900.0 + gully(a, 0.0, seed) * 120.0 * (1.0 - t)
+        if prev is not None:
+            rad = np.maximum(rad, prev + 20.0)
+        prev = rad
         for i in range(SEG):
             verts.append((math.cos(a[i]) * rad[i] * 100.0, math.sin(a[i]) * rad[i] * 100.0, z[i] * 100.0))
     v = np.array(verts)

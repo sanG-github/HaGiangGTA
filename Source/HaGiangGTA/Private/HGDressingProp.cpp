@@ -205,6 +205,90 @@ namespace HGDressingKit
 		}
 		K.Tube(FVector(0.f, 0.f, 0.f), FVector(0.f, 0.f, 26.f), 1.2f, 0.8f, 5, false);
 	}
+
+	/** Round 4B: dry-stone fence segment, 250 cm along +X, ~85 cm high, irregular grey limestone blocks. */
+	void BuildStoneFence(FHGMeshKit& K)
+	{
+		FRandomStream R{ 911 };
+		const float Rows[3][2] = { { 0.f, 32.f }, { 30.f, 28.f }, { 56.f, 26.f } };
+		for (int32 Row = 0; Row < 3; ++Row)
+		{
+			const float W = 58.f - Row * 7.f;
+			float X = -125.f + (Row % 2) * 18.f;
+			while (X < 122.f)
+			{
+				const float L = FMath::Min(R.FRandRange(26.f, 48.f), 125.f - X);
+				if (L < 8.f) { break; }
+				const float G = R.FRandRange(0.06f, 0.15f);   // weathered limestone, darker than fresh cut
+				K.Paint(FColorL(G, G * (0.96f + R.FRand() * 0.06f), G * (0.86f + R.FRand() * 0.08f)), HGSurf::Matte);
+				K.Box(FVector(X + L * 0.5f, R.FRandRange(-4.f, 4.f), Rows[Row][0] + Rows[Row][1] * 0.5f),
+					FVector(L - 2.f, W + R.FRandRange(-6.f, 6.f), Rows[Row][1] + R.FRandRange(-3.f, 4.f)),
+					FRotator(R.FRandRange(-4.f, 4.f), R.FRandRange(-6.f, 6.f), R.FRandRange(-4.f, 4.f)));
+				X += L;
+			}
+		}
+		// Moss / grass tufts on the top and the foot.
+		K.Paint(FColorL(0.05f, 0.08f, 0.025f), HGSurf::Matte);
+		for (int32 i = 0; i < 4; ++i)
+		{
+			K.Ellipsoid(FVector(R.FRandRange(-110.f, 110.f), R.FRandRange(-20.f, 20.f), i < 2 ? 84.f : 4.f),
+				FVector(R.FRandRange(12.f, 22.f), 12.f, 7.f), FRotator::ZeroRotator, 6, 3, 0.f);
+		}
+	}
+
+	/** Round 4B: H'Mong corn drying rack - two posts, three rails hung with bundles of yellow-orange cobs. */
+	void BuildCornRack(FHGMeshKit& K)
+	{
+		FRandomStream R{ 2024 };
+		K.Paint(FColorL(0.16f, 0.1f, 0.055f), HGSurf::Matte);
+		for (const float X : { -110.f, 110.f })
+		{
+			K.Tube(FVector(X, 0.f, -10.f), FVector(X + R.FRandRange(-4.f, 4.f), 0.f, 250.f), 5.f, 4.f, 6, true);
+		}
+		for (const float Z : { 110.f, 170.f, 230.f })
+		{
+			K.Paint(FColorL(0.2f, 0.13f, 0.07f), HGSurf::Matte);
+			K.Tube(FVector(-125.f, 0.f, Z), FVector(125.f, 0.f, Z + R.FRandRange(-4.f, 4.f)), 2.5f, 2.5f, 5, true);
+			for (float X = -95.f; X <= 95.f; X += 19.f)
+			{
+				if (R.FRand() < 0.15f) { continue; }
+				const float Hue = R.FRand();
+				K.Paint(FColorL(0.36f + 0.12f * Hue, 0.17f + 0.08f * Hue, 0.015f), HGSurf::Matte);
+				// Two cobs per tied bundle, hanging either side of the rail, with pale husks on top.
+				for (const float S : { -1.f, 1.f })
+				{
+					K.Ellipsoid(FVector(X, S * 7.f, Z - 20.f), FVector(4.5f, 4.5f, 15.f), FRotator(0.f, 0.f, S * 10.f), 6, 4);
+				}
+				K.Paint(FColorL(0.5f, 0.44f, 0.3f), HGSurf::Matte);
+				K.Box(FVector(X, 0.f, Z + 3.f), FVector(6.f, 18.f, 6.f));
+			}
+		}
+		// Small tin cap against the rain.
+		K.Paint(FColorL(0.3f, 0.3f, 0.28f), HGSurf::Satin);
+		K.Box(FVector(0.f, 0.f, 256.f), FVector(270.f, 50.f, 2.f));
+	}
+
+	/** Round 4B: firewood stack under a board, ~1.6 x 0.7 x 1.1 m (every H'Mong yard and roadside has one). */
+	void BuildWoodStack(FHGMeshKit& K)
+	{
+		FRandomStream R{ 77 };
+		for (int32 Row = 0; Row < 5; ++Row)
+		{
+			for (int32 Col = 0; Col < 7; ++Col)
+			{
+				const float Y = -60.f + Col * 20.f + (Row % 2) * 10.f;
+				if (Y > 62.f) { continue; }
+				const float Z = 10.f + Row * 19.f;
+				const float T = R.FRandRange(0.f, 1.f);
+				K.Paint(FColorL(0.2f + 0.08f * T, 0.13f + 0.05f * T, 0.07f + 0.03f * T), HGSurf::Matte);
+				K.Tube(FVector(-80.f + R.FRandRange(-6.f, 6.f), Y, Z), FVector(80.f + R.FRandRange(-6.f, 6.f), Y, Z), 9.f, 9.f, 6, true);
+			}
+		}
+		K.Paint(FColorL(0.12f, 0.08f, 0.05f), HGSurf::Matte);
+		K.Box(FVector(0.f, 0.f, 112.f), FVector(190.f, 90.f, 4.f), FRotator(0.f, 0.f, 6.f));
+		K.Box(FVector(-88.f, 0.f, 50.f), FVector(6.f, 6.f, 110.f));
+		K.Box(FVector(88.f, 0.f, 50.f), FVector(6.f, 6.f, 110.f));
+	}
 }
 
 AHGDressingProp::AHGDressingProp()
@@ -249,6 +333,9 @@ void AHGDressingProp::BeginPlay()
 		break;
 	case EHGDressingKind::CornField:
 		BuildCornField();
+		return;
+	case EHGDressingKind::RoadsideLife:
+		BuildRoadside();
 		return;
 	}
 	if (UStaticMeshComponent* C = FHGMeshKit::AddComponent(this, Root, Mesh, TEXT("Kit"), FVector::ZeroVector))
@@ -407,4 +494,137 @@ void AHGDressingProp::BuildCornField()
 	}
 	Corn->AddInstances(Xfs, false, true);
 	UE_LOG(LogTemp, Log, TEXT("%s: %d corn plants"), *GetName(), Xfs.Num());
+}
+
+UHierarchicalInstancedStaticMeshComponent* AHGDressingProp::MakeHism(FName Name, UStaticMesh* Mesh, int32 Cull)
+{
+	UHierarchicalInstancedStaticMeshComponent* H = NewObject<UHierarchicalInstancedStaticMeshComponent>(this, Name, RF_Transient);
+	H->SetupAttachment(Root);
+	H->SetStaticMesh(Mesh);
+	H->SetMaterial(0, FHGMeshKit::VertexColorMaterial());
+	H->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+	H->SetCastShadow(false);
+	H->SetCullDistances(0, Cull);
+	H->SetUsingAbsoluteLocation(true);
+	H->SetUsingAbsoluteRotation(true);
+	H->RegisterComponent();
+	AddInstanceComponent(H);
+	Roadside.Add(H);
+	return H;
+}
+
+void AHGDressingProp::BuildRoadside()
+{
+	using namespace HGDressingKit;
+	if (FParse::Param(FCommandLine::Get(), TEXT("hgnokit")))
+	{
+		return;
+	}
+	UStaticMesh* FenceMesh = FHGMeshKit::Cached(TEXT("SM_HGStoneFence"), [](FHGMeshKit& K) { BuildStoneFence(K); });
+	UStaticMesh* RackMesh = FHGMeshKit::Cached(TEXT("SM_HGCornRack"), [](FHGMeshKit& K) { BuildCornRack(K); });
+	UStaticMesh* WoodMesh = FHGMeshKit::Cached(TEXT("SM_HGWoodStack"), [](FHGMeshKit& K) { BuildWoodStack(K); });
+	if (!FenceMesh || !RackMesh || !WoodMesh)
+	{
+		return;
+	}
+	TArray<FVector> Houses;
+	for (TActorIterator<AHGDressingProp> It(GetWorld()); It; ++It)
+	{
+		if (It->Kind == EHGDressingKind::HmongHouse)
+		{
+			Houses.Add(It->GetActorLocation());
+		}
+	}
+	const FVector C = GetActorLocation();
+	struct FRoadSample { FVector P; FVector T; int32 Road; float D; };
+	TArray<FRoadSample> Samples;
+	int32 RoadIdx = 0;
+	for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It, ++RoadIdx)
+	{
+		const USplineComponent* Sp = It->GetSpline();
+		if (!Sp)
+		{
+			continue;
+		}
+		const float Len = Sp->GetSplineLength();
+		for (float D = 0.f; D < Len; D += 250.f)
+		{
+			const FVector P = Sp->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
+			if (FVector::DistSquared2D(P, C) < FMath::Square(Radius + 1500.f))
+			{
+				Samples.Add({ P, Sp->GetTangentAtDistanceAlongSpline(D, ESplineCoordinateSpace::World).GetSafeNormal2D(), RoadIdx, D });
+			}
+		}
+	}
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGRoadside), false, this);
+	auto Ground = [&](const FVector& P, FVector& Out) -> bool
+	{
+		FHitResult Hit;
+		if (!GetWorld()->LineTraceSingleByChannel(Hit, P + FVector(0, 0, 3000.f), P - FVector(0, 0, 6000.f), ECC_Visibility, Params)
+			|| !Hit.GetActor() || !Hit.GetActor()->GetClass()->GetName().Contains(TEXT("Landscape"))
+			|| Hit.ImpactNormal.Z < 0.78f || Hit.ImpactPoint.Z < MinZ)
+		{
+			return false;
+		}
+		Out = Hit.ImpactPoint;
+		return true;
+	};
+	auto Clear = [&](const FVector& P, float RoadCm, float HouseCm) -> bool
+	{
+		for (const FRoadSample& S : Samples)
+		{
+			if (FVector::DistSquared2D(S.P, P) < RoadCm * RoadCm) { return false; }
+		}
+		for (const FVector& H : Houses)
+		{
+			if (FVector::DistSquared2D(H, P) < HouseCm * HouseCm) { return false; }
+		}
+		return true;
+	};
+	TArray<FTransform> Fence, Racks, Wood;
+	for (const FRoadSample& S : Samples)
+	{
+		if (FVector::DistSquared2D(S.P, C) > Radius * Radius)
+		{
+			continue;
+		}
+		const FVector N(-S.T.Y, S.T.X, 0.f);
+		for (const float Side : { -1.f, 1.f })
+		{
+			// One choice per 10 m block and side, so fences run continuously and racks / stacks stand alone.
+			const int32 Block = FMath::FloorToInt(S.D / 1000.f);
+			FRandomStream R(HashCombine(HashCombine(GetTypeHash(S.Road), GetTypeHash(Block)), GetTypeHash(Side > 0.f)));
+			const float Pick = R.FRand();
+			const float Off = R.FRandRange(560.f, 680.f);
+			const FVector Base = S.P + N * Side * Off;
+			if (Pick < 0.42f)
+			{
+				FVector A, B;
+				const FVector Pa = Base - S.T * 125.f, Pb = Base + S.T * 125.f;
+				if (Ground(Pa, A) && Ground(Pb, B) && Clear(Base, Off - 60.f, 650.f) && FMath::Abs(A.Z - B.Z) < 90.f)
+				{
+					const FVector Mid = (A + B) * 0.5f - FVector(0, 0, 12.f);
+					const FRotator Rot = (B - A).Rotation();
+					Fence.Add(FTransform(Rot, Mid, FVector(1.22f, 1.f, R.FRandRange(0.85f, 1.15f))));   // overlap: no gaps on the outside of bends
+				}
+			}
+			else if (FMath::Fmod(S.D, 1000.f) < 250.f)       // one rack / stack per block
+			{
+				FVector G;
+				const FVector P = Base + N * Side * 120.f;
+				if (Pick < 0.6f && Ground(P, G) && Clear(P, Off + 60.f, 600.f))
+				{
+					Racks.Add(FTransform(FRotator(0.f, S.T.Rotation().Yaw + R.FRandRange(-8.f, 8.f), 0.f), G - FVector(0, 0, 5.f)));
+				}
+				else if (Pick >= 0.6f && Pick < 0.78f && Ground(P, G) && Clear(P, Off + 60.f, 450.f))
+				{
+					Wood.Add(FTransform(FRotator(0.f, S.T.Rotation().Yaw + R.FRandRange(-10.f, 10.f), 0.f), G - FVector(0, 0, 4.f)));
+				}
+			}
+		}
+	}
+	MakeHism(TEXT("StoneFence"), FenceMesh, 14000)->AddInstances(Fence, false, true);
+	MakeHism(TEXT("CornRacks"), RackMesh, 9000)->AddInstances(Racks, false, true);
+	MakeHism(TEXT("WoodStacks"), WoodMesh, 9000)->AddInstances(Wood, false, true);
+	UE_LOG(LogTemp, Log, TEXT("%s: roadside %d fence segments, %d corn racks, %d wood stacks"), *GetName(), Fence.Num(), Racks.Num(), Wood.Num());
 }

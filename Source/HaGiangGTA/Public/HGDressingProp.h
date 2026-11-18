@@ -22,7 +22,10 @@ enum class EHGDressingKind : uint8
 	/** Wooden board on two posts (SignText). */
 	WoodSign,
 	/** Terraced corn plot: young corn on the contour terraces of the slope within Radius (late-March sowing). */
-	CornField
+	CornField,
+	/** Round 4B: roadside life along the road through a hamlet (within Radius): dry-stone fence runs, corn
+	 *  drying racks, firewood stacks - three instanced draws per hamlet. */
+	RoadsideLife
 };
 
 /**
@@ -64,9 +67,12 @@ protected:
 
 private:
 	void BuildCornField();
+	void BuildRoadside();
+	UHierarchicalInstancedStaticMeshComponent* MakeHism(FName Name, UStaticMesh* Mesh, int32 Cull);
 
 	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<USceneComponent> Root;
 	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> Flag;
 	UPROPERTY(Transient) TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Corn;
+	UPROPERTY(Transient) TArray<TObjectPtr<UHierarchicalInstancedStaticMeshComponent>> Roadside;
 	float Clock = 0.f;
 };

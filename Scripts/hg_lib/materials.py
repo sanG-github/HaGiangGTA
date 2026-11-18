@@ -249,7 +249,16 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # streaks on cliffs): no extra texture fetch on the landscape's M1 budget.
     crev = g.saturate(g.mul(g.sub((n_fine, "B"), 0.78), 7.0))
     rock_col = g.lerp(rock_col, g.color("Crevice", (0.045, 0.045, 0.042)), g.mul(crev, 0.75))
-    ledge_veg = g.mul(g.saturate(g.mul(g.sub((n_mid, "B"), 0.6), 5.0)), g.add(bedding, 0.35))
+    # Round 4B - macro variation (no extra fetch): n_far is a 32 m top projection, so on cliffs it stretches into
+    # broad vertical bands - big pale faces become curtains of light grey, warm ochre-grey and dark weathered
+    # grey-green (rain-washed and lichen streaks, as in the Tham Ma / Ma Pi Leng photos).
+    macro = g.add(0.62, g.mul((n_far, "G"), 0.6))
+    rock_col = g.mul(rock_col, macro)
+    warm = g.mul(g.saturate(g.mul(g.sub((n_far, "R"), 0.55), 3.0)), 0.55)
+    rock_col = g.lerp(rock_col, g.mul(g.color("WarmLime", (0.24, 0.19, 0.13)), g.add(0.7, g.mul((n_fine, "R"), 0.4))), warm)
+    weathered = g.mul(g.saturate(g.mul(g.sub(0.45, (n_far, "B")), 3.0)), 0.65)
+    rock_col = g.lerp(rock_col, g.color("Weathered", (0.075, 0.08, 0.065)), weathered)
+    ledge_veg = g.mul(g.saturate(g.mul(g.sub((n_mid, "B"), 0.55), 5.0)), g.add(bedding, 0.45))
     rock_col = g.lerp(rock_col, g.mul(green, 0.9), g.saturate(ledge_veg))
     # Even steep canyon slopes are grassed in the photos: bare rock only above ~68 deg.
     threshold = g.add(g.scalar("RockSlopeThreshold", 0.62), g.mul(g.sub((n_mid, "R"), 0.5), 0.25))
@@ -468,6 +477,11 @@ def karst_rock(tex) -> unreal.Material:
     rust = g.saturate(g.mul(g.sub((streak, "G"), 0.6), 5.0))
     dark = g.saturate(g.mul(g.sub((streak, "R"), 0.58), 4.0))
     col = g.lerp(g.lerp(lime, g.color("Rust", (0.48, 0.21, 0.08)), rust), g.color("Stain", (0.08, 0.075, 0.065)), g.mul(dark, 0.75))
+    # Round 4B: macro bands (35 m top projection -> broad vertical curtains on the walls), as on the landscape.
+    macro = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 3500.0))
+    col = g.mul(col, g.add(0.62, g.mul((macro, "G"), 0.6)))
+    col = g.lerp(col, g.color("WarmLime", (0.24, 0.19, 0.13)), g.mul(g.saturate(g.mul(g.sub((macro, "R"), 0.55), 3.0)), 0.5))
+    col = g.lerp(col, g.color("Weathered", (0.075, 0.08, 0.065)), g.mul(g.saturate(g.mul(g.sub(0.45, (macro, "B")), 3.0)), 0.6))
     up = g.up_facing()
     shrub = g.mul(remap_mask(g, up, 0.6, 4.0), g.saturate(g.mul((blotch, "R"), 1.5)))
     col = g.lerp(col, g.color("Shrub", (0.035, 0.07, 0.025)), shrub)
@@ -608,8 +622,12 @@ def range_layer(tex, name, color, haze, haze_amount) -> unreal.Material:
     col = g.mul(g.color("Base", color), g.add(0.7, g.add(g.mul((n, "R"), 0.4), g.mul((n2, "G"), 0.25))))
     rock = g.saturate(g.mul(g.sub((n2, "B"), 0.62), 4.0))
     col = g.lerp(col, g.mul(g.color("Rock", (0.2, 0.2, 0.2)), g.add(0.8, g.mul((n, "G"), 0.3))), g.mul(rock, 0.5))
-    valley = g.saturate(g.mul(g.sub(g.scalar("HazeTopZ", 125000.0), z), 1.0 / 80000.0))
-    col = g.lerp(col, g.color("Haze", haze), g.mul(valley, g.scalar("HazeAmount", haze_amount)))
+    # Round 4B: one aerial-perspective amount per layer (distance), plus only a light extra haze on the lowest
+    # slopes. The old height-graded haze turned every lower flank sky-coloured, so the ridge tops floated as
+    # arches and slivers over a pale "lake".
+    valley = g.saturate(g.mul(g.sub(g.scalar("HazeTopZ", 90000.0), z), 1.0 / 60000.0))
+    amt = g.add(g.scalar("HazeAmount", haze_amount), g.mul(valley, 0.15))
+    col = g.lerp(col, g.color("Haze", haze), amt)
     g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(g.const(0.95), unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(g.const(0.2), unreal.MaterialProperty.MP_SPECULAR)
@@ -646,7 +664,7 @@ def far_terrain(tex) -> unreal.Material:
     rock = g.mul(g.color("Rock", (0.16, 0.16, 0.155)), g.add(0.75, g.mul((n2, "R"), 0.5)))
     col = g.lerp(col, rock, g.mul(steep, g.add(0.5, g.mul((n, "G"), 0.5))))
     valley = g.saturate(g.mul(g.sub(g.scalar("HazeTopZ", 90000.0), z), 1.0 / 45000.0))
-    col = g.lerp(col, g.color("Haze", (0.2, 0.24, 0.28)), g.mul(valley, 0.35))
+    col = g.lerp(col, g.color("Haze", (0.15, 0.18, 0.21)), g.mul(valley, 0.2))
     g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(g.const(0.92), unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(g.const(0.3), unreal.MaterialProperty.MP_SPECULAR)
@@ -691,9 +709,8 @@ def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
                                                            ("TuSan", (0.62, 0.56, 0.42))) if f"T_HG_Sign_{k}" in tex}),
         "lamp": lamp(),
         "far_terrain": far_terrain(tex),
-        "range_0": range_layer(tex, "M_HG_RangeLayer_0", (0.05, 0.075, 0.045), (0.2, 0.25, 0.3), 0.35),
-        "range_1": range_layer(tex, "M_HG_RangeLayer_1", (0.055, 0.075, 0.065), (0.22, 0.27, 0.33), 0.5),
-        "range_2": range_layer(tex, "M_HG_RangeLayer_2", (0.065, 0.085, 0.09), (0.25, 0.3, 0.37), 0.6),
-        "range_3": range_layer(tex, "M_HG_RangeLayer_3", (0.08, 0.1, 0.12), (0.28, 0.33, 0.4), 0.7),
+        "range_0": range_layer(tex, "M_HG_RangeLayer_0", (0.05, 0.072, 0.045), (0.12, 0.15, 0.19), 0.22),
+        "range_1": range_layer(tex, "M_HG_RangeLayer_1", (0.055, 0.072, 0.065), (0.13, 0.16, 0.21), 0.38),
+        "range_2": range_layer(tex, "M_HG_RangeLayer_2", (0.06, 0.08, 0.085), (0.14, 0.17, 0.22), 0.52),
         "ranges": foliage(tex, "M_HG_DistantRanges", (0.05, 0.08, 0.05), (0.09, 0.12, 0.08), 0.95, two_sided=True),
     }

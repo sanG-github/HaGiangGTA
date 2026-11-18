@@ -573,8 +573,8 @@ def layout_for_dressing():
 
 def build_set_dressing(scatter, meshes, mats, tag, folder):
     """Reference-photo dressing: distant blue ranges, chevrons on the bends, utility poles, hamlets."""
-    # Round 3B: four layered ridge rings (gen_ranges.py, absolute altitude) instead of the single flat band.
-    for i in range(4):
+    # Round 3B: layered ridge rings (gen_ranges.py, absolute altitude) instead of the single flat band (3 since 4B).
+    for i in range(3):
         path = f"/Game/HaGiang/Generated/Meshes/SM_HG_RangeLayer_{i}.SM_HG_RangeLayer_{i}"
         if unreal.EditorAssetLibrary.does_asset_exist(path.split(".")[0]) and f"range_{i}" in mats:
             layer = hg.spawn_mesh(f"RangeLayer_{i}", path, (0, 0, 0), material=mats[f"range_{i}"], tag=tag,
@@ -586,7 +586,7 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
                 hg.warn(f"RangeLayer_{i} collision: {exc}")
     ranges = hg.spawn_mesh("DistantRanges", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantRanges.SM_HG_DistantRanges",
                            (0, 0, 80000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
-    ranges.set_actor_hidden_in_game(any(f"range_{i}" in mats for i in range(4)))   # kept only as a fallback
+    ranges.set_actor_hidden_in_game(any(f"range_{i}" in mats for i in range(3)))   # kept only as a fallback
     ranges.static_mesh_component.set_editor_property("cast_shadow", False)
     # Scenery only: its auto-generated collision box would enclose the whole map (170..2060 m) and
     # swallow every ground trace and the PlayerStart.

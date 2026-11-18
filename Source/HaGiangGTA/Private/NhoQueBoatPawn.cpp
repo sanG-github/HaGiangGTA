@@ -376,6 +376,17 @@ void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 		const float W = FMath::Clamp(FMath::Abs(Speed) / 1500.f, 0.f, 1.f);
 		KitFlag->SetRelativeRotation(FRotator(-(1.f - W) * 50.f, FMath::Sin(T * (5.f + 9.f * W)) * (8.f + 14.f * W), 0.f));
 	}
+	if (KitWake)
+	{
+		// Foam only under way, longer and wider with speed, with a slight shimmer so it does not look painted on.
+		const float W = FMath::Clamp((Speed - 150.f) / 1300.f, 0.f, 1.f);
+		KitWake->SetVisibility(W > 0.f && bFloating);
+		if (W > 0.f)
+		{
+			const float T = GetWorld()->GetTimeSeconds();
+			KitWake->SetRelativeScale3D(FVector(0.35f + 0.65f * W + 0.03f * FMath::Sin(T * 3.1f), 0.6f + 0.4f * W, 1.f));
+		}
+	}
 	if (Crew.Num() > 0)
 	{
 		Crew[0].SetVisible(!IsPlayerControlled());
@@ -572,12 +583,14 @@ namespace HGCanoKit
 		}
 		return X < -560.f ? FMath::Lerp(118.f, 132.f, (X + 620.f) / 60.f) : 138.f;
 	}
-	float Gunwale(float X) { return 45.f + FMath::Max(0.f, X - 330.f) * 0.13f; }
-	float Keel(float X) { return -45.f + FMath::Max(0.f, X - 220.f) * 0.14f; }
+	// Round 4B: a stronger sheer and forefoot so the bow reads pointed and raised from the chase camera.
+	float Gunwale(float X) { return 45.f + FMath::Square(FMath::Max(0.f, X - 260.f) / 380.f) * 70.f; }
+	float Keel(float X) { return -45.f + FMath::Max(0.f, X - 220.f) * 0.2f; }
 
 	void BuildHull(FHGMeshKit& K)
 	{
-		const FC Blue(0.035f, 0.17f, 0.5f), White(0.75f, 0.75f, 0.72f), Inside(0.28f, 0.29f, 0.3f), Red(0.32f, 0.04f, 0.03f);
+		// Round 4B: dark teal topsides and a near-black bottom (the bright blue + red read as a toy from above).
+		const FC Blue(0.012f, 0.085f, 0.085f), White(0.7f, 0.7f, 0.66f), Inside(0.2f, 0.21f, 0.2f), Red(0.035f, 0.028f, 0.022f);
 		// Stations from the transom to the bow tip; each section: gunwale, stripe, chine, keel (left -> right).
 		TArray<float> Xs;
 		for (float X = -620.f; X < 300.f; X += 92.f) { Xs.Add(X); }
@@ -625,8 +638,16 @@ namespace HGCanoKit
 				K.Tube(FVector(X, S * (Beam(X) - 4.f), 45.f), FVector(X, S * (Beam(X) - 4.f), 62.f), 1.2f, 1.2f, 5, false);
 			}
 		}
-		K.Paint(Blue, HGSurf::Gloss);
-		K.Box(FVector(470.f, 0.f, 58.f), FVector(300.f, 150.f, 4.f), FRotator(4.f, 0.f, 0.f));
+		// Pointed foredeck that follows the gunwale to the stem (was a rectangle overhanging the bow).
+		{
+			TArray<FVector> Deck;
+			for (float X = 330.f; X <= 640.f; X += 31.f) { Deck.Add(FVector(X, -Beam(X) + 2.f, Gunwale(X) + 1.f)); }
+			for (float X = 640.f; X >= 330.f; X -= 31.f) { Deck.Add(FVector(X, Beam(X) - 2.f, Gunwale(X) + 1.f)); }
+			K.Paint(FC(0.6f, 0.6f, 0.57f), HGSurf::Gloss);
+			K.Fan(Deck, FVector(470.f, 0.f, Gunwale(470.f) + 3.f), FVector::UpVector);
+			K.Paint(FC(0.03f, 0.02f, 0.015f), HGSurf::Satin);
+			K.Tube(FVector(600.f, 0.f, Gunwale(600.f) + 2.f), FVector(640.f, 0.f, Gunwale(640.f) + 18.f), 3.f, 2.f, 6, true);  // stem post
+		}
 		// Benches (6 rows), wheel console at the stern.
 		for (int32 r = 0; r < 6; ++r)
 		{
@@ -642,41 +663,92 @@ namespace HGCanoKit
 		K.Box(FVector(-470.f, 0.f, 85.f), FVector(40.f, 70.f, 90.f));
 		K.Paint(FC(0.02f, 0.02f, 0.02f), HGSurf::Satin);
 		K.Tube(FVector(-450.f, 0.f, 135.f), FVector(-440.f, 0.f, 128.f), 18.f, 18.f, 12, true);    // wheel
-		// Low roof on thin posts: red with the yellow star (ART_BIBLE dock photos), white trim.
+		// Round 4B: slimmer, shorter roof high on its posts - the hull, benches and people show around it and
+		// under it from the chase camera (the full-length wide roof read as an orange box).
 		K.Paint(FC(0.62f, 0.62f, 0.6f), HGSurf::Chrome);
-		for (const float X : { -540.f, -230.f, 80.f, 380.f })
+		for (const float X : { -290.f, 20.f, 320.f })      // open stern: helmsman and engine show from behind
 		{
 			for (const float S : { -1.f, 1.f })
 			{
-				K.Tube(FVector(X, S * 122.f, 45.f), FVector(X, S * 122.f, 198.f), 2.4f, 2.4f, 6, true);
+				K.Tube(FVector(X, S * 96.f, 45.f), FVector(X, S * 92.f, 222.f), 2.6f, 2.2f, 6, true);
 			}
 		}
-		K.Paint(FC(0.4f, 0.022f, 0.016f), HGSurf::Satin);
-		K.Box(FVector(-80.f, 0.f, 202.f), FVector(1040.f, 270.f, 5.f));
-		K.Ellipsoid(FVector(-80.f, 0.f, 204.f), FVector(520.f, 135.f, 14.f), FRotator::ZeroRotator, 16, 4, 0.f);
+		K.Paint(FC(0.13f, 0.012f, 0.01f), HGSurf::Satin);   // deep maroon: the brighter red read salmon in the sun
+		K.Box(FVector(15.f, 0.f, 226.f), FVector(650.f, 196.f, 3.f));
+		K.Box(FVector(15.f, 0.f, 231.f), FVector(650.f, 120.f, 6.f));      // shallow camber ridge
 		K.Paint(FC(0.75f, 0.75f, 0.72f), HGSurf::Gloss);
-		K.Box(FVector(-80.f, -136.f, 198.f), FVector(1044.f, 3.f, 12.f));
-		K.Box(FVector(-80.f, 136.f, 198.f), FVector(1044.f, 3.f, 12.f));
+		K.Box(FVector(15.f, -99.f, 222.f), FVector(654.f, 3.f, 10.f));
+		K.Box(FVector(15.f, 99.f, 222.f), FVector(654.f, 3.f, 10.f));
+		K.Box(FVector(341.f, 0.f, 222.f), FVector(3.f, 200.f, 10.f));
+		K.Box(FVector(-311.f, 0.f, 222.f), FVector(3.f, 200.f, 10.f));
 		K.Paint(FC(1.f, 0.78f, 0.f), HGSurf::Satin);
-		const FVector StarC(-80.f, 0.f, 219.f);
+		const FVector StarC(15.f, 0.f, 235.f);
 		for (int32 i = 0; i < 5; ++i)
 		{
 			const float A = FMath::DegreesToRadians(90.f + 72.f * i);
 			const FVector Dir(FMath::Sin(A), FMath::Cos(A), 0.f);
-			K.Box(StarC + Dir * 30.f, FVector(60.f, 22.f, 2.f), FRotator(0.f, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)), 0.f));
+			K.Box(StarC + Dir * 22.f, FVector(44.f, 16.f, 2.f), FRotator(0.f, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)), 0.f));
 		}
-		K.Box(StarC, FVector(40.f, 40.f, 2.f), FRotator(0.f, 36.f, 0.f));
-		// Long-tail outboard: engine on a pivot at the transom, shaft angled down into the water behind.
-		K.Paint(FC(0.08f, 0.08f, 0.09f), HGSurf::Satin);
-		K.Box(FVector(-660.f, 0.f, 72.f), FVector(70.f, 46.f, 46.f));
+		K.Box(StarC, FVector(30.f, 30.f, 2.f), FRotator(0.f, 36.f, 0.f));
+		// Long-tail outboard (Round 4B: bigger, raised on its pivot so it shows over the transom from behind):
+		// red-capped engine block, exhaust, long shaft angled down into the water, prop.
+		K.Paint(FC(0.06f, 0.06f, 0.065f), HGSurf::Satin);
+		K.Box(FVector(-600.f, 0.f, 60.f), FVector(30.f, 30.f, 30.f));                  // pivot mount
+		K.Box(FVector(-668.f, 0.f, 98.f), FVector(96.f, 56.f, 50.f));
+		K.Paint(FC(0.42f, 0.03f, 0.02f), HGSurf::Gloss);
+		K.Box(FVector(-668.f, 0.f, 128.f), FVector(90.f, 52.f, 12.f));                  // red cowl
+		K.Paint(FC(0.03f, 0.03f, 0.03f), HGSurf::Satin);
+		K.Tube(FVector(-640.f, 30.f, 110.f), FVector(-650.f, 34.f, 160.f), 4.f, 4.f, 6, true);     // exhaust
 		K.Paint(FC(0.55f, 0.55f, 0.56f), HGSurf::Chrome);
-		K.Tube(FVector(-650.f, 0.f, 60.f), FVector(-880.f, 0.f, -18.f), 4.f, 3.f, 8, true);
-		K.Tube(FVector(-630.f, 0.f, 90.f), FVector(-540.f, 0.f, 110.f), 1.5f, 1.5f, 5, true);     // tiller
+		K.Tube(FVector(-700.f, 0.f, 85.f), FVector(-960.f, 0.f, 0.f), 4.5f, 3.5f, 8, true);
+		K.Tube(FVector(-620.f, 0.f, 105.f), FVector(-520.f, 0.f, 120.f), 1.8f, 1.8f, 5, true);     // tiller
 		K.Paint(FC(0.2f, 0.2f, 0.2f), HGSurf::Satin);
-		K.Tube(FVector(-885.f, -9.f, -20.f), FVector(-885.f, 9.f, -20.f), 12.f, 12.f, 3, true); // prop
+		K.Tube(FVector(-965.f, -10.f, -2.f), FVector(-965.f, 10.f, -2.f), 13.f, 13.f, 3, true); // prop
 		// Flag staff at the stern (the cloth is a separate flapping part).
 		K.Paint(FC(0.6f, 0.6f, 0.58f), HGSurf::Chrome);
 		K.Tube(FVector(-600.f, -110.f, 45.f), FVector(-600.f, -110.f, 262.f), 1.6f, 1.2f, 6, true);
+	}
+}
+
+namespace HGCanoKit
+{
+	/** Round 4B: foam wake behind the long-tail (local frame of the actor root, z = 0 at the water surface): a
+	 * churned prop wash and two diverging arms of broken foam that fade into the water colour. Scaled by speed. */
+	void BuildWake(FHGMeshKit& K)
+	{
+		FRandomStream R{ 4242 };
+		// Round 4B tuning: softer foam (pale aqua, not paper white) fading into the water within ~15 m; continuous
+		// thin arms instead of evenly spaced white dashes (read as fish bones in the first pass).
+		for (int32 i = 0; i < 30; ++i)
+		{
+			const float D = i * 55.f;                                   // distance behind the prop
+			const float Fade = FMath::Pow(D / 1650.f, 0.6f);
+			const FC Foam = FMath::Lerp(FC(0.5f, 0.58f, 0.56f), FC(0.05f, 0.2f, 0.19f), Fade);
+			K.Paint(Foam, HGSurf::Matte);
+			// Prop wash: churned, widening and breaking up behind the prop.
+			if (i < 8 || R.FRand() < 0.7f)
+			{
+				K.Ellipsoid(FVector(-990.f - D, R.FRandRange(-25.f, 25.f) * (1.f + D / 600.f), 0.f),
+					FVector(45.f + D * 0.02f, 16.f + D * 0.06f, 2.f), FRotator(0.f, R.FRandRange(-12.f, 12.f), 0.f), 8, 3, 0.f);
+			}
+			// Diverging arms (Kelvin wake, ~19 deg each side) from the bow shoulders: overlapping thin streaks.
+			for (const float S : { -1.f, 1.f })
+			{
+				if (R.FRand() < 0.2f)
+				{
+					continue;
+				}
+				const float X = -560.f - D * 1.05f, Y = S * (150.f + D * 0.36f);
+				K.Ellipsoid(FVector(X, Y + R.FRandRange(-8.f, 8.f), 0.f),
+					FVector(48.f, 5.f + D * 0.008f, 1.5f), FRotator(0.f, -S * 19.f, 0.f), 6, 3, 0.f);
+			}
+		}
+		// Bow wave: white wings at the forefoot.
+		K.Paint(FC(0.55f, 0.62f, 0.6f), HGSurf::Matte);
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Ellipsoid(FVector(420.f, S * 128.f, 0.f), FVector(110.f, 9.f, 2.f), FRotator(0.f, -S * 12.f, 0.f), 8, 3, 0.f);
+		}
 	}
 }
 
@@ -693,6 +765,14 @@ void ANhoQueBoatPawn::BuildCanoKit()
 		return;   // -hgnokit: keep the greybox
 	}
 	KitHull->SetCullDistance(60000.f);
+	UStaticMesh* WakeMesh = FHGMeshKit::Cached(TEXT("SM_HGCanoWake"), [](FHGMeshKit& K) { HGCanoKit::BuildWake(K); });
+	KitWake = FHGMeshKit::AddComponent(this, GetRootComponent(), WakeMesh, TEXT("KitWake"), FVector(0.f, 0.f, Draft + 1.f));
+	if (KitWake)
+	{
+		KitWake->SetCastShadow(false);
+		KitWake->SetCullDistance(30000.f);
+		KitWake->SetVisibility(false);
+	}
 	KitFlag = FHGMeshKit::AddComponent(this, HullRoot, HGBikes::Flag(), TEXT("KitFlag"), FVector(-600.f, -110.f, 260.f));
 	if (KitFlag)
 	{

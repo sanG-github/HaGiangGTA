@@ -113,6 +113,7 @@ private:
 	void BuildCanoKit();
 	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitHull;
 	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitFlag;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitWake;
 	TArray<FHGPersonRig> Crew;
 	bool bCrewBuilt = false;
 

@@ -64,6 +64,10 @@ def main():
     flip = fn[:, 2] < 0
     fn[flip] *= -1
     f[flip] = f[flip][:, [0, 2, 1]]
+    # Round 4B: Unreal culls these (counter-clockwise seen from above) faces as back faces - in game only the
+    # slopes above eye level showed (seen from below): an "arch" over a void past Ma Pi Leng and terrain slivers
+    # floating in the sky. Wind them clockwise; the vertex normals stay up.
+    f = f[:, [0, 2, 1]]
     nrm = np.zeros_like(verts)
     for k in range(3):
         np.add.at(nrm, f[:, k], fn)

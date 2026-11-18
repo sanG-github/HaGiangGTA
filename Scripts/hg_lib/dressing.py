@@ -93,6 +93,11 @@ def build(layout, scatter, tag, folder):
         corn = _spawn(K.CORN_FIELD, f"CornTerraces_{i:02d}", (cx, cy, cz), 0.0, tag, folder,
                       radius=3000.0 + 500.0 * min(len(c), 5))   # 30-55 m around the hamlet
         corn.set_editor_property("min_z", float(layout["water"]["surface_z_cm"]) + 1500.0)   # off the river banks
+        # Round 4B: stone fences, corn drying racks and firewood stacks along the road through the hamlet.
+        if hasattr(K, "ROADSIDE_LIFE"):
+            life = _spawn(K.ROADSIDE_LIFE, f"RoadsideLife_{i:02d}", (cx, cy, cz), 0.0, tag, folder,
+                          radius=6000.0 + 800.0 * min(len(c), 5))
+            life.set_editor_property("min_z", float(layout["water"]["surface_z_cm"]) + 1500.0)
 
     # --- Viewpoint props ---
     marks = layout.get("landmarks", {})
@@ -136,4 +141,4 @@ def build(layout, scatter, tag, folder):
             if clear(loc):
                 _spawn(K.WOOD_SIGN, "TaLang_DockBoard", loc, face, tag, folder, text="SÔNG NHO QUẾ · TU SẢN", sign="TuSan")
                 break
-    hg.log(f"Set dressing: {len(houses)} H'Mong houses, {len(clusters)} corn terraces, Ma Pi Leng flag + name stone, 2 boards")
+    hg.log(f"Set dressing: {len(houses)} H'Mong houses, {len(clusters)} corn terraces + roadside life, Ma Pi Leng flag + name stone, 2 boards")
