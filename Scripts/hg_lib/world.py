@@ -214,7 +214,7 @@ def build_golden_hour(tag, folder):
                  ("fog_inscattering_luminance", unreal.LinearColor(0.45, 0.42, 0.40, 1.0)),
                  ("directional_inscattering_luminance", unreal.LinearColor(1.0, 0.62, 0.32, 1.0)),
                  ("directional_inscattering_exponent", 6.0),
-                 ("volumetric_fog", True), ("volumetric_fog_scattering_distribution", 0.65),
+                 ("enable_volumetric_fog", True), ("volumetric_fog_scattering_distribution", 0.65),
                  ("volumetric_fog_extinction_scale", 1.2), ("volumetric_fog_distance", 25000.0),
                  ("fog_max_opacity", 0.92), ("start_distance", 300.0)):
         try:

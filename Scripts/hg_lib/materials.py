@@ -234,9 +234,9 @@ def river_water(tex) -> unreal.Material:
     g.out(normal, unreal.MaterialProperty.MP_NORMAL)
 
     water_out = g.node(unreal.MaterialExpressionSingleLayerWaterMaterialOutput)
-    g.link(g.color("ScatteringCoefficients", (0.015, 0.11, 0.075)), water_out, "Scattering Coefficients")
-    g.link(g.color("AbsorptionCoefficients", (0.42, 0.055, 0.10)), water_out, "Absorption Coefficients")
-    g.link(g.scalar("PhaseG", 0.2), water_out, "Phase G")
+    g.link(g.color("ScatteringCoefficients", (0.015, 0.11, 0.075)), water_out, "ScatteringCoefficients")
+    g.link(g.color("AbsorptionCoefficients", (0.42, 0.055, 0.10)), water_out, "AbsorptionCoefficients")
+    g.link(g.scalar("PhaseG", 0.2), water_out, "PhaseG")
     return g.finish()
 
 
