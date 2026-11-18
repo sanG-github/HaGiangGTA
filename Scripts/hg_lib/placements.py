@@ -137,6 +137,13 @@ def segment_navigable(layout, terrain, a, b, radius_cm, step_cm=500.0, depth_cm=
 # Building footprints (oriented rectangles), replicating world.build_landmarks / build_dock / houses
 # ---------------------------------------------------------------------------
 
+# Panorama cafe and drink stall on the Ma Pi Leng plaza, (along, up) metres in the plaza frame. The cafe used to
+# stand at (-15, 4.5) and the stall at (16, 3.5): both past the edge of the 12 m pad, the cafe's far end 40 m
+# over the slope with nothing under it. Both now on the levelled pad (flat to +-0.3 m for a in [-10, 8]).
+MPL_CAFE_AT = (-3.0, 5.0)
+MPL_STALL_AT = (6.5, -3.5)
+
+
 def _rect(name, cx, cy, yaw, sx_cm, sy_cm):
     return {"name": name, "cx": cx, "cy": cy, "yaw": yaw, "hx": sx_cm * 0.5, "hy": sy_cm * 0.5}
 
@@ -157,8 +164,8 @@ def footprints(layout, scatter=None):
         if "youth_monument" not in marks:
             out.append(_rect("MPL_Monument", *at(6, 2), yaw, 420, 420))
         out.append(_rect("MPL_NameStone", *at(-6, -4), yaw + 90, 260, 140))
-        out.append(_rect("MPL_PanoramaCafe", *at(-15, 4.5), yaw, 900 * 1.25, 600 * 1.0))
-        out.append(_rect("MPL_DrinkStall", *at(16, 3.5), yaw, 260, 120))
+        out.append(_rect("MPL_PanoramaCafe", *at(*MPL_CAFE_AT), yaw, 900 * 1.25, 600 * 1.0))
+        out.append(_rect("MPL_DrinkStall", *at(*MPL_STALL_AT), yaw, 260, 120))
     if "youth_monument" in marks:
         at, yaw = frame("youth_monument")
         out.append(_rect("YouthVolunteers_Monument", *at(0, 2), yaw, 420, 420))

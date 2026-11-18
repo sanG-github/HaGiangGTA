@@ -111,4 +111,17 @@ private:
 	void PlayResetStageStats();
 	FString PlayTrafficSummary() const;
 	void PlayCheck(const TCHAR* Label, bool bShot);
+
+	// Cheaper Lumen screen-probe tier while the camera is low over the river (Tu San gorge boat ride).
+	void UpdateWaterGITier(float DeltaSeconds);
+	float WaterGICheck = 0.f;
+	bool bWaterGI = false;
+	float PlayStockKmh = 0.f;
+	bool bPlayIntroLogged = false;
+	float PlayIntroT = 0.f;
+	double LastShotRequestTime = -10.0;
+	bool bPerfQuitPending = false;
+	bool bPlayBoatJobLogged = false;
+	bool bPlayBoatReturn = false;
+	float PlayReturnStart = 0.f;
 };

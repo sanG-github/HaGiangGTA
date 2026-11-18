@@ -2,11 +2,16 @@
 
 #include "CoreMinimal.h"
 #include "Subsystems/WorldSubsystem.h"
+#include "InputCoreTypes.h"
 #include "HGMissionSubsystem.generated.h"
 
 class AHGPlayerCharacter;
 class AHGRoadSplineActor;
 class ANhoQueBoatPawn;
+class AHGViewpointActor;
+
+/** Pause menu rows (Esc). */
+enum class EHGPauseItem : uint8 { Resume, Restart, Quit, Count };
 
 UENUM(BlueprintType)
 enum class EHGMissionState : uint8
@@ -44,7 +49,12 @@ struct FHGMission
  *    + up to 50,000 for a well-framed shot.
  *  - "Tron CSGT": at the top of the Ta Lang road the police are tipped off (3 stars); get down the hairpins to the
  *    Ta Lang dock without being busted: 300,000 VND. Busted = failed (can be retried).
+ *  - "Thuyen Tu San": in the hired cano at the Ta Lang dock, take two tourists down the gorge to the Ma Pi Leng
+ *    bend and back to the dock: 250,000 VND + a tip for a quick tour.
  * Also the Ta Lang dock boat hire: on foot near the dock, [F] pays 100,000 VND and puts you in the cano.
+ *
+ * Plus the game-flow UI state the HUD draws: the mission list (Tab / M) with the one upgrade for sale (grip
+ * tyres, [B]), the pause menu (Esc: resume / restart at a viewpoint / quit) and the intro card on first spawn.
  */
 UCLASS()
 class HAGIANGGTA_API UHGMissionSubsystem : public UTickableWorldSubsystem
@@ -55,6 +65,7 @@ public:
 	virtual bool DoesSupportWorldType(const EWorldType::Type WorldType) const override;
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
+	virtual bool IsTickableWhenPaused() const override { return true; }
 
 	const TArray<FHGMission>& GetMissions() const { return Missions; }
 	const FHGMission* GetActive() const { return Missions.IsValidIndex(ActiveIndex) ? &Missions[ActiveIndex] : nullptr; }
@@ -83,6 +94,33 @@ public:
 	FVector GetBoatHirePoint() const { return BoatHirePoint; }
 	static constexpr int32 BoatHirePrice = 100000;
 
+	// ---- Mission list + upgrade ----
+	bool IsListOpen() const { return bListOpen; }
+	/** Grip tyres ("lop gai"): the player's bike keeps 90 % of its top speed on the Ta Lang concrete (70 % stock)
+	 *  and 65 % off the road (45 %), with half the off-road drag. */
+	bool HasGripTyres() const { return bGripTyres; }
+	static bool PlayerHasGripTyres(const UWorld* World);
+	static constexpr int32 GripTyresPrice = 200000;
+	/** Buy the tyres (the list's [B]); false + a banner if already owned / not enough money. */
+	bool BuyGripTyres();
+
+	// ---- Pause menu ----
+	bool IsPauseOpen() const { return bPauseOpen; }
+	EHGPauseItem GetPauseItem() const { return PauseItem; }
+	/** Viewpoint the "restart" row points at (Left / Right cycles). */
+	FString GetRestartName() const;
+	void SetPaused(bool bPause);
+	void RestartAtViewpoint(int32 Index);
+	int32 GetViewpointCount() const { return Viewpoints.Num(); }
+
+	// ---- Intro card ----
+	bool IsIntroOpen() const { return IntroTime > 0.f; }
+	float GetIntroTime() const { return IntroTime; }
+	void CloseIntro() { IntroTime = 0.f; }
+
+	/** Boat tour: on the way back to the dock. */
+	bool IsBoatTourReturning() const { return bBoatLegBack; }
+
 private:
 	void SetupMissions();
 	void StartMission(int32 Index, APawn* Player);
@@ -90,6 +128,9 @@ private:
 	void Fail(FHGMission& M, const FString& Why);
 	void TickActive(FHGMission& M, APawn* Player, float DeltaTime);
 	ANhoQueBoatPawn* FindHireBoat() const;
+	void HandleMenuInput(APlayerController* PC);
+	void SpawnBoatGuests(ANhoQueBoatPawn* Boat);
+	void ClearBoatGuests();
 
 	TArray<FHGMission> Missions;
 	int32 ActiveIndex = INDEX_NONE;
@@ -105,4 +146,17 @@ private:
 	bool bPassengerAboard = false;
 	float ActiveDistance = -1.f;
 	TWeakObjectPtr<AHGRoadSplineActor> Road;
+
+	bool bListOpen = false;
+	TMap<FKey, bool> MenuKeysDown;
+	bool bGripTyres = false;
+	bool bPauseOpen = false;
+	EHGPauseItem PauseItem = EHGPauseItem::Resume;
+	int32 RestartIndex = 0;
+	TArray<TWeakObjectPtr<AHGViewpointActor>> Viewpoints;
+	float IntroTime = 0.f;
+	bool bIntroShown = false;
+	bool bBoatLegBack = false;
+	FVector BoatBend = FVector::ZeroVector;
+	TArray<TWeakObjectPtr<UActorComponent>> BoatGuests;
 };
