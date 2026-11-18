@@ -1,4 +1,5 @@
 #include "HGCowActor.h"
+#include "HGPaint.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -68,20 +69,21 @@ UStaticMeshComponent* AHGCowActor::AddPart(FName Name, UStaticMesh* Mesh, UScene
 void AHGCowActor::BeginPlay()
 {
 	Super::BeginPlay();
+	HGPaint::LimitDrawDistance(this);
 	Home = GetActorLocation();
 	Target = Home;
 	Phase = FMath::FRand() * 10.f;
 	IdleTime = FMath::FRandRange(2.f, 8.f);
 	for (UStaticMeshComponent* C : CoatParts)
 	{
-		if (UMaterialInstanceDynamic* MID = C->CreateAndSetMaterialInstanceDynamic(0))
+		if (UMaterialInstanceDynamic* MID = HGPaint::MakeMID(C))
 		{
 			MID->SetVectorParameterValue(TEXT("Color"), CoatColor);
 		}
 	}
 	for (UStaticMeshComponent* C : DarkParts)
 	{
-		if (UMaterialInstanceDynamic* MID = C->CreateAndSetMaterialInstanceDynamic(0))
+		if (UMaterialInstanceDynamic* MID = HGPaint::MakeMID(C))
 		{
 			MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.05f, 0.04f, 0.03f));
 		}

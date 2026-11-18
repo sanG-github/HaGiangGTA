@@ -382,16 +382,16 @@ def build_viewpoint_props(layout, scatter, meshes, mats, tag, folder):
     px, py = -oy, ox                              # along the parapet
     yaw = math.degrees(math.atan2(py, px))
     stone = mats.get("stone")
-    for i in range(-2, 3):
-        cx, cy = vp[0] + ox * 900 + px * i * 420, vp[1] + oy * 900 + py * i * 420
-        hg.box(f"Parapet_{i + 2}", (cx, cy, vp[2] + 40), (400, 55, 95), yaw=yaw, material=stone, tag=tag, folder=folder)
+    # Positions from placements.tham_ma_parapet: blocks on/near the road are dropped (validate_layout checks it).
+    blocks, buckets = placements.tham_ma_parapet(placements.ctx_for(layout, scatter))
+    for i, (cx, cy, gz, byaw) in enumerate(blocks):
+        hg.box(f"Parapet_{i}", (cx, cy, gz + 40), (400, 55, 95), yaw=byaw, material=stone, tag=tag, folder=folder)
     red = hg.color_material("MI_GB_BucketRed", (0.6, 0.03, 0.03))
-    for i, (along, flower) in enumerate(((-700, "flowers_white"), (-250, "flowers_yellow"), (450, "flowers_white"))):
-        bx, by = vp[0] + ox * 820 + px * along, vp[1] + oy * 820 + py * along
-        hg.spawn_mesh(f"FlowerBucket_{i}", hg.CYLINDER, (bx, by, vp[2] + 30), scale=(0.55, 0.55, 0.6),
+    for i, ((bx, by, gz), flower) in enumerate(zip(buckets, ("flowers_white", "flowers_yellow", "flowers_white"))):
+        hg.spawn_mesh(f"FlowerBucket_{i}", hg.CYLINDER, (bx, by, gz + 30), scale=(0.55, 0.55, 0.6),
                       material=red, tag=tag, folder=folder)
         bush = hg.spawn_mesh(f"FlowerBunch_{i}", "/Game/HaGiang/Generated/Meshes/SM_HG_Bush_01.SM_HG_Bush_01",
-                             (bx, by, vp[2] + 60), scale=(0.45, 0.45, 0.55), material=mats[flower], tag=tag,
+                             (bx, by, gz + 60), scale=(0.45, 0.45, 0.55), material=mats[flower], tag=tag,
                              folder=folder, collision=False)
     girl = hg.spawn_actor(unreal.HGTouristNPC, "FlowerSeller", (vp[0] + ox * 760 + px * -480, vp[1] + oy * 760 + py * -480, vp[2] + 100),
                           (0, 0, 0), tag, folder)

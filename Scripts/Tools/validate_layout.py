@@ -458,6 +458,21 @@ def check_pickups(ctx, g, rep, pickups):
         rep.check("pickups", label, prob)
 
 
+def check_props(ctx, g, rep):
+    """Tham Ma parapet blocks must stay off the road (a block across the hairpin stopped every bike)."""
+    blocks, buckets = P.tham_ma_parapet(ctx)
+    half = P.PARAPET_SEG[0] * 0.5
+    for i, (x, y, z, yaw) in enumerate(blocks):
+        a = math.radians(yaw)
+        c = min(ctx.road.edge_clearance(x + math.cos(a) * s * half, y + math.sin(a) * s * half) for s in (-1, 0, 1))
+        rep.check("props", f"parapet block {i}", None if c >= P.PARAPET_ROAD_CLEAR_CM - 1 else f"{c / 100:.1f} m from the road edge")
+    if not blocks:
+        rep.add("props", "parapet", "WARN", "no parapet block fits off the road")
+    for i, (x, y, z) in enumerate(buckets):
+        c = ctx.road.edge_clearance(x, y)
+        rep.check("props", f"flower bucket {i}", None if c >= 50 else f"{c / 100:.1f} m from the road edge")
+
+
 def check_river(ctx, g, rep, river, legacy):
     surf = ctx.layout["water"]["surface_z_cm"]
     for i, (x, y, yaw) in enumerate(river["pontoons"]):
@@ -682,6 +697,7 @@ def main():
     check_crowds(ctx, g, rep, {"crowds": crowds})
     check_cows(ctx, g, rep, cows)
     check_pickups(ctx, g, rep, pickups)
+    check_props(ctx, g, rep)
     check_river(ctx, g, rep, river, args.legacy)
     check_traffic(ctx, rep, traffic, args.legacy, not args.no_sim, cusps)
     check_police(ctx, g, rep, args.legacy)

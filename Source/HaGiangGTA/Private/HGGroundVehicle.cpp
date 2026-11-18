@@ -1,9 +1,13 @@
 #include "HGGroundVehicle.h"
 
 #include "Components/BoxComponent.h"
+#include "Camera/CameraComponent.h"
 #include "Components/SplineComponent.h"
+#include "EngineUtils.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
+#include "HaGiangGTA.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGRoadSplineActor.h"
 #include "HGWantedSubsystem.h"
@@ -29,6 +33,9 @@ void AHGGroundVehicle::BeginPlay()
 {
 	Super::BeginPlay();
 	HeadingYaw = GetActorRotation().Yaw;
+	// The chase camera's pitch is driven in UpdateChaseCamera (part of the slope only), not inherited.
+	SpringArm->bInheritPitch = false;
+	ChaseCamPitchCurrent = ChaseCamPitch;
 }
 
 void AHGGroundVehicle::ResetToSpawn()
@@ -64,34 +71,50 @@ void AHGGroundVehicle::UpdateSpeed(float DeltaSeconds, float Throttle, bool bHan
 		}
 	}
 	const float Boost = (bBoost ? BoostMultiplier : 1.f) * SpeedMultiplier * Nitro;
-	const float TopSpeed = MaxForwardSpeed * Boost;
+	const float TopSpeed = MaxForwardSpeed * Boost * SurfaceScale;
 
-	if (Throttle > KINDA_SMALL_NUMBER)
-	{
-		Speed += (Speed < -10.f ? BrakeDeceleration : Acceleration * Boost) * Throttle * DeltaSeconds;
-	}
-	else if (Throttle < -KINDA_SMALL_NUMBER)
-	{
-		Speed += (Speed > 10.f ? BrakeDeceleration : Acceleration) * Throttle * DeltaSeconds;
-	}
-	else if (bGrounded)
-	{
-		Speed = FMath::FInterpConstantTo(Speed, 0.f, DeltaSeconds, CoastDeceleration);
-	}
-
+	// Drive and brakes act through the tyres: nothing while airborne. (Throttle used to keep adding speed in
+	// the air, so a bike wedged off the ground showed 60+ km/h on the speedo while standing still.)
 	if (bGrounded)
 	{
+		if (Throttle > KINDA_SMALL_NUMBER)
+		{
+			if (Speed < -10.f)
+			{
+				Speed += BrakeDeceleration * Throttle * DeltaSeconds;
+			}
+			else
+			{
+				// Engine curve: full pull from a standstill fading to nothing at top speed (a 110 cc Win runs
+				// out of breath, it doesn't hit a wall).
+				const float Frac = FMath::Clamp(Speed / FMath::Max(TopSpeed, 1.f), 0.f, 1.f);
+				Speed += Acceleration * Boost * (1.f - Frac * Frac) * Throttle * DeltaSeconds;
+			}
+		}
+		else if (Throttle < -KINDA_SMALL_NUMBER)
+		{
+			Speed += (Speed > 10.f ? BrakeDeceleration : Acceleration) * Throttle * DeltaSeconds;
+		}
+		else
+		{
+			Speed = FMath::FInterpConstantTo(Speed, 0.f, DeltaSeconds, CoastDeceleration);
+		}
+
 		if (bHandbrake)
 		{
 			Speed = FMath::FInterpConstantTo(Speed, 0.f, DeltaSeconds, BrakeDeceleration * 0.6f);
 		}
+		if (Surface == EHGSurface::OffRoad)
+		{
+			Speed = FMath::FInterpConstantTo(Speed, 0.f, DeltaSeconds, OffRoadDrag);
+		}
 		// Gravity component along the slope (MoveDir.Z > 0 means uphill).
 		Speed += GetWorld()->GetGravityZ() * MoveDir.Z * SlopeGravityScale * DeltaSeconds;
-	}
 
-	if (Speed > TopSpeed)
-	{
-		Speed = FMath::FInterpConstantTo(Speed, TopSpeed, DeltaSeconds, BrakeDeceleration * 0.5f);
+		if (Speed > TopSpeed)
+		{
+			Speed = FMath::FInterpConstantTo(Speed, TopSpeed, DeltaSeconds, OverSpeedDeceleration);
+		}
 	}
 	Speed = FMath::Max(Speed, -MaxReverseSpeed);
 }
@@ -105,8 +128,12 @@ void AHGGroundVehicle::MoveWithCollision(const FVector& Delta, const FVector& Mo
 
 	const float WalkableZ = FMath::Cos(FMath::DegreesToRadians(MaxWalkableSlopeDeg));
 
+	// SweepMove pushes out of whatever the box starts inside (a corner in the terrain bank after a landing or
+	// while the roll catches up with a cambered road) before moving: a sweep that starts penetrating is
+	// blocked at t = 0 every frame, which froze the bike for good ("stuck, speedo still 19 km/h").
 	FHitResult Hit;
-	AddActorWorldOffset(Delta, true, &Hit);
+	SweepMove(Delta, Hit);
+	bMoveBlocked = Hit.bBlockingHit;
 	if (!Hit.bBlockingHit)
 	{
 		return;
@@ -134,6 +161,12 @@ void AHGGroundVehicle::MoveWithCollision(const FVector& Delta, const FVector& Mo
 		Remaining = Remaining * (1.f - FwdHit.Time);
 	}
 
+	if (IsPlayerControlled() && GetWorld()->GetTimeSeconds() - LastBlockLogTime > 1.0)
+	{
+		LastBlockLogTime = GetWorld()->GetTimeSeconds();
+		UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s blocked by %s (normal z %.2f) at %.0f km/h"), *GetName(),
+			*GetNameSafe(Hit.GetActor()), Hit.ImpactNormal.Z, Speed * 0.036f);
+	}
 	// Wall / steep face: slide along it and lose speed proportional to the impact angle.
 	const FVector Slide = FVector::VectorPlaneProject(Remaining, Hit.ImpactNormal);
 	AddActorWorldOffset(Slide, true);
@@ -227,7 +260,10 @@ void AHGGroundVehicle::SnapToGround(float DeltaSeconds, const FVector& MoveDir)
 	}
 	else
 	{
-		if (!bWalkable || Gap > 2.f || VerticalVelocity > 0.f)
+		// Land when the ground is within this frame's fall (not only within 2 cm): otherwise a vehicle whose
+		// sweep is stopped by the slope just above the probe points hovers "airborne" forever.
+		const float LandGap = FMath::Max(2.f, -VerticalVelocity * DeltaSeconds + 2.f);
+		if (!bWalkable || Gap > LandGap || VerticalVelocity > 0.f)
 		{
 			return;
 		}
@@ -236,6 +272,7 @@ void AHGGroundVehicle::SnapToGround(float DeltaSeconds, const FVector& MoveDir)
 	}
 
 	SetActorLocation(FVector(Loc.X, Loc.Y, DesiredZ), false, nullptr, ETeleportType::None);
+	GroundComponent = (bFront ? FrontHit : RearHit).GetComponent();
 	bGrounded = true;
 	VerticalVelocity = 0.f;
 	GroundNormal = NewNormal;
@@ -285,8 +322,12 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 				Steer = -Steer; // rượu ngô: the road is spinning
 			}
 		}
+		// Keys are digital: ramp the bars in over ~0.25 s like a rider leaning in, instead of snapping.
+		SmoothedSteer = FMath::FInterpTo(SmoothedSteer, Steer, Dt, SteerResponse);
+		Steer = SmoothedSteer;
 	}
 	LastThrottle = Throttle;
+	UpdateSurface(Dt);
 
 	const float SpeedAlpha = FMath::Clamp(FMath::Abs(Speed) / 600.f, 0.f, 1.f);
 	const float HighSpeedScale = FMath::Lerp(1.f, HighSpeedSteerScale, FMath::Clamp(FMath::Abs(Speed) / MaxForwardSpeed, 0.f, 1.f));
@@ -307,10 +348,32 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 		Delta.Z += VerticalVelocity * Dt;
 	}
 
+	const FVector Before = GetActorLocation();
+	bMoveBlocked = false;
 	MoveWithCollision(Delta, MoveDir);
+	if (bMoveBlocked)
+	{
+		// Blocked: the speed is what we actually covered, so the speedo and engine note stop when we do.
+		const float Along = FVector::DotProduct(GetActorLocation() - Before, MoveDir) / Dt;
+		Speed = Speed > 0.f ? FMath::Min(Speed, FMath::Max(Along, 0.f)) : FMath::Max(Speed, FMath::Min(Along, 0.f));
+	}
 	SnapToGround(Dt, MoveDir);
 	UpdateOrientation(Dt);
 	UpdateVisuals(Dt, Steer);
+	UpdateChaseCamera(Dt);
+
+	// AI that keeps the throttle open without getting anywhere (wedged on a bank, nosed into a rock):
+	// put it back on its lane a few metres on.
+	if (bAutoDrive && AutoDriveRoad && (!IsPlayerControlled() || bAutoDriveWithPlayer))
+	{
+		const bool bNoProgress = FVector::Dist(Before, GetActorLocation()) < 30.f * Dt;
+		StuckTime = (LastThrottle > 0.3f && bNoProgress) ? StuckTime + Dt : 0.f;
+		if (StuckTime > 2.f)
+		{
+			StuckTime = 0.f;
+			StartAutoDrive(AutoDriveRoad, RoadDistance + 400.f * AutoDriveDirection, AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
+		}
+	}
 
 	// Splash-down: a bike that lands in the river sinks; the rider bails out and swims,
 	// the bike is recovered to its last spawn point a few seconds later.
@@ -366,16 +429,8 @@ void AHGGroundVehicle::StartAutoDrive(AHGRoadSplineActor* Road, float DistanceCm
 	AutoDriveLane = LaneOffsetCm;
 	RoadDistance = FMath::Clamp(DistanceCm, 0.f, Spline->GetSplineLength());
 
-	const FVector Tangent = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World) * float(AutoDriveDirection);
-	const FVector Right = FVector::CrossProduct(FVector::UpVector, Tangent).GetSafeNormal();
-	const FVector Loc = Spline->GetLocationAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World)
-		+ Right * GetLaneOffsetAt(RoadDistance) + FVector(0.f, 0.f, Collision->GetScaledBoxExtent().Z + GroundClearance + 20.f);
-	const FRotator Rot(0.f, Tangent.Rotation().Yaw, 0.f);
-	SetActorLocationAndRotation(Loc, Rot, false, nullptr, ETeleportType::TeleportPhysics);
-	HeadingYaw = Rot.Yaw;
+	PlaceOnRoad(Road, RoadDistance, AutoDriveDirection, GetLaneOffsetAt(RoadDistance));
 	Speed = AutoDriveCruise * 0.5f;
-	bGrounded = false;
-	VerticalVelocity = 0.f;
 	SpawnTransform = GetActorTransform();
 
 	const bool bWas = bAutoDrive;
@@ -384,6 +439,115 @@ void AHGGroundVehicle::StartAutoDrive(AHGRoadSplineActor* Road, float DistanceCm
 	{
 		OnAutoDriveChanged(true);
 	}
+}
+
+void AHGGroundVehicle::PlaceOnRoad(AHGRoadSplineActor* Road, float DistanceCm, int32 Direction, float LaneOffsetCm)
+{
+	if (!Road || !Road->GetSpline())
+	{
+		return;
+	}
+	const USplineComponent* Spline = Road->GetSpline();
+	const float D = FMath::Clamp(DistanceCm, 0.f, Spline->GetSplineLength());
+	const FVector Tangent = Spline->GetDirectionAtDistanceAlongSpline(D, ESplineCoordinateSpace::World).GetSafeNormal2D() * float(Direction >= 0 ? 1 : -1);
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Tangent).GetSafeNormal();
+	const FVector Loc = Spline->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World)
+		+ Right * LaneOffsetCm + FVector(0.f, 0.f, Collision->GetScaledBoxExtent().Z + GroundClearance + 20.f);
+	const FRotator Rot(0.f, Tangent.Rotation().Yaw, 0.f);
+	SetActorLocationAndRotation(Loc, Rot, false, nullptr, ETeleportType::TeleportPhysics);
+	HeadingYaw = Rot.Yaw;
+	Speed = 0.f;
+	YawRateDeg = 0.f;
+	SmoothedSteer = 0.f;
+	bGrounded = false;
+	VerticalVelocity = 0.f;
+	GroundNormal = FVector::UpVector;
+	StuckTime = 0.f;
+}
+
+AHGRoadSplineActor* AHGGroundVehicle::FindNearestRoad(const FVector& Location, float& OutLateralCm, float& OutDistanceCm) const
+{
+	AHGRoadSplineActor* Best = nullptr;
+	OutLateralCm = BIG_NUMBER;
+	OutDistanceCm = 0.f;
+	for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It)
+	{
+		if (!It->GetSpline())
+		{
+			continue;
+		}
+		const float D = It->GetDistanceAlongRoad(Location);
+		const FVector P = It->GetSpline()->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
+		const float Lat = FVector::Dist2D(P, Location);
+		if (Lat < OutLateralCm)
+		{
+			OutLateralCm = Lat;
+			OutDistanceCm = D;
+			Best = *It;
+		}
+	}
+	return Best;
+}
+
+void AHGGroundVehicle::RecoverToRoad()
+{
+	float Lateral = 0.f, Dist = 0.f;
+	AHGRoadSplineActor* Road = FindNearestRoad(GetActorLocation(), Lateral, Dist);
+	if (!Road || Lateral > 30000.f)
+	{
+		ResetToSpawn();
+		return;
+	}
+	// Face whichever way along the road is closer to where we were heading; keep right (Vietnam).
+	const FVector Tangent = Road->GetSpline()->GetDirectionAtDistanceAlongSpline(Dist, ESplineCoordinateSpace::World);
+	const int32 Dir = FVector::DotProduct(Tangent, FRotator(0.f, HeadingYaw, 0.f).Vector()) >= 0.f ? 1 : -1;
+	const float HalfWidth = Road->GetWidthAtDistance(Dist) * 0.5f;
+	PlaceOnRoad(Road, Dist, Dir, FMath::Clamp(HalfWidth - 100.f, 0.f, 150.f));
+}
+
+void AHGGroundVehicle::UpdateSurface(float DeltaSeconds)
+{
+	if (!IsPlayerControlled())
+	{
+		Surface = EHGSurface::Asphalt;
+		SurfaceScale = 1.f;
+		return;
+	}
+	SurfaceTimer -= DeltaSeconds;
+	if (SurfaceTimer <= 0.f && bGrounded)
+	{
+		SurfaceTimer = 0.2f;
+		// The road meshes float a few cm over the carved landscape, which carries the collision: on the
+		// landscape but off the road's width = off-road. Any other ground (pads, bridges, the dock) is paved.
+		const UPrimitiveComponent* Ground = GroundComponent.Get();
+		const bool bOnLandscape = Ground && Ground->GetOwner() && Ground->GetOwner()->GetClass()->GetName().Contains(TEXT("Landscape"));
+		float Lateral = 0.f, Dist = 0.f;
+		const AHGRoadSplineActor* Road = FindNearestRoad(GetActorLocation(), Lateral, Dist);
+		const bool bOnRoad = Road && Lateral <= Road->GetWidthAtDistance(Dist) * 0.5f + 60.f;
+		if (bOnRoad)
+		{
+			Surface = (Road->SecondaryFromDistance >= 0.f && Dist >= Road->SecondaryFromDistance) ? EHGSurface::Concrete : EHGSurface::Asphalt;
+		}
+		else
+		{
+			Surface = bOnLandscape ? EHGSurface::OffRoad : EHGSurface::Asphalt;
+		}
+	}
+	const float Target = Surface == EHGSurface::Concrete ? ConcreteSpeedScale : Surface == EHGSurface::OffRoad ? OffRoadSpeedScale : 1.f;
+	SurfaceScale = FMath::FInterpTo(SurfaceScale, Target, DeltaSeconds, 2.f);
+}
+
+void AHGGroundVehicle::UpdateChaseCamera(float DeltaSeconds)
+{
+	if (!IsPlayerControlled() || !SpringArm || !Camera)
+	{
+		return;
+	}
+	const float Slope = bGrounded ? GetActorRotation().Pitch : 0.f;
+	ChaseCamPitchCurrent = FMath::FInterpTo(ChaseCamPitchCurrent, ChaseCamPitch + ChaseCamSlopeFollow * Slope, DeltaSeconds, 3.f);
+	SpringArm->SetRelativeRotation(FRotator(ChaseCamPitchCurrent, 0.f, 0.f));
+	const float SpeedFrac = FMath::Clamp(FMath::Abs(Speed) / FMath::Max(MaxForwardSpeed, 1.f), 0.f, 1.f);
+	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, FMath::Lerp(ChaseFovRest, ChaseFovFast, SpeedFrac * SpeedFrac), DeltaSeconds, 2.f));
 }
 
 void AHGGroundVehicle::StopAutoDrive()
@@ -530,6 +694,11 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		const float Block = FMath::Clamp(Hit.Distance / Probe, 0.f, 1.f);
 		TargetSpeed = FMath::Min(TargetSpeed, AutoDriveCruise * Block * Block);
 		OnAutoDriveObstacle(Hit.GetActor());
+		if (IsPlayerControlled() && GetWorld()->GetTimeSeconds() - LastBlockLogTime > 1.0)
+		{
+			LastBlockLogTime = GetWorld()->GetTimeSeconds();
+			UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s auto-drive braking for %s at %.0f m"), *GetName(), *GetNameSafe(Hit.GetActor()), Hit.Distance / 100.f);
+		}
 	}
 
 	const float SpeedError = TargetSpeed - Speed;

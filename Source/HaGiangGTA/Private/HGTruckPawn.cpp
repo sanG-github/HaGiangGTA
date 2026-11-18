@@ -1,4 +1,5 @@
 #include "HGTruckPawn.h"
+#include "HGPaint.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -93,9 +94,10 @@ UStaticMeshComponent* AHGTruckPawn::AddPart(FName Name, UStaticMesh* Mesh, const
 void AHGTruckPawn::BeginPlay()
 {
 	Super::BeginPlay();
+	HGPaint::LimitDrawDistance(this, 6000.f, 60000.f);   // trucks read from across the valley
 	for (int32 i = 0; i < Parts.Num() && i < PartColors.Num(); ++i)
 	{
-		if (UMaterialInstanceDynamic* MID = Parts[i]->CreateAndSetMaterialInstanceDynamic(0))
+		if (UMaterialInstanceDynamic* MID = HGPaint::MakeMID(Parts[i]))
 		{
 			MID->SetVectorParameterValue(TEXT("Color"), PartColors[i]);
 		}

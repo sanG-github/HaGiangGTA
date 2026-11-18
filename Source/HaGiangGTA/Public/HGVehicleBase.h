@@ -66,8 +66,19 @@ public:
 protected:
 	virtual void BeginPlay() override;
 
+	/** [R] pressed: default puts the vehicle back where it spawned (ground vehicles recover onto the road). */
+	virtual void HandleResetInput() { ResetToSpawn(); }
+
 	/** Where the driver is placed on exit (world space). */
 	virtual FVector GetExitLocation() const;
+
+	/**
+	 * AddActorWorldOffset with sweep that first resolves a starting overlap: if the collision box starts inside
+	 * something (terrain bank, a moored hull, the pontoon) it is pushed out along the minimum translation and
+	 * the move is retried. Without this a starting overlap blocks the sweep at t = 0 every frame for good.
+	 */
+	void SweepMove(const FVector& Delta, FHitResult& OutHit);
+	void ResolvePenetration(const FHitResult& Hit);
 
 	float ReadAxis(const UInputAction* Action) const;
 	bool ReadButton(const UInputAction* Action) const;

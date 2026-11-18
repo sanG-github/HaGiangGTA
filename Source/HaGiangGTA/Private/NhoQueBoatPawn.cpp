@@ -1,4 +1,6 @@
 #include "NhoQueBoatPawn.h"
+#include "HGPaint.h"
+#include "HaGiangGTA.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -170,7 +172,7 @@ void ANhoQueBoatPawn::BeginPlay()
 	const bool bCano = BoatType == EHGBoatType::Cano;
 	auto Paint = [](UStaticMeshComponent* C, const FLinearColor& Color)
 	{
-		if (UMaterialInstanceDynamic* MID = C->CreateAndSetMaterialInstanceDynamic(0))
+		if (UMaterialInstanceDynamic* MID = HGPaint::MakeMID(C))
 		{
 			MID->SetVectorParameterValue(TEXT("Color"), Color);
 		}
@@ -307,12 +309,23 @@ void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 		else
 		{
 			FHitResult Hit;
-			AddActorWorldOffset(Delta, true, &Hit);
+			const FVector Before = GetActorLocation();
+			SweepMove(Delta, Hit);   // the dock cano starts overlapping the pontoon / moored line: push out first
 			if (Hit.bBlockingHit)
 			{
+				if (IsPlayerControlled() && Time - LastBlockLogTime > 1.f)
+				{
+					LastBlockLogTime = Time;
+					UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s blocked by %s / %s (start inside: %d)"), *GetName(), Hit.GetActor() ? *Hit.GetActor()->GetActorNameOrLabel() : TEXT("-"),
+						*GetNameSafe(Hit.GetComponent()), Hit.bStartPenetrating);
+				}
 				const FVector Slide = FVector::VectorPlaneProject(Delta * (1.f - Hit.Time), Hit.ImpactNormal);
 				AddActorWorldOffset(FVector(Slide.X, Slide.Y, 0.f), true);
 				Speed *= 1.f - 0.8f * FMath::Abs(FVector::DotProduct(Fwd, Hit.ImpactNormal));
+				// Pinned against a hull / the pontoon: the speedo shows what we actually make, not the thrust
+				// (a boat nosed into the moored line read 6-7 km/h standing still).
+				const float Along = FVector::DotProduct(GetActorLocation() - Before, Fwd) / Dt;
+				Speed = Speed > 0.f ? FMath::Min(Speed, FMath::Max(Along, 0.f)) : FMath::Max(Speed, FMath::Min(Along, 0.f));
 			}
 		}
 	}
@@ -342,7 +355,7 @@ void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 		VerticalVelocity += GetWorld()->GetGravityZ() * Dt;
 	}
 	FHitResult VHit;
-	AddActorWorldOffset(FVector(0.f, 0.f, VerticalVelocity * Dt), true, &VHit);
+	SweepMove(FVector(0.f, 0.f, VerticalVelocity * Dt), VHit);
 	if (VHit.bBlockingHit)
 	{
 		VerticalVelocity = 0.f;

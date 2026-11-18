@@ -15,6 +15,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "HaGiangGTA.h"
 #include "HGInputFactory.h"
+#include "HGPaint.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGVehicleBase.h"
 #include "HGViewpointActor.h"
@@ -88,6 +89,16 @@ AHGPlayerCharacter::AHGPlayerCharacter()
 	Head = MakePart(TEXT("Head"), SphMesh.Object, FVector(2.f, 0.f, 166.f), FVector(24.f, 22.f, 27.f));
 	Hat = MakePart(TEXT("Hat"), ConeMesh.Object, FVector(2.f, 0.f, 182.f), FVector(52.f, 52.f, 16.f)); // non la
 	GetMesh()->SetVisibility(false);
+}
+
+void AHGPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	// Backpacker look: dark trousers, olive jacket, straw non la (was the grey engine checker).
+	HGPaint::Paint(Legs, FLinearColor(0.035f, 0.04f, 0.07f));
+	HGPaint::Paint(Torso, FLinearColor(0.12f, 0.2f, 0.09f));
+	HGPaint::Paint(Head, FLinearColor(0.8f, 0.56f, 0.42f));
+	HGPaint::Paint(Hat, FLinearColor(0.72f, 0.6f, 0.36f));
 }
 
 // ---------------------------------------------------------------------------

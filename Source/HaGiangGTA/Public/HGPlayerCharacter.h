@@ -36,6 +36,7 @@ public:
 	AHGPlayerCharacter();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void PawnClientRestart() override;
 	virtual void UnPossessed() override;

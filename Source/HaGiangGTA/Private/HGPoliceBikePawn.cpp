@@ -15,10 +15,15 @@ AHGPoliceBikePawn::AHGPoliceBikePawn()
 	BodyColor = FLinearColor(0.85f, 0.85f, 0.85f);
 	MaxForwardSpeed = 3300.f;     // ~120 km/h: faster than a Honda Win
 	Acceleration = 1300.f;
+	BrakeDeceleration = 1800.f;   // better brakes than the Win (it chases into hairpins)
 	AutoDriveLateralAccel = 520.f;
 	ConvoyGap = 600.f;
 
 	LightRed = CreateDefaultSubobject<UPointLightComponent>(TEXT("LightRed"));
+	// Small gameplay light: no Lumen GI (Lumen lit every one of ~30 bike / pickup lights with offscreen
+	// shadow traces, ~2.8 ms of the 17 ms GPU frame on the M1) and culled past 200 m.
+	LightRed->bAffectGlobalIllumination = false;
+	LightRed->MaxDrawDistance = 20000.f;
 	LightRed->SetupAttachment(LeanRoot);
 	LightRed->SetRelativeLocation(FVector(-70.f, -20.f, 115.f));
 	LightRed->SetLightColor(FLinearColor(1.f, 0.02f, 0.02f));
@@ -27,6 +32,8 @@ AHGPoliceBikePawn::AHGPoliceBikePawn()
 	LightRed->SetCastShadows(false);
 
 	LightBlue = CreateDefaultSubobject<UPointLightComponent>(TEXT("LightBlue"));
+	LightBlue->bAffectGlobalIllumination = false;
+	LightBlue->MaxDrawDistance = 20000.f;
 	LightBlue->SetupAttachment(LeanRoot);
 	LightBlue->SetRelativeLocation(FVector(-70.f, 20.f, 115.f));
 	LightBlue->SetLightColor(FLinearColor(0.05f, 0.15f, 1.f));

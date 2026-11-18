@@ -1,4 +1,5 @@
 #include "HGBikePawn.h"
+#include "HGPaint.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/PointLightComponent.h"
@@ -18,8 +19,10 @@
 namespace
 {
 	const FName ColorParam(TEXT("Color"));
+	constexpr float BikeBoxHalfZ = 40.f;
+	constexpr float BikeBodyClearance = 34.f;
 
-	enum class EPartColor : uint8 { Body, Black, Chrome, Shirt, Skin, Backpack, Nylon, Star, HiVis };
+	enum class EPartColor : uint8 { Body, Black, Chrome, Shirt, Skin, Backpack, Nylon, Star, HiVis, RainCover };
 
 	FLinearColor PartColor(EPartColor C, const FLinearColor& Body)
 	{
@@ -34,11 +37,13 @@ namespace
 		case EPartColor::Nylon: return FLinearColor(0.85f, 0.88f, 0.9f);
 		case EPartColor::Star: return FLinearColor(1.f, 0.82f, 0.f);
 		case EPartColor::HiVis: return FLinearColor(0.75f, 0.95f, 0.05f);
+		// Backpack rain cover: faded orange (a white one filled the chase view as a glaring block).
+		case EPartColor::RainCover: return FLinearColor(0.55f, 0.2f, 0.04f);
 		}
 		return FLinearColor::White;
 	}
 
-	const FName PartColorTag[] = { TEXT("C_Body"), TEXT("C_Black"), TEXT("C_Chrome"), TEXT("C_Shirt"), TEXT("C_Skin"), TEXT("C_Backpack"), TEXT("C_Nylon"), TEXT("C_Star"), TEXT("C_HiVis") };
+	const FName PartColorTag[] = { TEXT("C_Body"), TEXT("C_Black"), TEXT("C_Chrome"), TEXT("C_Shirt"), TEXT("C_Skin"), TEXT("C_Backpack"), TEXT("C_Nylon"), TEXT("C_Star"), TEXT("C_HiVis"), TEXT("C_RainCover") };
 }
 
 AHGBikePawn::AHGBikePawn()
@@ -46,18 +51,26 @@ AHGBikePawn::AHGBikePawn()
 	DisplayName = NSLOCTEXT("HaGiang", "HondaWin", "Honda Win 110");
 	bShowDriver = true;
 
-	// Bike-ish tuning: lighter, twitchier, lower top speed than the car.
-	MaxForwardSpeed = 2500.f;   // 90 km/h
-	MaxReverseSpeed = 250.f;
-	Acceleration = 950.f;
-	BrakeDeceleration = 2200.f;
-	CoastDeceleration = 250.f;
-	BoostMultiplier = 1.4f;
+	// Honda Win 110 (2-stroke-era single, ~8 hp with two up): ~68 km/h flat out on asphalt, ~45-50 on the
+	// Ta Lang concrete (ConcreteSpeedScale), crawls off-road. 0-60 km/h in ~5 s with the engine curve.
+	MaxForwardSpeed = 1900.f;   // 68 km/h
+	MaxReverseSpeed = 150.f;    // pushing it back with your feet
+	Acceleration = 520.f;
+	BrakeDeceleration = 1100.f; // ~1.1 g with both drums: arcade but not a wall
+	CoastDeceleration = 180.f;  // engine braking
+	BoostMultiplier = 1.12f;    // [Shift]: tuck in and hold it at the redline
 	SteerRateDeg = 115.f;
 	HighSpeedSteerScale = 0.42f;
-	GroundClearance = 10.f;
+	ConcreteSpeedScale = 0.7f;
+	OffRoadSpeedScale = 0.4f;
+	ChaseCamPitch = -12.f;
 
-	Collision->SetBoxExtent(FVector(95.f, 38.f, 52.f));
+	// The box only has to catch walls, posts, cows and people: its bottom sits BikeBodyClearance above the
+	// ground (the probes carry the bike over the terrain). With the bottom 10 cm up, every bump in the carved
+	// landscape and every corner of the box on a cambered bend started the sweep inside the terrain and the
+	// bike stopped dead (14 m in 6 s with W held).
+	GroundClearance = BikeBodyClearance;
+	Collision->SetBoxExtent(FVector(95.f, 38.f, BikeBoxHalfZ));
 
 	SpringArm->TargetArmLength = 480.f;
 	SpringArm->SocketOffset = FVector(0.f, 0.f, 150.f);
@@ -69,8 +82,8 @@ AHGBikePawn::AHGBikePawn()
 	UStaticMesh* Cyl = CylinderMesh.Object;
 	UStaticMesh* Sph = SphereMesh.Object;
 
-	// Ground is (52 + 10) cm below the actor origin.
-	const float GroundZ = -62.f;
+	// Ground is (box half height + clearance) below the actor origin.
+	const float GroundZ = -(BikeBoxHalfZ + BikeBodyClearance);
 
 	LeanRoot = CreateDefaultSubobject<USceneComponent>(TEXT("LeanRoot"));
 	LeanRoot->SetupAttachment(Collision);
@@ -92,6 +105,10 @@ AHGBikePawn::AHGBikePawn()
 	Tag(AddPart(TEXT("HeadLamp"), LeanRoot, Sph, FVector(66.f, 0.f, 90.f), FRotator::ZeroRotator, FVector(16.f, 16.f, 16.f)), EPartColor::Chrome);
 
 	HeadLight = CreateDefaultSubobject<USpotLightComponent>(TEXT("HeadLight"));
+	// Small gameplay light: no Lumen GI (Lumen lit every one of ~30 bike / pickup lights with offscreen
+	// shadow traces, ~2.8 ms of the 17 ms GPU frame on the M1) and culled past 60 m.
+	HeadLight->bAffectGlobalIllumination = false;
+	HeadLight->MaxDrawDistance = 6000.f;
 	HeadLight->SetupAttachment(LeanRoot);
 	HeadLight->SetRelativeLocation(FVector(75.f, 0.f, 90.f));
 	HeadLight->SetRelativeRotation(FRotator(-6.f, 0.f, 0.f));
@@ -104,6 +121,8 @@ AHGBikePawn::AHGBikePawn()
 	HeadLight->SetCastShadows(false);
 
 	TailLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("TailLight"));
+	TailLight->bAffectGlobalIllumination = false;
+	TailLight->MaxDrawDistance = 4000.f;
 	TailLight->SetupAttachment(LeanRoot);
 	TailLight->SetRelativeLocation(FVector(-92.f, 0.f, 76.f));
 	TailLight->SetIntensityUnits(ELightUnits::Candelas);
@@ -142,7 +161,7 @@ AHGBikePawn::AHGBikePawn()
 	AddPassengerPart(TEXT("P_Helmet"), Sph, FVector(4.f, 0.f, 84.f), FRotator::ZeroRotator, FVector(28.f, 26.f, 18.f), EPartColor::Nylon);
 	AddPassengerPart(TEXT("P_Thighs"), Cube, FVector(16.f, 0.f, 4.f), FRotator::ZeroRotator, FVector(36.f, 34.f, 14.f), EPartColor::Black);
 	AddPassengerPart(TEXT("P_Backpack"), Cube, FVector(-24.f, 0.f, 36.f), FRotator(-6.f, 0.f, 0.f), FVector(20.f, 34.f, 48.f), EPartColor::Backpack);
-	AddPassengerPart(TEXT("P_RainCover"), Cube, FVector(-27.f, 0.f, 37.f), FRotator(-6.f, 0.f, 0.f), FVector(16.f, 37.f, 52.f), EPartColor::Nylon);
+	AddPassengerPart(TEXT("P_RainCover"), Cube, FVector(-27.f, 0.f, 37.f), FRotator(-6.f, 0.f, 0.f), FVector(16.f, 37.f, 52.f), EPartColor::RainCover);
 	// Red "co do sao vang" T-shirt: the yellow star shows on the chest (the backpack hides the back).
 	AddPassengerPart(TEXT("P_Star"), Cyl, FVector(17.f, 0.f, 42.f), FRotator(90.f, 0.f, 0.f), FVector(14.f, 14.f, 1.f), EPartColor::Star);
 	PassengerArmL = Tag(AddPart(TEXT("P_ArmL"), PassengerRoot, Cyl, FVector(8.f, -22.f, 50.f), FRotator(-60.f, 0.f, 0.f), FVector(9.f, 9.f, 55.f)), EPartColor::Skin);
@@ -164,7 +183,7 @@ AHGBikePawn::AHGBikePawn()
 	AddRiderPart(TEXT("R_Arms"), Cyl, FVector(30.f, 0.f, 44.f), FRotator(70.f, 0.f, 90.f), FVector(9.f, 9.f, 62.f), EPartColor::HiVis);
 
 	EngineSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/HaGiang/Generated/Audio/SW_HG_BikeEngine_Loop.SW_HG_BikeEngine_Loop")));
-	EngineTopKmh = 90.f;
+	EngineTopKmh = 70.f;
 	ScreamSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/HaGiang/Generated/Audio/SW_HG_Scream.SW_HG_Scream")));
 }
 
@@ -196,6 +215,7 @@ void AHGBikePawn::OnConstruction(const FTransform& Transform)
 void AHGBikePawn::BeginPlay()
 {
 	Super::BeginPlay();
+	HGPaint::LimitDrawDistance(this);
 	ApplyColors();
 	SetHasPassenger(bHasPassenger);
 	SetNpcRiderVisible(IsAutoDriving());
@@ -305,7 +325,7 @@ void AHGBikePawn::ApplyColors()
 		{
 			if (Part->ComponentHasTag(PartColorTag[i]))
 			{
-				if (UMaterialInstanceDynamic* MID = Part->CreateAndSetMaterialInstanceDynamic(0))
+				if (UMaterialInstanceDynamic* MID = HGPaint::MakeMID(Part))
 				{
 					MID->SetVectorParameterValue(ColorParam, PartColor(static_cast<EPartColor>(i), BodyColor));
 				}

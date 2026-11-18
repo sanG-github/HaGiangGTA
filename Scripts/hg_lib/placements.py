@@ -413,7 +413,8 @@ def parked_bikes(ctx, road_m, count=5, pad=None):
                 x, y = x0 + rx * side * lat * 100, y0 + ry * side * lat * 100
                 why = ctx.ground_ok(x, y, max_slope=15.0, foot_cm=150.0, ref_z=z0, max_dz=140.0, road_clear_cm=100.0)
                 if why is None:
-                    yaw = math.degrees(math.atan2(fy, fx)) + (70.0 if side > 0 else -70.0)
+                    # Angled 30 deg, nose towards the road (ready to pull out): at 70 deg nose-out [W] rode into the bank.
+                    yaw = math.degrees(math.atan2(fy, fx)) + (-30.0 if side > 0 else 30.0)
                     cands.append((abs(along) + 0.3 * lat, x, y, yaw))
     cands.sort()
     if pad is not None:
@@ -433,6 +434,43 @@ def parked_bikes(ctx, road_m, count=5, pad=None):
         if len(out) == count:
             break
     return out
+
+
+PARAPET_SEG = (400.0, 55.0)       # length, thickness (cm) of one Tham Ma parapet block
+PARAPET_ROAD_CLEAR_CM = 80.0
+
+
+def tham_ma_parapet(ctx):
+    """Doc Tham Ma overlook parapet: 5 x 4 m stone blocks on the valley edge, 9 m out from the viewpoint towards
+    the hairpins. Blocks that would stand on (or within 0.8 m of) the road are dropped - the old fixed row put one
+    across the hairpin below the overlook, where it stopped every bike dead. Returns [(x, y, ground_z, yaw)] and the
+    flower-bucket spots [(x, y, ground_z)] that are clear of the road too."""
+    layout, scatter = ctx.layout, ctx.scatter
+    vp = layout["viewpoints"]["doc_tham_ma"]["location_cm"]
+    centre = scatter["viewpoints"]["doc_tham_ma"]["center_cm"]
+    dx, dy = centre[0] - vp[0], centre[1] - vp[1]
+    d = math.hypot(dx, dy) or 1.0
+    ox, oy = dx / d, dy / d                       # outward (towards the hairpins)
+    px, py = -oy, ox                              # along the parapet
+    yaw = math.degrees(math.atan2(py, px))
+
+    def clear(x, y, margin):
+        return min(ctx.road.edge_clearance(x, y), ctx.stubs.edge_clearance(x, y)) >= margin
+
+    blocks = []
+    half = PARAPET_SEG[0] * 0.5
+    for i in range(-2, 3):
+        cx, cy = vp[0] + ox * 900 + px * i * 420, vp[1] + oy * 900 + py * i * 420
+        ends = [(cx + px * s * half + ox * t, cy + py * s * half + oy * t)
+                for s in (-1.0, 0.0, 1.0) for t in (-PARAPET_SEG[1] * 0.5, PARAPET_SEG[1] * 0.5)]
+        if all(clear(x, y, PARAPET_ROAD_CLEAR_CM) for x, y in ends):
+            blocks.append((cx, cy, ctx.terrain.z(cx, cy), yaw))
+    buckets = []
+    for along in (-700, -250, 450):
+        bx, by = vp[0] + ox * 820 + px * along, vp[1] + oy * 820 + py * along
+        if clear(bx, by, 60.0):
+            buckets.append((bx, by, ctx.terrain.z(bx, by)))
+    return blocks, buckets
 
 
 def checkin_tourists(ctx, center, rng, count=9, r_min=250.0, r_max=900.0, max_dz=250.0, others=()):

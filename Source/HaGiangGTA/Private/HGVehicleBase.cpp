@@ -175,6 +175,35 @@ void AHGVehicleBase::UnPossessed()
 	Super::UnPossessed();
 }
 
+void AHGVehicleBase::ResolvePenetration(const FHitResult& Hit)
+{
+	FVector Push = Hit.Normal * (Hit.PenetrationDepth + 2.f);
+	if (UPrimitiveComponent* Other = Hit.GetComponent())
+	{
+		FMTDResult MTD;
+		if (Other->ComputePenetration(MTD, Collision->GetCollisionShape(), Collision->GetComponentLocation(), Collision->GetComponentQuat())
+			&& MTD.Distance > 0.f)
+		{
+			Push = MTD.Direction * (MTD.Distance + 2.f);
+		}
+	}
+	if (Push.SizeSquared() < 1.f)
+	{
+		Push = FVector(0.f, 0.f, 5.f); // no usable MTD: step up out of it over a few frames
+	}
+	SetActorLocation(GetActorLocation() + Push, false, nullptr, ETeleportType::TeleportPhysics);
+}
+
+void AHGVehicleBase::SweepMove(const FVector& Delta, FHitResult& OutHit)
+{
+	AddActorWorldOffset(Delta, true, &OutHit);
+	if (OutHit.bStartPenetrating)
+	{
+		ResolvePenetration(OutHit);
+		AddActorWorldOffset(Delta, true, &OutHit);
+	}
+}
+
 float AHGVehicleBase::ReadAxis(const UInputAction* Action) const
 {
 	if (!Controller)
@@ -197,7 +226,7 @@ bool AHGVehicleBase::ReadButton(const UInputAction* Action) const
 
 void AHGVehicleBase::OnReset(const FInputActionValue& /*Value*/)
 {
-	ResetToSpawn();
+	HandleResetInput();
 }
 
 void AHGVehicleBase::OnFlycam(const FInputActionValue& /*Value*/)

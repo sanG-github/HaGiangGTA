@@ -108,4 +108,5 @@ private:
 	float VisualRoll = 0.f;
 	float PaddlePhase = 0.f;
 	bool bFloating = false;
+	float LastBlockLogTime = -10.f;
 };

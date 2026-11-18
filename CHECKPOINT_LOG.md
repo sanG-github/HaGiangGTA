@@ -225,3 +225,38 @@ Goal (user): "as we focus on only some places, make them exactly as much as poss
 - Data fixes after the merge: road output every 4 m with hairpins rounded, main route carved after the QL4C stubs,
   Tham Ma patch at real altitude, concrete start measured on the UE spline. Final verification build (M1 Pro,
   1600x900, CP05): 82-85 FPS; validator 106 checks, 0 FAIL, 4 WARN (data notes).
+
+---
+
+## Round 1 - playable riding (`improve/gameplay-realism`)
+
+Root causes found with the scripted playtest (`-hgplaytest`, real key events through Enhanced Input):
+- **Bike stopped dead** (W held 6 s -> 14 m, speedo ~1 km/h): input and acceleration were fine; the collision
+  box bottom sat only 10 cm above the ground, so on banks / camber a corner started each sweep inside the
+  landscape. A sweep that starts penetrating is blocked at t = 0 every frame -> frozen for good, and throttle
+  kept adding speed while "airborne" (speedo 19-60 km/h standing still). Same cause froze the auto-driven bike.
+  Fix: `AHGVehicleBase::SweepMove` (MTD depenetration + retry, shared by bikes and boats), bike box raised
+  (bottom 34 cm above the probes' ground), landing within one frame of fall, no drive force in the air, speed
+  clamped to the distance actually covered when blocked, AI stuck watchdog (re-placed on its lane after 2 s).
+- **Parapet across the road**: the Doc Tham Ma stone parapet row (fixed offsets) stood on the hairpin below
+  the overlook and stopped every bike. Now `placements.tham_ma_parapet` drops blocks within 0.8 m of the road;
+  `validate_layout.py` checks it (props category).
+- **Grey checker everywhere on greybox actors**: in UE 5.8 `/Engine/BasicShapes` default to WorldGridMaterial
+  (no "Color" parameter), so every MID tint was ignored. `HGPaint::MakeMID` starts from BasicShapeMaterial;
+  the player character is painted too (it had no material at all).
+- **Spawn camera pitch 0**: `AGameModeBase::FinishRestartPlayer` resets the control rotation after possession,
+  undoing the pawn's pitch. `AHGGtaGameMode` re-applies -15 deg.
+
+Riding / feel: Honda Win retune (68 km/h flat out, engine curve 0-60 in ~5 s, 1.1 g brakes, engine braking),
+surfaces for the player (asphalt / Ta Lang concrete x0.7 / off-road x0.4 + drag, HUD label), smoothed key
+steering, chase camera follows half the slope + speed FOV 88-100, [R] puts the bike back on the nearest road
+lane, parked bikes angled 30 deg towards the road. HUD controls line readable at 720p and context-specific.
+Perf: TAA instead of TSR (TSR was 3-4 ms of a 17 ms GPU frame), gameplay lights excluded from Lumen GI and
+distance-culled, small greybox parts culled at 60 m without shadows. Playtest extended: W-only straight,
+key-ridden Tham Ma + Ta Lang, [R], auto stages, board the dock cano with [F] and ride on the keys; FPS split
+into game / render / GPU ms; `-hgprofilegpu`, `-hgplayboat`.
+
+Playtest (M1 Pro, 1280x720 window, CP05): W 6 s on the straightest stretch 63 m / 60 km/h (was 14 m / 1 km/h);
+top 61 km/h on asphalt, 48 km/h on the concrete hairpins; 0 s off road on the keys; average 66-70 FPS over
+the whole run (was ~57; every check >= 59).
+Open: the dock cano is moored inside the pontoons; the test bot can't steer out around Pontoon_0 yet.

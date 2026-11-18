@@ -8,6 +8,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "HGCowActor.h"
+#include "HGGroundVehicle.h"
 #include "HGHappyWaterPickup.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGPlayerCharacter.h"
@@ -146,10 +147,18 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	// Mode, speed, prompts.
 	Prompt.Reset();
+	SurfaceName.Reset();
+	bDriving = false;
 	if (const AHGVehicleBase* Vehicle = Cast<AHGVehicleBase>(Pawn))
 	{
+		bDriving = true;
 		ModeName = Vehicle->GetVehicleDisplayName().ToString();
 		SpeedKmh = FMath::Abs(Vehicle->GetSpeedKmh());
+		if (const AHGGroundVehicle* Ground = Cast<AHGGroundVehicle>(Vehicle))
+		{
+			const EHGSurface Surf = Ground->GetSurface();
+			SurfaceName = Surf == EHGSurface::Concrete ? TEXT("đường bê tông") : Surf == EHGSurface::OffRoad ? TEXT("đường đất") : TEXT("");
+		}
 	}
 	else if (const AHGPlayerCharacter* Player = Cast<AHGPlayerCharacter>(Pawn))
 	{
@@ -441,7 +450,11 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	const FVector2D SpeedSize = Measure(SpeedStr, SpeedFont);
 	Text(Out, L + 4, G, SpeedStr, SX - SpeedSize.X * 0.5f, SY + 10.f * S, SpeedFont, FLinearColor::White);
 	Text(Out, L + 4, G, TEXT("km/h"), SX - 20.f * S, SY + 70.f * S, Font(int32(14 * S)), FLinearColor(0.85f, 0.85f, 0.85f));
-	TextR(Out, L + 4, G, ModeName, W - 50.f * S, SY - SR - 40.f * S, Font(int32(18 * S)), FLinearColor(0.85f, 0.95f, 1.f));
+	TextR(Out, L + 4, G, ModeName, W - 50.f * S, SY - SR - 40.f * S, Font(int32(20 * S)), FLinearColor(0.85f, 0.95f, 1.f));
+	if (!SurfaceName.IsEmpty())
+	{
+		TextR(Out, L + 4, G, SurfaceName, W - 50.f * S, SY - SR - 66.f * S, Font(int32(17 * S)), FLinearColor(1.f, 0.8f, 0.35f));
+	}
 
 	// ---------------- Location card (GTA style, on arrival) ----------------
 	if (CardTime > 0.f)
@@ -479,7 +492,17 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 		const FSlateFontInfo F2 = Font(int32(34 * S));
 		Text(Out, L + 7, G, Fine, (W - Measure(Fine, F2).X) * 0.5f, H * 0.38f + BS.Y, F2, FLinearColor(1.f, 1.f, 1.f, FMath::Clamp(BustedTime, 0.f, 1.f)));
 	}
-	Text(Out, L + 5, G, TEXT("WASD/chuột  ·  F lên/xuống xe  ·  V flycam  ·  SHIFT tăng tốc  ·  R đặt lại"),
-		MX + MapSize + 30.f * S, H - 40.f * S, Font(int32(13 * S), true, TEXT("Regular")), FLinearColor(1.f, 1.f, 1.f, 0.6f));
+	{
+		// Controls for what the player is doing now; was one 9 px line at 720p that nobody could read.
+		const FString Help = bDriving
+			? TEXT("W ga  ·  S phanh  ·  A/D lái  ·  SPACE phanh tay  ·  SHIFT tăng tốc  ·  R về đường  ·  F xuống xe  ·  V flycam")
+			: TEXT("WASD đi  ·  chuột nhìn  ·  SHIFT chạy  ·  SPACE nhảy  ·  F lên xe  ·  V flycam");
+		const FSlateFontInfo HF = Font(FMath::Max(int32(17 * S), 11), true, TEXT("Regular"));
+		const FVector2D HS = Measure(Help, HF);
+		const float HX = MX + MapSize + 30.f * S;
+		const float HY = H - 30.f * S - HS.Y;
+		Box(Out, L + 5, G, HX - 10.f * S, HY - 5.f * S, HS.X + 20.f * S, HS.Y + 10.f * S, FLinearColor(0.f, 0.f, 0.f, 0.35f));
+		Text(Out, L + 6, G, Help, HX, HY, HF, FLinearColor(1.f, 1.f, 1.f, 0.9f));
+	}
 	return L + 9;
 }

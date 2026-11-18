@@ -45,6 +45,9 @@ private:
 	float SpeedKmh = 0.f;
 	float AltitudeM = 0.f;
 	FString ModeName;
+	/** Road surface under a ground vehicle ("bê tông", "đường đất"), empty on asphalt / on foot. */
+	FString SurfaceName;
+	bool bDriving = false;
 	FString Prompt;
 	FString ViewpointPrompt;
 

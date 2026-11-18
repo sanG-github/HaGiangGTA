@@ -1,4 +1,5 @@
 #include "HGTouristNPC.h"
+#include "HGPaint.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -51,7 +52,7 @@ AHGTouristNPC::AHGTouristNPC()
 
 void AHGTouristNPC::Paint(UStaticMeshComponent* C, const FLinearColor& Color)
 {
-	if (UMaterialInstanceDynamic* MID = C->CreateAndSetMaterialInstanceDynamic(0))
+	if (UMaterialInstanceDynamic* MID = HGPaint::MakeMID(C))
 	{
 		MID->SetVectorParameterValue(TEXT("Color"), Color);
 	}
@@ -74,6 +75,7 @@ void AHGTouristNPC::OnConstruction(const FTransform& Transform)
 void AHGTouristNPC::BeginPlay()
 {
 	Super::BeginPlay();
+	HGPaint::LimitDrawDistance(this);
 	ApplyStyle();
 	const bool bBackpacker = Style == EHGTouristStyle::Backpacker;
 	const bool bRider = Style == EHGTouristStyle::EasyRider;

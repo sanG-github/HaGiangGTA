@@ -1,4 +1,5 @@
 #include "HGGreyboxCarPawn.h"
+#include "HGPaint.h"
 
 #include "Components/BoxComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -39,11 +40,11 @@ void AHGGreyboxCarPawn::BeginPlay()
 {
 	Super::BeginPlay();
 
-	if (UMaterialInstanceDynamic* BodyMID = BodyMesh->CreateAndSetMaterialInstanceDynamic(0))
+	if (UMaterialInstanceDynamic* BodyMID = HGPaint::MakeMID(BodyMesh))
 	{
 		BodyMID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.75f, 0.05f, 0.04f));
 	}
-	if (UMaterialInstanceDynamic* CabinMID = CabinMesh->CreateAndSetMaterialInstanceDynamic(0))
+	if (UMaterialInstanceDynamic* CabinMID = HGPaint::MakeMID(CabinMesh))
 	{
 		CabinMID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.05f, 0.05f, 0.06f));
 	}
