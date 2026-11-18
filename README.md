@@ -1,4 +1,4 @@
-# HaGiangGTA — Đèo Mã Pí Lèng Open World (Unreal Engine 5.5)
+# HaGiangGTA — Đèo Mã Pí Lèng Open World (Unreal Engine 5.8)
 
 24-hour challenge: one 4 km × 4 km landscape with three Hà Giang viewpoints
 (Dốc Thẩm Mã → Mã Pí Lèng / Mỏm Đá Tử Thần → Hẻm vực Tu Sản & sông Nho Quế),
@@ -6,7 +6,7 @@ built **code-first**: every checkpoint branch can rebuild its whole scene from
 C++ (`Source/`) plus a Python editor script (`Scripts/Checkpoints/build_cp0X.py`).
 
 ## Requirements
-- Unreal Engine **5.5** (Epic Games Launcher)
+- Unreal Engine **5.8** (Epic Games Launcher)
 - macOS: Xcode (Apple Silicon recommended — Nanite/Lumen need Metal SM6)
 - Windows: Visual Studio 2022 with the "Game development with C++" workload
 

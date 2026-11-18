@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 2089,
+  "active_work_seconds": 2114,
   "cooldown_wait_seconds": 0,
   "state": "stopped",
   "segment_started_at": null,
-  "current_branch": "main",
+  "current_branch": "chore/ue-5.8",
   "current_checkpoint": "cp-04-12hr",
-  "last_completed_step": "CP03 merged (tag cp-03-6hr)",
-  "next_pending_step": "Compile CP01-03 once UE 5.5 is installed; then CP04 living world",
+  "last_completed_step": "retargeted to UE 5.8 (branch chore/ue-5.8)",
+  "next_pending_step": "UE 5.8 install finishing -> compile + fix",
   "pause_reason": null,
   "history": [
     {
@@ -97,6 +97,17 @@
       "t": 1794976007,
       "event": "stop",
       "active": 2089
+    },
+    {
+      "t": 1794976056,
+      "event": "start",
+      "active": 2089,
+      "checkpoint": "cp-04-12hr"
+    },
+    {
+      "t": 1794976081,
+      "event": "stop",
+      "active": 2114
     }
   ]
 }
