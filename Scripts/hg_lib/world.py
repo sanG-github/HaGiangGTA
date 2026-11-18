@@ -359,7 +359,7 @@ def build_golden_hour(tag, folder):
     # gorge gets some in-scattered light instead of going black.
     try:
         second = unreal.ExponentialHeightFogData()
-        second.set_editor_property("fog_density", 0.0025)
+        second.set_editor_property("fog_density", 0.0018)
         second.set_editor_property("fog_height_falloff", 0.05)
         second.set_editor_property("fog_height_offset", 3000.0)
         fc.set_editor_property("second_fog_data", second)
@@ -380,7 +380,7 @@ def build_golden_hour(tag, folder):
                  # sky-occluded places (a bounce fill that only matters where Lumen sees no sky), and local
                  # exposure lifts the shadows without flattening the sunlit walls.
                  ("lumen_skylight_leaking", 0.16),
-                 ("local_exposure_shadow_contrast_scale", 0.85), ("local_exposure_highlight_contrast_scale", 1.0),
+                 ("local_exposure_shadow_contrast_scale", 0.95), ("local_exposure_highlight_contrast_scale", 1.0),
                  ("local_exposure_detail_strength", 1.1)):
         try:
             s.set_editor_property(k, v)
