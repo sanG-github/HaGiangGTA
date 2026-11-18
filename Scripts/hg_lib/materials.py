@@ -158,10 +158,16 @@ def terrain(tex) -> unreal.Material:
     rock_n = g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 380.0), normal=True)
 
     up = g.up_facing()
-    threshold = g.add(g.scalar("RockSlopeThreshold", 0.80), g.mul(g.sub((n_mid, "R"), 0.5), 0.18))
-    rock = remap_mask(g, up, threshold, 7.0, invert=True)
+    # Rock only on genuinely steep ground (>~50 deg) plus noisy outcrops: Ha Giang hills are mostly
+    # green with grey limestone breaking through, not bare white cones.
+    threshold = g.add(g.scalar("RockSlopeThreshold", 0.64), g.mul(g.sub((n_far, "R"), 0.5), 0.3))
+    outcrop = g.saturate(g.mul(g.sub((n_mid, "B"), 0.55), 3.0))
+    rock = g.saturate(g.add(remap_mask(g, up, threshold, 6.0, invert=True), g.mul(outcrop, 0.6)))
 
-    grass = g.lerp(g.color("GrassDark", (0.045, 0.075, 0.025)), g.color("GrassDry", (0.16, 0.15, 0.06)), (n_far, "G"))
+    # Green scrub with dry-grass / maize-field patches (autumn on the Dong Van plateau).
+    dry = g.saturate(g.mul(g.sub((n_far, "G"), 0.55), 4.0))
+    grass_tint = g.lerp(g.color("GrassDark", (0.04, 0.07, 0.022)), g.color("GrassLight", (0.075, 0.1, 0.03)), (n_mid, "G"))
+    grass = g.lerp(grass_tint, g.color("GrassDry", (0.14, 0.12, 0.055)), dry)
     lime = g.lerp(g.color("Limestone", (0.44, 0.43, 0.40)), g.color("LimestoneDark", (0.16, 0.16, 0.15)), (n_mid, "R"))
     moss_amt = g.mul(g.saturate(g.sub(g.mul((n_far, "R"), 1.6), 0.45)), g.scalar("MossOnRock", 0.55))
     rock_col = g.lerp(lime, g.color("Moss", (0.05, 0.09, 0.035)), moss_amt)

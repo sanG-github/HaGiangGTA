@@ -167,3 +167,23 @@ the road ends.
 the Tu San descent to see the helicopter beam in the fog; stop next to the police to get busted.
 
 **Known limits:** nothing compiled yet (UE 5.8 still installing) — compile + fix is the next step for all checkpoints.
+
+---
+
+## Photoreal pass (`improve/photoreal-viewpoints`)
+
+Goal: make the three viewpoints read as Ha Giang, checked with an offline renderer while UE 5.8 installs.
+
+- `Scripts/Tools/render_viewpoints.py`: numpy heightfield ray-marcher (golden-hour sun with terrain shadows,
+  slope-based limestone/grass/road albedo, emerald water with Fresnel, aerial perspective + valley fog).
+  Renders player-eye and flycam shots of each viewpoint → `Generated/Previews/` (~1 s per 1280×720 frame).
+- Terrain v2 (`gen_heightmap.py`):
+  - fengcong karst from warped Worley cells (steep cones, saddles, dolines) instead of isolated bell cones;
+  - vectorised droplet hydraulic erosion on a 4 m grid (800k droplets): gullies, debris fans, softer valley floors;
+  - a broad hillside under Dốc Thẩm Mã so the 9 hairpins sit on a real slope (was an elevated "tongue");
+  - steeper Tu San gorge (lower profile exponent) with warped two-scale limestone strata ledges;
+  - Thẩm Mã check-in pad moved to an overlook terrace on the downhill side; slimmer Mỏm Đá Tử Thần ledge.
+- Lighting: sun from the south-east at 13° raking along the N–S canyon (light shafts down the gorge, lit rim road,
+  spur and hairpins); clouds moved above the peaks; dense valley mist below ~950 m for the sea-of-clouds look
+  (fog falloff corrected to UE units).
+- Terrain material: rock only on >~50° slopes plus noisy outcrops, greener scrub with dry-grass/maize patches.

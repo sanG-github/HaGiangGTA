@@ -334,7 +334,7 @@ def canyon_params(y):
         return values[i] + (values[i + 1] - values[i]) * t
 
     W = smooth_interp([350, 330, 300, 300, 425, 425])
-    k = smooth_interp([0.70, 0.65, 0.55, 0.55, 1.00, 1.00])
+    k = smooth_interp([0.55, 0.5, 0.42, 0.42, 0.65, 0.65])
     rim = smooth_interp([1250, 1245, 1235, 1235, 1260, 1260])
     return W.astype(np.float32), k.astype(np.float32), rim.astype(np.float32)
 
@@ -387,6 +387,134 @@ def capsule_mask(p0, p1, radius, feather):
     return 1.0 - smoothstep(radius, radius + feather, d)
 
 
+# ---------------------------------------------------------------------------
+# v2 terrain: fengcong karst (Worley), hillside, droplet erosion, strata
+# ---------------------------------------------------------------------------
+
+COARSE = 4   # erosion / karst work grid: every 4th vertex (4 m cells, 1009 x 1009)
+
+
+def worley_karst(rng, cell_m=150.0, max_h=290.0, stride=COARSE):
+    """Fengcong karst: one steep cone per jittered cell, cones meet in saddles and closed
+    depressions (dolines) - the 'tai meo' stone forest look of Dong Van / Ma Pi Leng."""
+    X, Y = grid_coords(N, stride)
+    warp_x = (value_noise(N, 9, rng, stride) - 0.5) * 120.0
+    warp_y = (value_noise(N, 9, rng, stride) - 0.5) * 120.0
+    xw, yw = X + warp_x, Y + warp_y
+    table = 64
+    jit = rng.random((table, table, 2)).astype(np.float32) * 0.8 + 0.1
+    amp = rng.random((table, table)).astype(np.float32)
+    amp = np.where(amp < 0.18, amp * 0.3, 0.45 + 0.55 * amp)          # a few low cells = basins
+    sharp = rng.uniform(1.1, 1.8, (table, table)).astype(np.float32)
+    cx = np.floor(xw / cell_m).astype(np.int32)
+    cy = np.floor(yw / cell_m).astype(np.int32)
+    f1 = np.full(X.shape, np.inf, np.float32)
+    f2 = np.full(X.shape, np.inf, np.float32)
+    a1 = np.zeros(X.shape, np.float32)
+    s1 = np.ones(X.shape, np.float32)
+    for dj in (-1, 0, 1):
+        for di in (-1, 0, 1):
+            ix, iy = cx + di, cy + dj
+            tx, ty = ix % table, iy % table
+            px = (ix + jit[ty, tx, 0]) * cell_m
+            py = (iy + jit[ty, tx, 1]) * cell_m
+            d = np.hypot(xw - px, yw - py).astype(np.float32)
+            closer = d < f1
+            f2 = np.where(closer, f1, np.minimum(f2, d))
+            a1 = np.where(closer, amp[ty, tx], a1)
+            s1 = np.where(closer, sharp[ty, tx], s1)
+            f1 = np.where(closer, d, f1)
+    cone = np.clip(1.0 - f1 / (0.62 * cell_m), 0.0, 1.0)
+    # Steep flanks + slightly rounded summit; saddles between neighbouring cones.
+    h = max_h * a1 * cone ** s1
+    h += 18.0 * np.clip((f2 - f1) / cell_m, 0, 1)
+    return h.astype(np.float32)
+
+
+def thamma_hillside():
+    """Smooth grassy hillside under the Doc Tham Ma hairpins (800 m -> 1060 m, rising north)."""
+    X, Y = grid_coords(N, COARSE)
+    hill = np.interp(Y, [-2016, -1720, -1300, -1080, 2016], [770, 790, 1062, 1150, 1150]).astype(np.float32)
+    # Broad: the whole south-west valley side rises north, so the hairpins sit on a real slope.
+    mx = 1 - smoothstep(-1250, -900, X)
+    my = 1 - smoothstep(-1180, -900, Y)
+    return hill, (mx * my).astype(np.float32)
+
+
+def droplet_erosion(h, rng, drops=800_000, batch=200_000, steps=70):
+    """Vectorised particle hydraulic erosion on the coarse grid (heights in metres)."""
+    # Work in scaled units (metres / 20) so slopes look like Lague's 0..1 heightfields: stable rates.
+    scale = 20.0
+    H = h.astype(np.float64) / scale
+    n = H.shape[0]
+    inertia, capacity, min_slope = 0.08, 6.0, 0.02
+    erode_rate, deposit_rate, evaporate, gravity = 0.35, 0.25, 0.02, 4.0
+    flat = H.ravel()
+    for b0 in range(0, drops, batch):
+        m = min(batch, drops - b0)
+        px = rng.uniform(1, n - 2, m); py = rng.uniform(1, n - 2, m)
+        dx = np.zeros(m); dy = np.zeros(m)
+        speed = np.ones(m); water = np.ones(m); sed = np.zeros(m)
+        alive = np.ones(m, bool)
+        for _ in range(steps):
+            ix = px.astype(np.int64); iy = py.astype(np.int64)
+            fx = px - ix; fy = py - iy
+            i00 = iy * n + ix
+            h00 = flat[i00]; h10 = flat[i00 + 1]; h01 = flat[i00 + n]; h11 = flat[i00 + n + 1]
+            gx = (h10 - h00) * (1 - fy) + (h11 - h01) * fy
+            gy = (h01 - h00) * (1 - fx) + (h11 - h10) * fx
+            hc = (h00 * (1 - fx) + h10 * fx) * (1 - fy) + (h01 * (1 - fx) + h11 * fx) * fy
+            dx = dx * inertia - gx * (1 - inertia)
+            dy = dy * inertia - gy * (1 - inertia)
+            ln = np.hypot(dx, dy)
+            stuck = ln < 1e-9
+            ln[stuck] = 1.0
+            dx /= ln; dy /= ln
+            nx = px + dx; ny = py + dy
+            alive &= ~stuck & (nx > 1) & (nx < n - 2) & (ny > 1) & (ny < n - 2)
+            nxc = np.clip(nx, 1, n - 2.001); nyc = np.clip(ny, 1, n - 2.001)
+            jx = nxc.astype(np.int64); jy = nyc.astype(np.int64)
+            gx2 = nxc - jx; gy2 = nyc - jy
+            j00 = jy * n + jx
+            hn = ((flat[j00] * (1 - gx2) + flat[j00 + 1] * gx2) * (1 - gy2)
+                  + (flat[j00 + n] * (1 - gx2) + flat[j00 + n + 1] * gx2) * gy2)
+            dh = hn - hc
+            cap = np.maximum(-dh, min_slope) * speed * water * capacity
+            deposit = np.where(dh > 0, np.minimum(dh, sed), np.where(sed > cap, (sed - cap) * deposit_rate, 0.0))
+            erode = np.where((dh <= 0) & (sed <= cap), np.minimum((cap - sed) * erode_rate, -dh * 0.5), 0.0)
+            erode = np.minimum(erode, 0.05) * alive
+            deposit = deposit * alive
+            sed += erode - deposit
+            # Deposit on the 4 bilinear corners, erode with a 3x3 brush (no pits / spikes).
+            w00 = (1 - fx) * (1 - fy); w10 = fx * (1 - fy); w01 = (1 - fx) * fy; w11 = fx * fy
+            idx = [i00, i00 + 1, i00 + n, i00 + n + 1]
+            wts = [w00 * deposit, w10 * deposit, w01 * deposit, w11 * deposit]
+            for oy, ox, wb in ((-1, -1, 1), (-1, 0, 2), (-1, 1, 1), (0, -1, 2), (0, 0, 4), (0, 1, 2), (1, -1, 1), (1, 0, 2), (1, 1, 1)):
+                idx.append(np.clip(i00 + oy * n + ox, 0, n * n - 1))
+                wts.append(-erode * (wb / 16.0))
+            flat += np.bincount(np.concatenate(idx), weights=np.concatenate(wts), minlength=n * n)
+            speed = np.minimum(np.sqrt(np.maximum(speed * speed - dh * gravity, 0.0)), 6.0)
+            water *= (1 - evaporate)
+            px, py = nxc, nyc  # dead droplets stay clamped (they no longer change the map)
+            if not alive.any():
+                break
+    return (H.reshape(n, n) * scale).astype(np.float32)
+
+
+def blur3(a):
+    p = np.pad(a, 1, mode="edge")
+    return (p[:-2, :-2] + 2 * p[:-2, 1:-1] + p[:-2, 2:] + 2 * p[1:-1, :-2] + 4 * p[1:-1, 1:-1] + 2 * p[1:-1, 2:]
+            + p[2:, :-2] + 2 * p[2:, 1:-1] + p[2:, 2:]) / 16.0
+
+
+def terrace(z, base, step, warp):
+    """Limestone strata: flat ledges + steep risers."""
+    q = (z - base) / step + warp
+    f = np.floor(q)
+    fr = q - f
+    return base + (f + smoothstep(0.5, 1.0, fr) - warp) * step
+
+
 def generate():
     t0 = time.time()
     rng = np.random.default_rng(SEED)
@@ -400,18 +528,32 @@ def generate():
     river_d, _ = polyline_distance(river_xy, np.zeros(len(river_xy), np.float32), margin=700.0)
     print(f"distance fields {time.time() - t0:.1f}s")
 
-    # --- base + relief ---
-    height = rbf_base(road_xy, road_z)
-    stride = 8
-    coarse_road_d, _ = polyline_distance(road_xy[::10], np.zeros(len(road_xy[::10]), np.float32), margin=400.0)
-    cones = place_cones(rng, coarse_road_d[::stride, ::stride], stride)
-    stamp_cones(height, cones, rng)
+    # --- base: regional shape + road-following anchors + Tham Ma hillside (coarse 4 m grid) ---
+    base = rbf_base(road_xy, road_z)[::COARSE, ::COARSE].copy()
+    hill, hill_mask = thamma_hillside()
+    base = base * (1 - 0.9 * hill_mask) + hill * (0.9 * hill_mask)
 
-    relief = (fbm(N, 10, 6, rng) - 0.5) * 40.0 + (fbm(N, 24, 5, rng, ridged=True) - 0.3) * 22.0
-    fine = (fbm(N, 400, 3, rng) - 0.5) * 1.6
+    # --- fengcong karst cones, kept away from the road corridor and the Tham Ma slope ---
+    coarse_road_d, _ = polyline_distance(road_xy[::10], np.zeros(len(road_xy[::10]), np.float32), margin=400.0)
+    road_c = np.minimum(coarse_road_d[::COARSE, ::COARSE], 1e6)
+    del coarse_road_d
+    karst = worley_karst(rng)
+    karst_mask = smoothstep(25.0, 210.0, road_c) * (1 - 0.75 * hill_mask)
+    relief = ((fbm(N, 10, 5, rng)[::COARSE, ::COARSE] - 0.5) * 36.0
+              + (fbm(N, 28, 4, rng, ridged=True)[::COARSE, ::COARSE] - 0.3) * 20.0)
+    coarse = base + karst * karst_mask + relief * (0.3 + 0.7 * smoothstep(8.0, 60.0, road_c))
+    print(f"karst {time.time() - t0:.1f}s")
+
+    # --- hydraulic erosion: gullies, debris fans, softened valley floors ---
+    eroded = droplet_erosion(coarse, rng)
+    delta = blur3(eroded - coarse)
+    print(f"erosion {time.time() - t0:.1f}s (mean |dz| {np.abs(delta).mean():.2f} m, max cut {delta.min():.1f} m)")
+    height = upsample(coarse + delta, N)
+    del coarse, eroded, delta, base, karst, relief, hill, hill_mask, karst_mask, road_c
+
+    fine = (fbm(N, 400, 3, rng) - 0.5) * 1.4 + (fbm(N, 120, 3, rng, ridged=True) - 0.3) * 3.0
     near_road = smoothstep(8.0, 45.0, np.minimum(road_d, 1e6))
-    height += relief * (0.25 + 0.75 * near_road) + fine
-    print(f"relief {time.time() - t0:.1f}s, {len(cones)} karst cones")
+    height += fine * (0.2 + 0.8 * near_road)
 
     # --- Nho Que canyon (cutter, min with terrain) ---
     _, Yg = grid_coords(N)
@@ -428,6 +570,14 @@ def generate():
     strata = (fbm(N, 60, 4, rng) - 0.5) * 30.0 + (fbm(N, 140, 3, rng, ridged=True) - 0.3) * 35.0
     cutter += (strata * np.clip(t * (1 - t) * 4.0, 0.0, 1.0)).astype(np.float32)
     del strata
+    # Limestone strata: ledges + near-vertical risers, levels warped so they are not perfectly flat.
+    wall_mask = np.clip(t * 6.0, 0, 1) * (rd >= RIVER_HALF_WIDTH_M)
+    level_warp = (value_noise(N, 14, rng) - 0.5) * 0.6
+    strata_amt = 0.35 + 0.35 * value_noise(N, 6, rng)          # strata stronger in some stretches
+    tz = terrace(cutter, WATER_ASL_M, 55.0, level_warp) * 0.6 + terrace(cutter, WATER_ASL_M, 17.0, level_warp * 1.7) * 0.4
+    cutter = (cutter * (1 - strata_amt * wall_mask) + tz * (strata_amt * wall_mask)).astype(np.float32)
+    del tz, strata_amt
+    del wall_mask, level_warp
     height = np.minimum(height, cutter)
     del cutter, chan, wall, t, W, k, rim
     print(f"canyon {time.time() - t0:.1f}s")
@@ -446,9 +596,10 @@ def generate():
     layout_vp = {}
     # VP1 Doc Tham Ma check-in pad (top of the hairpins).
     top_i = int(np.searchsorted(road_s, piece_len["tham_ma"]))
-    vp1_xy = road_xy[min(top_i + 25, len(road_xy) - 1)] + np.array([0.0, 22.0])
-    vp1_z = float(road_z[min(top_i + 25, len(road_z) - 1)])
-    m = capsule_mask(vp1_xy, vp1_xy + [30.0, 0.0], 16.0, 10.0)
+    vp1_road = road_xy[min(top_i + 30, len(road_xy) - 1)]
+    vp1_xy = vp1_road + np.array([-6.0, -26.0])
+    vp1_z = float(road_z[min(top_i + 30, len(road_z) - 1)])
+    m = capsule_mask(vp1_road + [0.0, -6.0], vp1_xy, 11.0, 7.0)
     height = height * (1 - m) + (vp1_z - 0.15) * m
     layout_vp["doc_tham_ma"] = {"xy": vp1_xy.tolist(), "z": vp1_z}
 
@@ -457,9 +608,9 @@ def generate():
                           + 1000.0 * (road_s > piece_len["rim"])))
     rim_xy = road_xy[rim_i]
     spur_a = rim_xy + np.array([ROAD_HALF_WIDTH_M + 1.0, -2.0])
-    spur_b = rim_xy + np.array([82.0, 6.0])
-    spur_z = float(road_z[rim_i]) - 4.0
-    m = capsule_mask(spur_a, spur_b, 7.0, 1.5)
+    spur_b = rim_xy + np.array([74.0, 9.0])
+    spur_z = float(road_z[rim_i]) - 3.0
+    m = capsule_mask(spur_a, spur_b, 5.0, 1.0)
     height = np.maximum(height * (1 - m) + spur_z * m, height * (1 - m))
     layout_vp["mom_da_tu_than"] = {"xy": spur_b.tolist(), "z": spur_z, "road_xy": rim_xy.tolist(),
                                    "road_z": float(road_z[rim_i])}
