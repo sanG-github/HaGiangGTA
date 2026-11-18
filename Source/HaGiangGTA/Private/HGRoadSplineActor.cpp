@@ -115,6 +115,10 @@ void AHGRoadSplineActor::RebuildRoadMeshes()
 		Seg->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Seg->SetCanEverAffectNavigation(false);
 		Seg->SetCastShadow(false);
+		// Round 3B: road distance for the materials (markings and concrete slabs per real metre, a tone per pour):
+		// [0] distance along the road at the segment start (m), [1] segment length (m).
+		Seg->SetCustomPrimitiveDataFloat(0, D0 / 100.f);
+		Seg->SetCustomPrimitiveDataFloat(1, Step / 100.f);
 		Seg->RegisterComponent();
 		AddInstanceComponent(Seg);
 		Seg->UpdateMesh();

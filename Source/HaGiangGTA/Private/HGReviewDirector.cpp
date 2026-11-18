@@ -7,6 +7,7 @@
 #include "GameFramework/PlayerController.h"
 #include "HGBikePawn.h"
 #include "HGTouristNPC.h"
+#include "HGDressingProp.h"
 #include "HGCowActor.h"
 #include "HGTruckPawn.h"
 #include "NhoQueBoatPawn.h"
@@ -112,6 +113,37 @@ void AHGReviewDirector::BuildShots()
 			{
 				AddActorShot(*It, TEXT("boat_side"), FVector(150.f, 1100.f, 160.f), FVector(0.f, 0.f, 60.f));
 				AddActorShot(*It, TEXT("boat_quarter"), FVector(-700.f, 450.f, 260.f), FVector(-100.f, 0.f, 80.f));
+				break;
+			}
+		}
+	}
+	// Set dressing (Round 3B): two houses, every sign / flag, one corn terrace from above.
+	{
+		int32 HouseShots = 0;
+		bool bCorn = false;
+		for (TActorIterator<AHGDressingProp> It(World); It; ++It)
+		{
+			switch (It->Kind)
+			{
+			case EHGDressingKind::HmongHouse:
+				if (HouseShots++ < 2)
+				{
+					AddActorShot(*It, HouseShots == 1 ? TEXT("house_front") : TEXT("house_quarter"),
+						HouseShots == 1 ? FVector(300.f, 1900.f, 350.f) : FVector(-1500.f, 1300.f, 600.f), FVector(0.f, 0.f, 200.f));
+				}
+				break;
+			case EHGDressingKind::CornField:
+				if (!bCorn)
+				{
+					bCorn = true;
+					AddActorShot(*It, TEXT("corn_terraces"), FVector(-3000.f, -3000.f, 2500.f), FVector(0.f, 0.f, 0.f));
+				}
+				break;
+			case EHGDressingKind::FlagPole:
+				AddActorShot(*It, TEXT("flag_pole"), FVector(-900.f, 1400.f, 400.f), FVector(0.f, 0.f, 700.f));
+				break;
+			default:
+				AddActorShot(*It, *(TEXT("sign_") + It->GetName()), FVector(0.f, 650.f, 180.f), FVector(0.f, 0.f, 110.f));
 				break;
 			}
 		}

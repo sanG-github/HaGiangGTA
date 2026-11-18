@@ -159,6 +159,22 @@ class Graph:
         return self.mat
 
 
+def road_along(g: Graph, v):
+    """Distance along the road in metres: AHGRoadSplineActor writes each segment's start distance (custom
+    primitive data 0) and length (1); V runs 0..1 along the segment. Markings and slabs then repeat per real
+    metre instead of per (slightly varying) segment."""
+    def cpd(index):
+        e = g.node(unreal.MaterialExpressionCustomPrimitiveData)
+        for prop in ("primitive_data_index", "primitive_index", "data_index", "index"):
+            try:
+                e.set_editor_property(prop, index)
+                break
+            except Exception:
+                continue
+        return e
+    return g.add(cpd(0), g.mul(v, cpd(1)))
+
+
 def remap_mask(g: Graph, value, center, sharpness, invert=False):
     """saturate((value - center) * sharpness), optionally inverted."""
     d = g.sub(center, value) if invert else g.sub(value, center)
@@ -238,8 +254,11 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
                  g.saturate(g.mul(g.sub(z, water_z_cm - 50.0), 1.0 / 60.0)))
     lines = g.node(unreal.MaterialExpressionFrac)
     g.link(g.mul(z, 1.0 / 70.0), lines)
-    mud = g.lerp(g.color("DrawdownMud", (0.24, 0.2, 0.15)), g.color("WaterlineOchre", (0.4, 0.27, 0.14)), (n_fine, "G"))
+    mud = g.lerp(g.color("DrawdownMud", (0.15, 0.13, 0.105)), g.color("WaterlineOchre", (0.26, 0.19, 0.11)), (n_mid, "G"))
     mud = g.mul(mud, g.add(0.82, g.mul(lines, 0.22)))
+    # Pebbles and rock fragments (dark / light specks) so the band reads as stony mud, not a sand beach.
+    pebbles = g.saturate(g.mul(g.sub((n_fine, "B"), 0.55), 5.0))
+    mud = g.lerp(mud, g.mul(lime, 0.75), g.mul(pebbles, 0.6))
     stained_rock = g.mul(rock_col, g.color("WaterStain", (0.68, 0.6, 0.5)))
     band_col = g.lerp(mud, stained_rock, rock)
     wet = g.saturate(g.mul(g.sub(g.add(water_z_cm, 45.0), z), 1.0 / 30.0))       # dark wet line at the water
@@ -251,6 +270,17 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         map_uv = g.mul(g.add(g.mask(wp, r=True, g=True), half_cm), 1.0 / (2.0 * half_cm))
         path = g.mul(g.texture(tex["T_HG_PathMask"], map_uv), g.sub(1.0, rock))
         base = g.lerp(base, g.color("Path", (0.3, 0.24, 0.17)), g.mul(path, 0.85))
+    # Round 3B - road verges (gen_scatter T_HG_ShoulderMask, ~1.4 m/px): packed grey-brown gravel and dust in
+    # the first ~2.5 m beside the carriageway, loose limestone chips and dark stones, grass creeping back in.
+    if "T_HG_ShoulderMask" in tex:
+        smap_uv = g.mul(g.add(g.mask(wp, r=True, g=True), half_cm), 1.0 / (2.0 * half_cm))
+        verge = g.mul(g.texture(tex["T_HG_ShoulderMask"], smap_uv), g.sub(1.0, g.mul(rock, 0.7)))
+        verge = g.saturate(g.mul(g.sub((verge, "R"), g.mul((n_fine, "G"), 0.35)), 1.6))     # ragged grass edge
+        gravel = g.mul(g.color("Gravel", (0.27, 0.24, 0.2)), g.add(0.8, g.mul((n_fine, "R"), 0.4)))
+        chips = g.saturate(g.mul(g.sub((n_fine, "B"), 0.62), 6.0))
+        stones = g.saturate(g.mul(g.sub(0.3, (n_fine, "B")), 6.0))
+        gravel = g.lerp(g.lerp(gravel, g.mul(lime, 1.15), g.mul(chips, 0.7)), g.color("DarkStone", (0.07, 0.065, 0.06)), g.mul(stones, 0.6))
+        base = g.lerp(base, gravel, verge)
     rough = g.lerp(g.lerp(0.92, 0.95, plots), 0.78, rock)
     normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rock, 0.6), 0.4)))
     g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
@@ -306,7 +336,10 @@ def wet_asphalt(tex) -> unreal.Material:
     # Lane paint from the road-strip UVs (U across, V along each 8 m segment): yellow dashed centre line
     # (3.4 m dash / 4.6 m gap) + solid white edge lines, worn through in the wheel paths and in flakes.
     centre = g.saturate(g.mul(g.sub(0.013, du), 400.0))
-    dash = g.saturate(g.mul(g.sub(0.42, v), 200.0))
+    # 3 m dash / 6 m gap per real metre of road (custom primitive data from the road actor).
+    dphase = g.node(unreal.MaterialExpressionFrac)
+    g.link(g.mul(road_along(g, v), 1.0 / 9.0), dphase)
+    dash = g.saturate(g.mul(g.sub(0.333, dphase), 60.0))
     yellow = g.mul(centre, dash)
     de = g.node(unreal.MaterialExpressionAbs)
     g.link(g.sub(du, 0.455), de)
@@ -341,14 +374,15 @@ def concrete_road(tex) -> unreal.Material:
     g.link(g.sub(u, 0.5), du)
 
     # Per-slab tone: sample the noise at the slab's index (2 slabs per 8 m segment x 2 lanes) + broad drift.
+    along = road_along(g, v)                       # metres along the road (4 m pours)
     slab_v = g.node(unreal.MaterialExpressionFloor)
-    g.link(g.mul(v, 2.0), slab_v)
+    g.link(g.mul(along, 0.25), slab_v)
     side = g.saturate(g.mul(g.sub(u, 0.5), 1000.0))
     slab_uv = g.append(g.add(g.mul(slab_v, 0.173), g.mul(side, 0.29)), g.add(g.mul((broad, "R"), 0.5), g.mul(side, 0.41)))
     slab_n = g.texture(tex["T_HG_Noise"], slab_uv)
     slab_tone = g.add(0.78, g.mul((slab_n, "G"), 0.42))
     # Broom finish: fine grain stretched across the road.
-    broom_uv = g.append(g.mul(u, 1.5), g.mul(v, 260.0))
+    broom_uv = g.append(g.mul(u, 1.5), g.mul(along, 32.0))
     broom = g.texture(tex["T_HG_Noise"], broom_uv)
     concrete = g.mul(g.color("Concrete", (0.3, 0.292, 0.272)),
                      g.mul(slab_tone, g.add(g.add(0.86, g.mul((fine, "G"), 0.22)), g.mul((broom, "R"), 0.12))))
@@ -367,7 +401,7 @@ def concrete_road(tex) -> unreal.Material:
     base = g.lerp(base, g.color("Crack", (0.08, 0.075, 0.07)), g.mul(crack, 0.7))
     # Sawn joints: transverse every 4 m (V 0 / 0.5 / 1) + longitudinal centre joint, chipped edges.
     fv = g.node(unreal.MaterialExpressionFrac)
-    g.link(g.mul(v, 2.0), fv)
+    g.link(g.mul(along, 0.25), fv)
     dv = g.node(unreal.MaterialExpressionAbs)
     g.link(g.sub(fv, 0.5), dv)
     chip = g.mul(g.sub((fine, "R"), 0.5), 0.004)

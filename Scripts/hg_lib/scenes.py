@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unreal
 
-from . import assets, materials, placements, world
+from . import assets, dressing, materials, placements, world
 from . import editor_utils as hg
 
 GAME_MODE = "/Script/HaGiangGTA.HGOpenWorldGameMode"
@@ -72,6 +72,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
     world.build_viewpoint_props(layout, scatter, meshes, mats, tag, f"{prefix}/Viewpoints")
     world.build_landmarks(layout, meshes, mats, mat_wood, tag, f"{prefix}/Landmarks")
     world.build_set_dressing(scatter, meshes, mats, tag, f"{prefix}/Dressing")
+    dressing.build(layout, world.load_scatter(), tag, f"{prefix}/Dressing")
     world.build_river_traffic(layout, tag, f"{prefix}/River")
     world.build_player_start(layout, tag, f"{prefix}/Gameplay")
 

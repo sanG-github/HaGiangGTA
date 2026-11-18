@@ -15,7 +15,8 @@ enum class EHGPersonLook : uint8
 	Backpacker,    // co do sao vang T-shirt, cargo shorts, yellow duck-bill helmet ("non vit"), backpack, scarf
 	EasyRider,     // tour guide: tour-colour vest over a dark jacket, full helmet, tho cam scarf
 	Player,        // olive jacket and jeans; non la on foot, open-face helmet on a bike
-	Police         // CSGT traffic police: khaki-yellow shirt, dark green trousers, white helmet
+	Police,        // CSGT traffic police: khaki-yellow shirt, dark green trousers, white helmet
+	HmongKid       // ~1.05 m H'Mong child: bright jacket, small pleated skirt (girls) or trousers (boys)
 };
 
 /** Standing: origin at the feet. Rider / Passenger: origin where the hips touch the seat, X forward. */
@@ -23,7 +24,8 @@ enum class EHGPersonPose : uint8
 {
 	Standing,
 	Rider,         // hands on the handlebar grips (seat-relative ~52, +-32, 17)
-	Passenger      // rear seat, feet on the rear pegs
+	Passenger,     // rear seat, feet on the rear pegs
+	Squat          // market seller squatting on her heels behind a flat basket of goods (origin at the feet)
 };
 
 /**

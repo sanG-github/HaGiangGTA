@@ -12,7 +12,7 @@ import os
 import unreal
 
 from . import editor_utils as hg
-from . import placements
+from . import dressing, placements
 
 ROAD_MESH_OFFSET_CM = -11.0   # landscape is carved 15 cm under the road profile; asphalt top 4 cm above it
 
@@ -457,8 +457,10 @@ def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
         if "youth_monument" not in marks:
             hg.spawn_mesh("MPL_Monument", mesh_path(meshes["SM_HG_Monument"]), at(6, 2, -0.1), (0, yaw, 0), (1, 1, 1),
                           mats["monument"], tag, folder)
-        # Name stone: a big upright limestone block by the road edge.
-        hg.spawn_mesh("MPL_NameStone", mesh_path(meshes["SM_HG_Boulder_01"]), at(-6, -4, -0.3), (0, yaw + 90, 0),
+        # Name stone: a big upright limestone block by the road edge (the carved kit stone of dressing.py
+        # replaces it when the C++ prop is compiled).
+        if not hasattr(unreal, "HGDressingProp"):
+          hg.spawn_mesh("MPL_NameStone", mesh_path(meshes["SM_HG_Boulder_01"]), at(-6, -4, -0.3), (0, yaw + 90, 0),
                       (1.1, 0.45, 1.0), mats["monument"], tag, folder)
         building("MPL_PanoramaCafe", at(-15, 4.5, -0.1), yaw, (1.25, 1.0, 1.05), mats["cafe_wall"], mats["roof_green"])
         stall = at(16, 3.5, 0.0)
@@ -538,6 +540,10 @@ def build_river_traffic(layout, tag, folder):
         rerun(boat)
 
 
+def layout_for_dressing():
+    return hg.ensure_generated_heightmap()
+
+
 def build_set_dressing(scatter, meshes, mats, tag, folder):
     """Reference-photo dressing: distant blue ranges, chevrons on the bends, utility poles, hamlets."""
     # Round 3B: four layered ridge rings (gen_ranges.py, absolute altitude) instead of the single flat band.
@@ -568,6 +574,8 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
     spawn_scatter("Scatter_poles", meshes["SM_HG_UtilityPole"], mats["pole"], scatter.get("poles", []), tag, folder,
                   cull=(50000.0, 70000.0), collision=True)
     for colour, items in scatter.get("houses", {}).items():
+        if colour == "grey":
+            items = dressing.remaining_grey_houses(layout_for_dressing(), items)   # the rest are kit H'Mong houses
         spawn_scatter(f"Scatter_houses_{colour}_walls", meshes["SM_HG_HouseWalls"], mats["house_wall"], items, tag, folder,
                       cull=(0.0, 0.0), collision=True)
         spawn_scatter(f"Scatter_houses_{colour}_roofs", meshes["SM_HG_HouseRoof"], mats[f"roof_{colour}"], items, tag, folder,

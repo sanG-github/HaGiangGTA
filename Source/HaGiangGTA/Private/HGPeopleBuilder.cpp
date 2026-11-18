@@ -41,6 +41,7 @@ namespace
 		bool bBasket = false;
 		bool bBag = false;          // tho cam shoulder bag
 		bool bStar = false;
+		bool bBaby = false;         // baby carried on the back in a sling (Hmong mothers)
 		bool bCollar = false;       // Hmong embroidered collar flap
 		int32 ScarfSeed = 0;
 		FLC Skirt[4] = { FLC(0.02f, 0.025f, 0.08f), FLC(0.1f, 0.13f, 0.32f), FLC(0.55f, 0.04f, 0.12f), FLC(0.6f, 0.45f, 0.05f) };
@@ -69,7 +70,8 @@ namespace
 			O.Head = EHead::Wrap;
 			const FLC Wraps[4] = { FLC(0.7f, 0.12f, 0.3f), FLC(0.1f, 0.4f, 0.25f), FLC(0.08f, 0.08f, 0.25f), FLC(0.75f, 0.35f, 0.05f) };
 			O.HeadGear = Wraps[V];
-			O.bBasket = V != 1;
+			O.bBasket = V == 0 || V == 3;
+			O.bBaby = V == 2;
 			O.bBag = V == 1 || V == 3;
 			O.bCollar = true;
 			const FLC Mid[4] = { FLC(0.1f, 0.13f, 0.32f), FLC(0.5f, 0.05f, 0.1f), FLC(0.3f, 0.06f, 0.3f), FLC(0.05f, 0.06f, 0.18f) };
@@ -137,6 +139,22 @@ namespace
 			O.HeadGear = Pose == EHGPersonPose::Standing ? FLC(0.7f, 0.6f, 0.36f) : FLC(0.08f, 0.12f, 0.06f);
 			O.bBag = true;
 			break;
+		case EHGPersonLook::HmongKid:
+		{
+			const FLC Tops[4] = { FLC(0.65f, 0.08f, 0.3f), FLC(0.05f, 0.35f, 0.15f), FLC(0.7f, 0.25f, 0.03f), FLC(0.06f, 0.15f, 0.5f) };
+			O.Scale = 0.62f;
+			O.Width = 0.72f;
+			O.Skin = FLC(0.5f, 0.32f, 0.21f);
+			O.Top = Tops[V];
+			O.Sleeve = O.Top;
+			O.Cuff = FLC(0.7f, 0.6f, 0.1f);
+			O.Lower = FLC(0.03f, 0.035f, 0.1f);
+			O.Shoes = FLC(0.1f, 0.12f, 0.15f);
+			O.Legs = (V & 1) ? ELower::Trousers : ELower::Skirt;
+			O.Head = (V == 2) ? EHead::Wrap : EHead::Bare;
+			O.HeadGear = FLC(0.7f, 0.12f, 0.3f);
+			break;
+		}
 		case EHGPersonLook::Police:
 			O.Top = FLC(0.55f, 0.45f, 0.12f);                       // CSGT khaki-yellow
 			O.Sleeve = O.Top;
@@ -190,6 +208,21 @@ namespace
 			J.NeckA = FVector(12, 0, 54);
 			J.NeckB = FVector(15, 0, 66);
 			J.HeadC = FVector(17, 0, 76);
+			break;
+		case EHGPersonPose::Squat:
+			// Sitting on her heels: hips low, knees up, forearms resting on the knees.
+			J.Pelvis = FVector(-8, 0, 40 * s);
+			Set(J.Hip, FVector(-6, 10 * w, 40 * s));
+			Set(J.Knee, FVector(22, 14 * w, 52 * s));
+			Set(J.Ankle, FVector(6, 12 * w, 9));
+			J.TorsoBase = FVector(-5, 0, 43 * s);
+			J.TorsoPitch = 24.f;
+			J.TorsoH = 44 * s;
+			Set(J.Shoulder, FVector(12, 18.5f * w, 83 * s));
+			Set(J.Wrist, FVector(30, 12 * w, 58 * s));
+			J.NeckA = FVector(12, 0, 85 * s);
+			J.NeckB = FVector(16, 0, 97 * s);
+			J.HeadC = FVector(19, 0, 106 * s);
 			break;
 		case EHGPersonPose::Passenger:
 			J.Pelvis = FVector(0, 0, 11);
@@ -251,7 +284,9 @@ namespace
 			K.Tube(Wr - D * 5.f, Wr, 4.f, 3.8f, 8, false);
 		}
 		K.Paint(O.Skin);
-		K.Ellipsoid(Wr + D * 4.5f, FVector(2.6f, 3.4f, 5.f), AlongZ(D), 6, 4);
+		K.Ellipsoid(Wr + D * 4.5f, FVector(2.4f, 3.6f, 5.f), AlongZ(D), 6, 4);                 // palm + fingers
+		const FVector Side = FVector::CrossProduct(D, FVector::UpVector).GetSafeNormal();
+		K.Tube(Wr + D * 1.5f + Side * 2.4f, Wr + D * 5.5f + Side * 3.6f + FVector(0.f, 0.f, 0.5f), 1.2f, 0.9f, 5, true);   // thumb
 	}
 
 	void AddLeg(FHGMeshKit& K, const FOutfit& O, const FVector& Hip, const FVector& Knee, const FVector& Ankle, bool bStanding)
@@ -306,6 +341,9 @@ namespace
 		K.Ellipsoid(H + FVector(8.2f, 3.3f, 1.8f), FVector(1.2f, 1.4f, 0.9f), FRotator::ZeroRotator, 5, 3);
 		K.Paint(FLC(0.25f, 0.1f, 0.08f));
 		K.Box(H + FVector(8.6f, 0.f, -5.2f), FVector(1.f, 4.f, 0.8f));                                         // mouth
+		K.Paint(FLC(0.02f, 0.015f, 0.012f));
+		K.Box(H + FVector(8.4f, -3.4f, 4.3f), FVector(1.f, 3.4f, 0.7f), FRotator(0.f, 0.f, -6.f));             // eyebrows
+		K.Box(H + FVector(8.4f, 3.4f, 4.3f), FVector(1.f, 3.4f, 0.7f), FRotator(0.f, 0.f, 6.f));
 		const bool bHelmet = O.Head == EHead::FullHelmet || O.Head == EHead::OpenHelmet || O.Head == EHead::HalfHelmet || O.Head == EHead::DuckBill;
 		if (!bHelmet)
 		{
@@ -397,6 +435,18 @@ namespace
 		const FOutfit O = OutfitFor(Look, Pose, V);
 		const FPoseJoints J = JointsFor(Pose, O);
 		const bool bStanding = Pose == EHGPersonPose::Standing;
+		if (Pose == EHGPersonPose::Squat)
+		{
+			// Flat bamboo tray of goods on the ground in front: greens, chillies, corn.
+			K.Paint(FLC(0.4f, 0.29f, 0.14f), HGSurf::Satin);
+			K.Frustum(FTransform(FVector(52.f, 0.f, 0.f)), FVector2D(24.f), FVector2D(30.f), 9.f, 16, true, 0.03f);
+			K.Paint(FLC(0.08f, 0.22f, 0.04f));
+			K.Ellipsoid(FVector(46.f, -8.f, 12.f), FVector(12.f, 10.f, 6.f), FRotator::ZeroRotator, 8, 4, 0.f);
+			K.Paint(FLC(0.6f, 0.04f, 0.02f));
+			K.Ellipsoid(FVector(58.f, 10.f, 11.f), FVector(8.f, 7.f, 4.f), FRotator::ZeroRotator, 8, 4, 0.f);
+			K.Paint(FLC(0.75f, 0.5f, 0.06f));
+			K.Ellipsoid(FVector(62.f, -12.f, 11.f), FVector(4.f, 10.f, 4.f), FRotator(0.f, 30.f, 0.f), 6, 4);
+		}
 		if (!bStanding)
 		{
 			for (int32 s = 0; s < 2; ++s)
@@ -407,6 +457,14 @@ namespace
 		else if (O.Legs == ELower::Skirt)
 		{
 			AddSkirt(K, O);
+		}
+		if (Pose == EHGPersonPose::Squat && O.Legs == ELower::Skirt)
+		{
+			// Skirt draped over the knees.
+			K.Paint(O.Skirt[1]);
+			K.Ellipsoid(FVector(6.f, 0.f, 44.f * O.Scale), FVector(26.f, 24.f * O.Width, 16.f), FRotator(-10.f, 0.f, 0.f), 14, 6);
+			K.Paint(O.Skirt[2]);
+			K.Frustum(FTransform(FVector(4.f, 0.f, 8.f)), FVector2D(26.f, 24.f), FVector2D(25.f, 23.f), 26.f * O.Scale, 18, false, 0.06f);
 		}
 		const FRotator Lean(-J.TorsoPitch, 0.f, 0.f);
 		const FTransform Xf(Lean, J.TorsoBase);
@@ -473,6 +531,24 @@ namespace
 			for (const float Y : { -9.f, 9.f })
 			{
 				K.Box(At(R0.X * 0.6f, Y, J.TorsoH - 6.f), FVector(16.f, 3.f, 1.5f), Lean + FRotator(-30.f, 0.f, 0.f));
+			}
+		}
+		if (O.bBaby && bStanding)
+		{
+			// Baby on the back in an embroidered carrier (sling knotted over the chest), head peeking out.
+			const FTransform BXf(Lean, At(-R1.X - 9.f, 0.f, J.TorsoH * 0.45f));
+			K.Paint(O.Skirt[2]);
+			K.Ellipsoid(BXf.GetLocation(), FVector(11.f, 15.f, 18.f), Lean, 10, 6);
+			K.Paint(O.Skirt[3]);
+			K.Box(BXf.TransformPosition(FVector(-9.f, 0.f, 0.f)), FVector(2.f, 22.f, 26.f), Lean);
+			K.Paint(O.Skin);
+			K.Ellipsoid(BXf.TransformPosition(FVector(2.f, -5.f, 22.f)), FVector(6.5f, 6.f, 7.f), Lean, 8, 5);
+			K.Paint(FLC(0.6f, 0.08f, 0.2f));
+			K.Ellipsoid(BXf.TransformPosition(FVector(1.f, -5.f, 26.f)), FVector(7.f, 6.5f, 5.f), Lean, 8, 4, 0.f);   // baby's cap
+			K.Paint(O.Skirt[2]);
+			for (const float Y : { -9.f, 9.f })
+			{
+				K.Box(At(R0.X * 0.7f, Y, J.TorsoH - 10.f), FVector(18.f, 4.f, 1.5f), Lean + FRotator(-35.f, 0.f, 0.f));
 			}
 		}
 		if (O.bBasket && bStanding)
