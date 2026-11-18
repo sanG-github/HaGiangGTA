@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "HGAudio.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Sound/SoundBase.h"
@@ -62,6 +63,12 @@ AHGTruckPawn::AHGTruckPawn()
 		}
 	}
 
+	EngineSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/HaGiang/Generated/Audio/SW_HG_TruckEngine_Loop.SW_HG_TruckEngine_Loop")));
+	EngineTopKmh = 60.f;
+	EngineIdlePitch = 0.7f;
+	EngineMaxPitch = 1.6f;
+	EngineFalloff = 9000.f;
+	EngineVolume = 0.9f;
 	HornSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/HaGiang/Generated/Audio/SW_HG_AirHorn.SW_HG_AirHorn")));
 }
 
@@ -106,7 +113,7 @@ void AHGTruckPawn::Honk()
 	HornCooldown = 5.f;
 	if (LoadedHorn)
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, LoadedHorn, GetActorLocation(), 1.f, FMath::FRandRange(0.97f, 1.03f));
+		HGAudio::PlayAt(this, LoadedHorn, GetActorLocation(), 1.f, FMath::FRandRange(0.97f, 1.03f), 25000.f);
 	}
 }
 

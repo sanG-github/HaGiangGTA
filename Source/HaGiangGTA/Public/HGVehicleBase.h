@@ -5,7 +5,9 @@
 #include "HGVehicleBase.generated.h"
 
 class AHGPlayerCharacter;
+class UAudioComponent;
 class UBoxComponent;
+class USoundBase;
 class UCameraComponent;
 class UEnhancedInputComponent;
 class UInputAction;
@@ -29,6 +31,7 @@ class HAGIANGGTA_API AHGVehicleBase : public APawn
 public:
 	AHGVehicleBase();
 
+	virtual void Tick(float DeltaSeconds) override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void PawnClientRestart() override;
 	virtual void UnPossessed() override;
@@ -91,6 +94,19 @@ protected:
 
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Vehicle")
 	bool bEnterable = true;
+
+	// ---- Engine sound (looping, pitch follows speed) ----
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Audio")
+	TSoftObjectPtr<USoundBase> EngineSound;
+
+	UPROPERTY(EditAnywhere, Category = "Audio") float EngineTopKmh = 90.f;
+	UPROPERTY(EditAnywhere, Category = "Audio") float EngineIdlePitch = 0.8f;
+	UPROPERTY(EditAnywhere, Category = "Audio") float EngineMaxPitch = 2.3f;
+	UPROPERTY(EditAnywhere, Category = "Audio") float EngineVolume = 0.7f;
+	UPROPERTY(EditAnywhere, Category = "Audio") float EngineFalloff = 5000.f;
+
+	UPROPERTY(Transient) TObjectPtr<UAudioComponent> EngineAudio;
+	float EnginePitch = 1.f;
 
 	// ---- Shared driving input ----
 	UPROPERTY(Transient) TObjectPtr<UInputMappingContext> DrivingContext;

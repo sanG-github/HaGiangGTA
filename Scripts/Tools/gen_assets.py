@@ -423,6 +423,64 @@ def make_sfx(rng, sr=44100):
     _write_wav(out / "SW_HG_Moo.wav", moo * env, sr)
 
 
+# ---------------------------------------------------------------------------
+# Audio: seamless loops (CP05) - engines, siren, helicopter
+# ---------------------------------------------------------------------------
+
+def _loop_wav(path, y, sr=44100):
+    """Seamless loop: crossfade the last 50 ms into the first 50 ms and drop the tail."""
+    fade = int(0.05 * sr)
+    n = len(y)
+    out = y[: n - fade].copy()
+    w = np.linspace(0.0, 1.0, fade)
+    out[:fade] = y[:fade] * w + y[n - fade:] * (1.0 - w)
+    _write_wav(path, out, sr)
+
+
+def _engine(rng, sr, seconds, fire_hz, harmonics, rough, noise):
+    n = int(seconds * sr)
+    t = np.arange(n) / sr
+    # Firing pulses: each power stroke is a decaying burst (exact integer count -> seamless).
+    period = int(round(sr / fire_hz))
+    pulse_t = np.arange(period) / sr
+    pulse = np.exp(-pulse_t * fire_hz * 5.0) * np.sin(2 * np.pi * fire_hz * 3.0 * pulse_t)
+    reps = n // period
+    y = np.tile(pulse, reps)
+    jitter = 1.0 + rough * rng.normal(size=reps)
+    y = (y.reshape(reps, period) * jitter[:, None]).ravel()
+    t = t[: len(y)]
+    for k, a in harmonics:
+        y += a * np.sin(2 * np.pi * fire_hz * k * t)
+    y += noise * np.convolve(rng.normal(size=len(y)), np.ones(6) / 6, mode="same")
+    return np.tanh(y * 1.5)
+
+
+def make_loops(rng, sr=44100):
+    out = OUT / "Audio"
+    # Honda Win 110 single cylinder: ~2400 rpm idle-ish base (pitch scaled up in game).
+    _loop_wav(out / "SW_HG_BikeEngine_Loop.wav", _engine(rng, sr, 2.0, 20.0, [(1, 0.5), (2, 0.35), (3, 0.15)], 0.08, 0.08), sr)
+    # Diesel dump truck: low, rough.
+    _loop_wav(out / "SW_HG_TruckEngine_Loop.wav", _engine(rng, sr, 2.0, 12.5, [(1, 0.7), (2, 0.4), (4, 0.2)], 0.12, 0.15), sr)
+    # Outboard motor: buzzy.
+    _loop_wav(out / "SW_HG_BoatMotor_Loop.wav", _engine(rng, sr, 2.0, 50.0, [(1, 0.3), (2, 0.3), (5, 0.1)], 0.05, 0.1), sr)
+
+    # Police siren: two-tone wail, 2 s loop.
+    t = np.arange(int(2.0 * sr)) / sr
+    f = np.where((t % 1.0) < 0.5, 960.0, 770.0)
+    ph = 2 * np.pi * np.cumsum(f) / sr
+    siren = np.tanh(2.0 * (np.sin(ph) + 0.3 * np.sin(2 * ph) + 0.15 * np.sin(3 * ph)))
+    _loop_wav(out / "SW_HG_Siren_Loop.wav", siren, sr)
+
+    # Helicopter: blade-slap at 5.5 Hz on a low rotor rumble + turbine whine.
+    t = np.arange(int(2.0 * sr)) / sr
+    blade = 5.5
+    slap = (np.sin(np.pi * ((t * blade) % 1.0)) ** 24)
+    rumble = np.convolve(rng.normal(size=len(t)), np.ones(40) / 40, mode="same")
+    whine = 0.15 * np.sin(2 * np.pi * 2200 * t) + 0.08 * np.sin(2 * np.pi * 3300 * t)
+    heli = slap * (0.8 + 2.0 * rumble) + 0.6 * rumble + whine
+    _loop_wav(out / "SW_HG_Heli_Loop.wav", heli, sr)
+
+
 def main():
     t0 = time.time()
     rng = np.random.default_rng(SEED)
@@ -432,6 +490,7 @@ def main():
     print(f"meshes {time.time() - t0:.1f}s")
     make_flute(rng)
     make_sfx(rng)
+    make_loops(rng)
     print(f"audio {time.time() - t0:.1f}s -> {OUT}")
 
 

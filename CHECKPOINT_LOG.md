@@ -9,7 +9,7 @@ time spent waiting for a usage-limit reset is excluded (`cooldown_wait_seconds`)
 | 02 | `checkpoint/02-1hr-heightmap-bike` | `cp-02-1hr` | 1 h | done (~26 min active) |
 | 03 | `checkpoint/03-6hr-3viewpoints-photoreal` | `cp-03-6hr` | 6 h | done (~35 min active) |
 | 04 | `checkpoint/04-12hr-living-world` | `cp-04-12hr` | 12 h | done (~42 min active) |
-| 05 | `checkpoint/05-24hr-full-gta-5star` | `cp-05-24hr` | 24 h | pending |
+| 05 | `checkpoint/05-24hr-full-gta-5star` | `cp-05-24hr` | 24 h | done (~50 min active) |
 
 ---
 
@@ -139,3 +139,31 @@ cows, grab a bottle, ride the rim at speed to hear the passenger scream.
 
 **Known limits:** not compiled yet (UE 5.8 still installing). Greybox NPC bodies; traffic loops by turning around at
 the road ends.
+
+---
+
+## CP05 — Full GTA, 5-star wanted (`cp-05-24hr`)
+
+**Rebuild:** run `Scripts/Checkpoints/build_cp05.py` → `/Game/Maps/L_HaGiang_CP05` (now the default map,
+`AHGGtaGameMode`). `gen_assets.py` adds seamless loops: bike / truck / boat engines, police siren, helicopter rotor.
+
+**C++**
+- `UHGGtaHudWidget` (UMG `UserWidget`, drawn in `NativePaint`, no widget assets): `500.000 VNĐ`, 5 wanted stars
+  (flash while you are hiding), GPS minimap rotating with the camera (road spline, convoy / truck / boat / cow /
+  police / helicopter / Happy Water blips, viewpoints clamped to the edge), dial speedometer, GTA location card
+  ("ĐÈO MÃ PÍ LÈNG · MỎM ĐÁ TỬ THẦN", altitude), flycam letterbox, `[F]` / `[V]` prompts, Happy Water and
+  "BỊ BẮT!" banners. `AHGGtaHUD` + `AHGGtaGameMode`.
+- `UHGWantedSubsystem`: heat from impacts reported by player vehicles (road posts tagged `RoadPosts`, convoy bikes,
+  trucks, cows, tourists, police) → stars at 0.5 / 2 / 4 / 7 / 11 heat. Police bikes per star 1/2/2/3/4, helicopter
+  from 3 stars; heat cools after 6 s unseen (no unit within 150 m); stop next to a police bike for 2.5 s → BUSTED, −200.000 VNĐ.
+- `AHGPoliceBikePawn`: white patrol bike, flashing red/blue lights, looping siren; races along the road spline,
+  switches to direct pursuit within 50 m and matches your speed to box you in.
+- `AHGPoliceHelicopter`: follows behind/above the player with terrain clearance, banks, spinning rotors, rotor
+  loop, 300 000 cd volumetric searchlight (scattering ×12) sweeping the player through the canyon fog.
+- `HGAudio`: code-made `USoundAttenuation` (cached per radius) for every one-shot and loop; engine loop pitch
+  follows speed with fake gear shifts.
+
+**Test:** knock down a few road posts on the Mã Pí Lèng rim → stars, sirens behind you; reach 3 stars and drop into
+the Tu San descent to see the helicopter beam in the fog; stop next to the police to get busted.
+
+**Known limits:** nothing compiled yet (UE 5.8 still installing) — compile + fix is the next step for all checkpoints.
