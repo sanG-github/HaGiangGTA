@@ -38,8 +38,15 @@ def remaining_grey_houses(layout, items):
     return [it for it in items if _road_dist(pts, it[0], it[1]) < HOUSE_ROAD_CLEAR_CM]
 
 
-def _spawn(cls_kind, label, loc, yaw, tag, folder, variant=0, text=None, radius=None):
+def _sign_material(key):
+    path = f"{hg.GENERATED_ROOT}/Materials/M_HG_Sign_{key}"
+    return unreal.EditorAssetLibrary.load_asset(path) if unreal.EditorAssetLibrary.does_asset_exist(path) else None
+
+
+def _spawn(cls_kind, label, loc, yaw, tag, folder, variant=0, text=None, radius=None, sign=None):
     a = hg.spawn_actor(unreal.HGDressingProp, label, loc, (0, yaw, 0), tag, folder)
+    if sign and _sign_material(sign):
+        a.set_editor_property("sign_material", _sign_material(sign))
     a.set_editor_property("kind", cls_kind)
     a.set_editor_property("variant", int(variant))
     if text:
@@ -113,20 +120,20 @@ def build(layout, scatter, tag, folder):
         for along, up in ((-6.0, -4.0), (-6.0, -2.0), (-8.0, 0.0)):
             loc = at(along, up, -0.3)
             if clear(loc):
-                _spawn(K.STONE_SIGN, "MPL_NameStone_Carved", loc, face, tag, folder, text="ĐÈO MÃ PÍ LÈNG")
+                _spawn(K.STONE_SIGN, "MPL_NameStone_Carved", loc, face, tag, folder, text="ĐÈO MÃ PÍ LÈNG", sign="MaPiLeng")
                 break
     if "tham_ma_cafe" in marks:
         at, face = frame("tham_ma_cafe")
         for along, up in ((8.0, -2.5), (9.0, 0.0), (-8.0, 0.0)):
             loc = at(along, up)
             if clear(loc):
-                _spawn(K.WOOD_SIGN, "ThamMa_NameBoard", loc, face, tag, folder, text="DỐC THẨM MÃ")
+                _spawn(K.WOOD_SIGN, "ThamMa_NameBoard", loc, face, tag, folder, text="DỐC THẨM MÃ", sign="ThamMa")
                 break
     if "dock_yard" in marks:
         at, face = frame("dock_yard")
         for along, up in ((-7.0, 3.0), (7.0, 3.0), (-7.0, 6.0)):
             loc = at(along, up)
             if clear(loc):
-                _spawn(K.WOOD_SIGN, "TaLang_DockBoard", loc, face, tag, folder, text="SÔNG NHO QUẾ · TU SẢN")
+                _spawn(K.WOOD_SIGN, "TaLang_DockBoard", loc, face, tag, folder, text="SÔNG NHO QUẾ · TU SẢN", sign="TuSan")
                 break
     hg.log(f"Set dressing: {len(houses)} H'Mong houses, {len(clusters)} corn terraces, Ma Pi Leng flag + name stone, 2 boards")

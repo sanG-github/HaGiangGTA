@@ -603,6 +603,20 @@ def range_layer(tex, name, color, haze, haze_amount) -> unreal.Material:
     return g.finish()
 
 
+def sign_text(tex, key, color):
+    """Sign lettering (gen_signs.py coverage mask): masked, two-sided, tinted - carved red on the name stone,
+    cream paint on the wooden boards."""
+    g = Graph(f"M_HG_Sign_{key}")
+    g.mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_MASKED)
+    g.mat.set_editor_property("two_sided", True)
+    tc = g.node(unreal.MaterialExpressionTextureCoordinate)
+    t = g.texture(tex[f"T_HG_Sign_{key}"], tc)
+    g.out(g.color("Color", color), unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.const(0.75), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out((t, "R"), unreal.MaterialProperty.MP_OPACITY_MASK)
+    return g.finish()
+
+
 def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
     hm = (layout or {}).get("heightmap", {})
     half_cm = hm.get("half_m", 2016.0) * 100.0
@@ -637,6 +651,8 @@ def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
         "roof_green": metal("M_HG_RoofGreen", (0.06, 0.24, 0.13), 0.55),
         "roof_blue": metal("M_HG_RoofBlue", (0.07, 0.17, 0.34), 0.55),
         "vertex_color": vertex_color(),
+        **({f"sign_{k}": sign_text(tex, k, c) for k, c in (("MaPiLeng", (0.32, 0.02, 0.012)), ("ThamMa", (0.62, 0.56, 0.42)),
+                                                           ("TuSan", (0.62, 0.56, 0.42))) if f"T_HG_Sign_{k}" in tex}),
         "lamp": lamp(),
         "range_0": range_layer(tex, "M_HG_RangeLayer_0", (0.05, 0.075, 0.045), (0.2, 0.25, 0.3), 0.35),
         "range_1": range_layer(tex, "M_HG_RangeLayer_1", (0.055, 0.075, 0.065), (0.22, 0.27, 0.33), 0.5),

@@ -124,16 +124,21 @@ void AHGReviewDirector::BuildShots()
 		for (TActorIterator<AHGViewpointActor> It(World); It; ++It, ++V)
 		{
 			const FVector Eye = It->GetActorLocation() + FVector(0.f, 0.f, 1500.f);   // above the bushes / props
-			const FVector ToSubject = (It->OrbitCenter - Eye).GetSafeNormal2D();
+			FVector ToSubject = (It->OrbitCenter - Eye).GetSafeNormal2D();
+			const FVector Outward = It->GetActorLocation().GetSafeNormal2D();   // from the map centre: towards the ranges
+			if (ToSubject.IsNearlyZero())
+			{
+				ToSubject = Outward;
+			}
 			FShot A;
 			A.Label = FString::Printf(TEXT("vista_%d_subject"), V);
 			A.Loc = Eye;
-			A.LookAt = It->OrbitCenter;
+			A.LookAt = (It->OrbitCenter - Eye).Size2D() > 2000.f ? It->OrbitCenter : Eye + ToSubject * 10000.f + FVector(0.f, 0.f, -1500.f);
 			Shots.Add(A);
 			FShot B;
 			B.Label = FString::Printf(TEXT("vista_%d_horizon"), V);
 			B.Loc = Eye;
-			B.LookAt = Eye + ToSubject.RotateAngleAxis(150.f, FVector::UpVector) * 100000.f + FVector(0.f, 0.f, -2000.f);
+			B.LookAt = Eye + Outward.RotateAngleAxis(V * 40.f - 40.f, FVector::UpVector) * 100000.f + FVector(0.f, 0.f, -3000.f);
 			Shots.Add(B);
 		}
 	}

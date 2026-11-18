@@ -7,6 +7,7 @@
 class UHierarchicalInstancedStaticMeshComponent;
 class UStaticMeshComponent;
 class UTextRenderComponent;
+class UMaterialInterface;
 
 UENUM(BlueprintType)
 enum class EHGDressingKind : uint8
@@ -50,7 +51,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
 	float Radius = 5000.f;
 
-	/** CornField: no plants below this world Z (the river banks / drawdown zone). */
+	/** StoneSign / WoodSign: lettering material (gen_signs.py mask; the TextRender font lacks Vietnamese marks). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
+	TObjectPtr<UMaterialInterface> SignMaterial;
+
+		/** CornField: no plants below this world Z (the river banks / drawdown zone). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
 	float MinZ = -1.0e7f;
 

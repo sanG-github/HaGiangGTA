@@ -27,7 +27,8 @@ NANITE = {m for m in MESHES if m not in PROPS}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
 COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
 TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask", "T_HG_PathMask": "mask",
-            "T_HG_ShoulderMask": "mask"}
+            "T_HG_ShoulderMask": "mask", "T_HG_Sign_MaPiLeng": "mask", "T_HG_Sign_ThamMa": "mask",
+            "T_HG_Sign_TuSan": "mask"}
 
 
 def _python():
@@ -55,6 +56,7 @@ def ensure_generated() -> None:
     run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_Monument.obj")
     run_generator("gen_scatter.py", "Generated/Assets/Textures/T_HG_PathMask.png")
     run_generator("gen_ranges.py", "Generated/Assets/Meshes/SM_HG_RangeLayer_3.obj")
+    run_generator("gen_signs.py", "Generated/Assets/Textures/T_HG_Sign_TuSan.png")
 
 
 def _import(src: str, dest_folder: str, name: str):

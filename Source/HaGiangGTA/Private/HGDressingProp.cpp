@@ -5,11 +5,6 @@
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
-#include "Blueprint/UserWidget.h"
-#include "Blueprint/WidgetTree.h"
-#include "Components/TextBlock.h"
-#include "Components/WidgetComponent.h"
-#include "Styling/CoreStyle.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -270,41 +265,21 @@ void AHGDressingProp::BeginPlay()
 	}
 	if ((Kind == EHGDressingKind::StoneSign || Kind == EHGDressingKind::WoodSign) && !SignText.IsEmpty())
 	{
-		// World-space UMG text: the TextRender distance-field font has no Vietnamese stacked diacritics
-		// (D, O-circumflex-acute, A-circumflex-hook... came out as gaps); UMG's Roboto has them all.
+		// Lettering on a thin plane just in front of the face (texture baked by gen_signs.py).
 		const bool bStone = Kind == EHGDressingKind::StoneSign;
-		UWidgetComponent* WC = NewObject<UWidgetComponent>(this, TEXT("SignText"), RF_Transient);
-		WC->SetupAttachment(Root);
-		WC->SetWidgetSpace(EWidgetSpace::World);
-		WC->SetDrawSize(FVector2D(1200.f, 220.f));
-		WC->SetPivot(FVector2D(0.5f, 0.5f));
-		WC->SetRelativeLocation(bStone ? FVector(0.f, 58.f, 98.f) : FVector(0.f, 4.f, 150.f));
-		WC->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
-		WC->SetRelativeScale3D(FVector(1.f, bStone ? 0.17f : 0.2f, bStone ? 0.17f : 0.2f));
-		WC->SetBlendMode(EWidgetBlendMode::Transparent);
-		WC->SetBackgroundColor(FLinearColor::Transparent);
-		WC->SetTwoSided(false);
-		WC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		WC->SetCastShadow(false);
-		WC->SetDrawAtDesiredSize(false);
-		WC->SetManuallyRedraw(true);
-		if (UUserWidget* W = CreateWidget<UUserWidget>(GetWorld(), UUserWidget::StaticClass()))
+		UStaticMesh* PlaneMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Plane.Plane"));
+		if (SignMaterial && PlaneMesh)
 		{
-			if (!W->WidgetTree)
+			if (UStaticMeshComponent* P = FHGMeshKit::AddComponent(this, Root, PlaneMesh, TEXT("Lettering"),
+				bStone ? FVector(0.f, 57.8f, 98.f) : FVector(0.f, 3.6f, 150.f), FRotator(0.f, 0.f, 90.f)))
 			{
-				W->WidgetTree = NewObject<UWidgetTree>(W, TEXT("WidgetTree"), RF_Transient);
+				// Plane is 100 x 100 in XY facing +Z; roll 90 stands it up facing +-Y (two-sided material).
+				P->SetRelativeScale3D(bStone ? FVector(2.05f, 0.4f, 1.f) : FVector(2.45f, 0.46f, 1.f));
+				P->SetMaterial(0, SignMaterial);
+				P->SetCastShadow(false);
+				P->SetCullDistance(8000.f);
 			}
-			UTextBlock* T = W->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
-			T->SetText(SignText);
-			T->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 120));
-			T->SetColorAndOpacity(FSlateColor(bStone ? FLinearColor(0.42f, 0.02f, 0.015f) : FLinearColor(0.78f, 0.72f, 0.58f)));
-			T->SetJustification(ETextJustify::Center);
-			W->WidgetTree->RootWidget = T;
-			WC->SetWidget(W);
 		}
-		WC->RegisterComponent();
-		AddInstanceComponent(WC);
-		WC->RequestRenderUpdate();
 	}
 }
 
