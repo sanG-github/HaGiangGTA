@@ -335,11 +335,11 @@ def concrete_road(tex) -> unreal.Material:
     side = g.saturate(g.mul(g.sub(u, 0.5), 1000.0))
     slab_uv = g.append(g.add(g.mul(slab_v, 0.173), g.mul(side, 0.29)), g.add(g.mul((broad, "R"), 0.5), g.mul(side, 0.41)))
     slab_n = g.texture(tex["T_HG_Noise"], slab_uv)
-    slab_tone = g.add(0.84, g.mul((slab_n, "G"), 0.3))
+    slab_tone = g.add(0.78, g.mul((slab_n, "G"), 0.42))
     # Broom finish: fine grain stretched across the road.
     broom_uv = g.append(g.mul(u, 1.5), g.mul(v, 260.0))
     broom = g.texture(tex["T_HG_Noise"], broom_uv)
-    concrete = g.mul(g.color("Concrete", (0.36, 0.35, 0.325)),
+    concrete = g.mul(g.color("Concrete", (0.3, 0.292, 0.272)),
                      g.mul(slab_tone, g.add(g.add(0.86, g.mul((fine, "G"), 0.22)), g.mul((broom, "R"), 0.12))))
     # Wheel paths: grey-brown tyre grime.
     tr = g.node(unreal.MaterialExpressionAbs)
@@ -360,8 +360,8 @@ def concrete_road(tex) -> unreal.Material:
     dv = g.node(unreal.MaterialExpressionAbs)
     g.link(g.sub(fv, 0.5), dv)
     chip = g.mul(g.sub((fine, "R"), 0.5), 0.004)
-    joint_t = g.saturate(g.mul(g.sub(g.add(dv, chip), 0.4935), 170.0))
-    joint_c = g.saturate(g.mul(g.sub(g.add(0.0065, chip), du), 280.0))
+    joint_t = g.saturate(g.mul(g.sub(g.add(dv, chip), 0.488), 120.0))   # ~8 cm sawn joints, readable at 720p
+    joint_c = g.saturate(g.mul(g.sub(g.add(0.009, chip), du), 220.0))
     joint = g.saturate(g.add(joint_t, joint_c))
     base = g.lerp(base, g.color("Joint", (0.05, 0.045, 0.04)), joint)
     # Red-ochre dust blown onto the edges and into the joints.
