@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 406,
+  "active_work_seconds": 425,
   "cooldown_wait_seconds": 0,
-  "state": "running",
-  "segment_started_at": 1794973581,
-  "current_branch": "checkpoint/01-10min-greybox",
-  "current_checkpoint": "cp-01-10min",
-  "last_completed_step": "CP01 C++ greybox car + build_cp01.py",
-  "next_pending_step": "commit/tag/merge CP01",
+  "state": "stopped",
+  "segment_started_at": null,
+  "current_branch": "main",
+  "current_checkpoint": "cp-02-1hr",
+  "last_completed_step": "CP01 merged into main (tag cp-01-10min)",
+  "next_pending_step": "CP02: heightmap 4033x4033 + landscape spline + bike/boat",
   "pause_reason": null,
   "history": [
     {
@@ -28,6 +28,11 @@
       "active": 406,
       "done": "CP01 C++ greybox car + build_cp01.py",
       "next": "commit/tag/merge CP01"
+    },
+    {
+      "t": 1794973600,
+      "event": "stop",
+      "active": 425
     }
   ]
 }
