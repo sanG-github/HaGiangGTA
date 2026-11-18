@@ -651,7 +651,7 @@ namespace HGCanoKit
 				K.Tube(FVector(X, S * 122.f, 45.f), FVector(X, S * 122.f, 198.f), 2.4f, 2.4f, 6, true);
 			}
 		}
-		K.Paint(FC(0.55f, 0.035f, 0.025f), HGSurf::Satin);
+		K.Paint(FC(0.4f, 0.022f, 0.016f), HGSurf::Satin);
 		K.Box(FVector(-80.f, 0.f, 202.f), FVector(1040.f, 270.f, 5.f));
 		K.Ellipsoid(FVector(-80.f, 0.f, 204.f), FVector(520.f, 135.f, 14.f), FRotator::ZeroRotator, 16, 4, 0.f);
 		K.Paint(FC(0.75f, 0.75f, 0.72f), HGSurf::Gloss);

@@ -1,6 +1,8 @@
 #include "HGDressingProp.h"
 #include "HGBikeBuilder.h"
 #include "HGMeshKit.h"
+#include "HGRoadSplineActor.h"
+#include "Components/SplineComponent.h"
 
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -324,6 +326,26 @@ void AHGDressingProp::BuildCornField()
 		}
 	}
 	const FVector C = GetActorLocation();
+	// Road samples near the field (the road meshes have no collision, so the traces below hit the landscape
+	// under the carriageway: the first version grew corn on the Tham Ma road).
+	TArray<FVector> RoadPts;
+	for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It)
+	{
+		const USplineComponent* Sp = It->GetSpline();
+		if (!Sp)
+		{
+			continue;
+		}
+		const float Len = Sp->GetSplineLength();
+		for (float D = 0.f; D < Len; D += 300.f)
+		{
+			const FVector P = Sp->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
+			if (FVector::DistSquared2D(P, C) < FMath::Square(Radius + 1500.f))
+			{
+				RoadPts.Add(P);
+			}
+		}
+	}
 	FRandomStream R(GetTypeHash(GetName()));
 	const float Step = 75.f;
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGCornField), false, this);
@@ -351,6 +373,19 @@ void AHGDressingProp::BuildCornField()
 			}
 			const float Band = FMath::Fmod(Hit.ImpactPoint.Z / 260.f, 1.f);
 			if (Band < 0.f || Band > 0.6f)
+			{
+				continue;
+			}
+			bool bNearRoad = false;
+			for (const FVector& Q : RoadPts)
+			{
+				if (FVector::DistSquared2D(Q, Hit.ImpactPoint) < FMath::Square(650.f))
+				{
+					bNearRoad = true;
+					break;
+				}
+			}
+			if (bNearRoad)
 			{
 				continue;
 			}
