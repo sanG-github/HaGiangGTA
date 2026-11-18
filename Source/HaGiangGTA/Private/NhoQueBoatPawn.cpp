@@ -1,6 +1,7 @@
 #include "NhoQueBoatPawn.h"
 #include "HGPaint.h"
 #include "HGMeshKit.h"
+#include "HGBikeBuilder.h"
 #include "HaGiangGTA.h"
 
 #include "Components/BoxComponent.h"
@@ -193,6 +194,10 @@ void ANhoQueBoatPawn::BeginPlay()
 	Paint(Canopy, FLinearColor(0.62f, 0.03f, 0.02f));   // co do sao vang roof
 	Paint(RoofStar, FLinearColor(1.f, 0.78f, 0.f));
 	Paint(Windows, bCano ? FLinearColor(0.05f, 0.2f, 0.5f) : FLinearColor(0.75f, 0.78f, 0.8f));
+	if (bCano)
+	{
+		BuildCanoKit();
+	}
 	if (bCano && bAutoCruise)
 	{
 		BuildCrew();
@@ -365,6 +370,12 @@ bool ANhoQueBoatPawn::HasWaterDepthAt(const FVector& Location, float SurfaceZ) c
 void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (KitFlag)
+	{
+		const float T = GetWorld()->GetTimeSeconds();
+		const float W = FMath::Clamp(FMath::Abs(Speed) / 1500.f, 0.f, 1.f);
+		KitFlag->SetRelativeRotation(FRotator(-(1.f - W) * 50.f, FMath::Sin(T * (5.f + 9.f * W)) * (8.f + 14.f * W), 0.f));
+	}
 	if (Crew.Num() > 0)
 	{
 		Crew[0].SetVisible(!IsPlayerControlled());
@@ -510,23 +521,6 @@ void ANhoQueBoatPawn::BuildCrew()
 	}
 	bCrewBuilt = true;
 	const int32 Seed = int32(GetTypeHash(GetName()) & 0x7fffffff);
-	// Benches across the deck.
-	UStaticMesh* Benches = FHGMeshKit::Cached(TEXT("SM_HGBoatBenches"), [](FHGMeshKit& K)
-	{
-		for (int32 r = 0; r < 6; ++r)
-		{
-			const float X = -400.f + r * 140.f;
-			K.Paint(FLinearColor(0.3f, 0.17f, 0.08f), HGSurf::Satin);
-			K.Box(FVector(X, 0.f, 80.f), FVector(34.f, 236.f, 5.f));
-			K.Paint(FLinearColor(0.2f, 0.11f, 0.05f), HGSurf::Satin);
-			K.Box(FVector(X, -90.f, 61.f), FVector(6.f, 6.f, 38.f));
-			K.Box(FVector(X, 90.f, 61.f), FVector(6.f, 6.f, 38.f));
-		}
-	});
-	if (UStaticMeshComponent* B = FHGMeshKit::AddComponent(this, HullRoot, Benches, TEXT("Benches"), FVector::ZeroVector))
-	{
-		B->SetCullDistance(12000.f);
-	}
 	// Boatman at the stern wheel.
 	FHGPersonRig Boatman = HGPeople::Spawn(this, DriverSeat, EHGPersonLook::LocalMan, EHGPersonPose::Rider, Seed % 4, TEXT("Boatman"));
 	Crew.Add(Boatman);
@@ -557,6 +551,161 @@ void ANhoQueBoatPawn::BuildCrew()
 			{
 				C->SetCullDistance(7000.f);   // a few pixels under the roof past 70 m (boat stage was 5-15 FPS down)
 			}
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------------------------------------
+// Round 3B: the Nho Que tourist canoe from the mesh kit (long narrow steel hull, low roof on thin posts,
+// benches, long-tail outboard, flag). HullRoot frame of the round-2 parts: flush deck at z ~40, X forward,
+// collision box unchanged (+-640 x +-140).
+// ---------------------------------------------------------------------------------------------------------
+namespace HGCanoKit
+{
+	using FC = FLinearColor;
+
+	float Beam(float X)          // half-beam (cm)
+	{
+		if (X > 300.f)
+		{
+			return 138.f * FMath::Pow(FMath::Clamp((640.f - X) / 340.f, 0.f, 1.f), 0.62f);
+		}
+		return X < -560.f ? FMath::Lerp(118.f, 132.f, (X + 620.f) / 60.f) : 138.f;
+	}
+	float Gunwale(float X) { return 45.f + FMath::Max(0.f, X - 330.f) * 0.13f; }
+	float Keel(float X) { return -45.f + FMath::Max(0.f, X - 220.f) * 0.14f; }
+
+	void BuildHull(FHGMeshKit& K)
+	{
+		const FC Blue(0.035f, 0.17f, 0.5f), White(0.75f, 0.75f, 0.72f), Inside(0.28f, 0.29f, 0.3f), Red(0.32f, 0.04f, 0.03f);
+		// Stations from the transom to the bow tip; each section: gunwale, stripe, chine, keel (left -> right).
+		TArray<float> Xs;
+		for (float X = -620.f; X < 300.f; X += 92.f) { Xs.Add(X); }
+		for (float X = 300.f; X <= 640.f; X += 34.f) { Xs.Add(X); }
+		auto Section = [](float X)
+		{
+			const float B = Beam(X), G = Gunwale(X), Kz = Keel(X);
+			return TArray<FVector>{
+				FVector(X, -B, G), FVector(X, -B * 0.99f, G - 13.f), FVector(X, -B * 0.93f, Kz + 16.f), FVector(X, -B * 0.32f, Kz + 2.f),
+				FVector(X, B * 0.32f, Kz + 2.f), FVector(X, B * 0.93f, Kz + 16.f), FVector(X, B * 0.99f, G - 13.f), FVector(X, B, G) };
+		};
+		for (int32 i = 0; i + 1 < Xs.Num(); ++i)
+		{
+			const TArray<FVector> A = Section(Xs[i]), Bs = Section(Xs[i + 1]);
+			const FVector AxA(Xs[i], 0.f, 0.f), AxB(Xs[i + 1], 0.f, 0.f);
+			// White sheer stripe, blue topsides, dark red bottom (each band its own loft).
+			for (int32 band = 0; band < 2; ++band)
+			{
+				const int32 o = band == 0 ? 0 : 6;   // left / right stripe
+				K.Paint(White, HGSurf::Gloss);
+				K.Loft({ A[o], A[o + 1] }, { Bs[o], Bs[o + 1] }, AxA, AxB, &Inside);
+			}
+			K.Paint(Blue, HGSurf::Gloss);
+			K.Loft({ A[1], A[2] }, { Bs[1], Bs[2] }, AxA, AxB, &Inside);
+			K.Loft({ A[5], A[6] }, { Bs[5], Bs[6] }, AxA, AxB, &Inside);
+			K.Paint(Red, HGSurf::Satin);
+			K.Loft({ A[2], A[3], A[4], A[5] }, { Bs[2], Bs[3], Bs[4], Bs[5] }, AxA, AxB, &Inside);
+		}
+		// Transom.
+		K.Paint(Blue, HGSurf::Gloss);
+		K.Fan(Section(-620.f), FVector(-620.f, 0.f, 0.f), FVector(-1.f, 0.f, 0.f));
+		// Flush plank floor, gunwale rails, bow deck.
+		K.Paint(FC(0.22f, 0.13f, 0.07f), HGSurf::Satin);
+		for (int32 p = 0; p < 9; ++p)
+		{
+			const float Y = -116.f + p * 29.f;
+			K.Box(FVector(-150.f, Y, 38.f), FVector(920.f, 27.f, 3.f));
+		}
+		K.Paint(FC(0.6f, 0.6f, 0.6f), HGSurf::Chrome);
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Tube(FVector(-610.f, S * 120.f, 62.f), FVector(330.f, S * 135.f, 62.f), 1.6f, 1.6f, 6, true);
+			for (float X = -560.f; X <= 300.f; X += 172.f)
+			{
+				K.Tube(FVector(X, S * (Beam(X) - 4.f), 45.f), FVector(X, S * (Beam(X) - 4.f), 62.f), 1.2f, 1.2f, 5, false);
+			}
+		}
+		K.Paint(Blue, HGSurf::Gloss);
+		K.Box(FVector(470.f, 0.f, 58.f), FVector(300.f, 150.f, 4.f), FRotator(4.f, 0.f, 0.f));
+		// Benches (6 rows), wheel console at the stern.
+		for (int32 r = 0; r < 6; ++r)
+		{
+			const float X = -400.f + r * 140.f;
+			K.Paint(FC(0.3f, 0.17f, 0.08f), HGSurf::Satin);
+			K.Box(FVector(X, 0.f, 80.f), FVector(34.f, 236.f, 5.f));
+			K.Box(FVector(X - 16.f, 0.f, 100.f), FVector(4.f, 236.f, 36.f));      // backrest
+			K.Paint(FC(0.2f, 0.11f, 0.05f), HGSurf::Satin);
+			K.Box(FVector(X, -90.f, 60.f), FVector(6.f, 6.f, 38.f));
+			K.Box(FVector(X, 90.f, 60.f), FVector(6.f, 6.f, 38.f));
+		}
+		K.Paint(FC(0.12f, 0.12f, 0.13f), HGSurf::Satin);
+		K.Box(FVector(-470.f, 0.f, 85.f), FVector(40.f, 70.f, 90.f));
+		K.Paint(FC(0.02f, 0.02f, 0.02f), HGSurf::Satin);
+		K.Tube(FVector(-450.f, 0.f, 135.f), FVector(-440.f, 0.f, 128.f), 18.f, 18.f, 12, true);    // wheel
+		// Low roof on thin posts: red with the yellow star (ART_BIBLE dock photos), white trim.
+		K.Paint(FC(0.62f, 0.62f, 0.6f), HGSurf::Chrome);
+		for (const float X : { -540.f, -230.f, 80.f, 380.f })
+		{
+			for (const float S : { -1.f, 1.f })
+			{
+				K.Tube(FVector(X, S * 122.f, 45.f), FVector(X, S * 122.f, 198.f), 2.4f, 2.4f, 6, true);
+			}
+		}
+		K.Paint(FC(0.55f, 0.035f, 0.025f), HGSurf::Satin);
+		K.Box(FVector(-80.f, 0.f, 202.f), FVector(1040.f, 270.f, 5.f));
+		K.Ellipsoid(FVector(-80.f, 0.f, 204.f), FVector(520.f, 135.f, 14.f), FRotator::ZeroRotator, 16, 4, 0.f);
+		K.Paint(FC(0.75f, 0.75f, 0.72f), HGSurf::Gloss);
+		K.Box(FVector(-80.f, -136.f, 198.f), FVector(1044.f, 3.f, 12.f));
+		K.Box(FVector(-80.f, 136.f, 198.f), FVector(1044.f, 3.f, 12.f));
+		K.Paint(FC(1.f, 0.78f, 0.f), HGSurf::Satin);
+		const FVector StarC(-80.f, 0.f, 219.f);
+		for (int32 i = 0; i < 5; ++i)
+		{
+			const float A = FMath::DegreesToRadians(90.f + 72.f * i);
+			const FVector Dir(FMath::Sin(A), FMath::Cos(A), 0.f);
+			K.Box(StarC + Dir * 30.f, FVector(60.f, 22.f, 2.f), FRotator(0.f, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)), 0.f));
+		}
+		K.Box(StarC, FVector(40.f, 40.f, 2.f), FRotator(0.f, 36.f, 0.f));
+		// Long-tail outboard: engine on a pivot at the transom, shaft angled down into the water behind.
+		K.Paint(FC(0.08f, 0.08f, 0.09f), HGSurf::Satin);
+		K.Box(FVector(-660.f, 0.f, 72.f), FVector(70.f, 46.f, 46.f));
+		K.Paint(FC(0.55f, 0.55f, 0.56f), HGSurf::Chrome);
+		K.Tube(FVector(-650.f, 0.f, 60.f), FVector(-880.f, 0.f, -18.f), 4.f, 3.f, 8, true);
+		K.Tube(FVector(-630.f, 0.f, 90.f), FVector(-540.f, 0.f, 110.f), 1.5f, 1.5f, 5, true);     // tiller
+		K.Paint(FC(0.2f, 0.2f, 0.2f), HGSurf::Satin);
+		K.Tube(FVector(-885.f, -9.f, -20.f), FVector(-885.f, 9.f, -20.f), 12.f, 12.f, 3, true); // prop
+		// Flag staff at the stern (the cloth is a separate flapping part).
+		K.Paint(FC(0.6f, 0.6f, 0.58f), HGSurf::Chrome);
+		K.Tube(FVector(-600.f, -110.f, 45.f), FVector(-600.f, -110.f, 262.f), 1.6f, 1.2f, 6, true);
+	}
+}
+
+void ANhoQueBoatPawn::BuildCanoKit()
+{
+	if (KitHull || BoatType != EHGBoatType::Cano)
+	{
+		return;
+	}
+	UStaticMesh* HullMesh = FHGMeshKit::Cached(TEXT("SM_HGCanoHull"), [](FHGMeshKit& K) { HGCanoKit::BuildHull(K); });
+	KitHull = FHGMeshKit::AddComponent(this, HullRoot, HullMesh, TEXT("KitHull"), FVector::ZeroVector);
+	if (!KitHull)
+	{
+		return;   // -hgnokit: keep the greybox
+	}
+	KitHull->SetCullDistance(60000.f);
+	KitFlag = FHGMeshKit::AddComponent(this, HullRoot, HGBikes::Flag(), TEXT("KitFlag"), FVector(-600.f, -110.f, 260.f));
+	if (KitFlag)
+	{
+		KitFlag->SetRelativeScale3D(FVector(1.4f));
+		KitFlag->SetCullDistance(15000.f);
+	}
+	for (UStaticMeshComponent* P : { Hull.Get(), Bow.Get(), Deck.Get(), Canopy.Get(), CanopyPostL.Get(), CanopyPostR.Get(), Motor.Get(),
+		Paddle.Get(), RoofStar.Get(), Windows.Get() })
+	{
+		if (P)
+		{
+			P->SetVisibility(false);
+			P->SetHiddenInGame(true);
 		}
 	}
 }

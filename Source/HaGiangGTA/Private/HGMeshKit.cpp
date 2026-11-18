@@ -270,6 +270,53 @@ void FHGMeshKit::Torus(const FTransform& Xf, float MajorR, float MinorR, int32 S
 	}
 }
 
+void FHGMeshKit::Loft(const TArray<FVector>& A, const TArray<FVector>& B, const FVector& AxisA, const FVector& AxisB,
+	const FLinearColor* InsideColor)
+{
+	const int32 Num = FMath::Min(A.Num(), B.Num());
+	const FLinearColor Outer = Color;
+	for (int32 i = 0; i + 1 < Num; ++i)
+	{
+		const FVector P0 = A[i], P1 = A[i + 1], P2 = B[i + 1], P3 = B[i];
+		FVector N = FVector::CrossProduct(P3 - P0, P1 - P0).GetSafeNormal();
+		const FVector Mid = (P0 + P1 + P2 + P3) * 0.25f;
+		const FVector Ax = FMath::ClosestPointOnSegment(Mid, AxisA, AxisB);
+		if (FVector::DotProduct(N, Mid - Ax) < 0.f)
+		{
+			N = -N;
+		}
+		if (N.IsNearlyZero())
+		{
+			continue;
+		}
+		Color = Outer;
+		const int32 a = AddVert(P0, N), b = AddVert(P1, N), c = AddVert(P2, N), d = AddVert(P3, N);
+		Quad(a, b, c, d, N);
+		if (InsideColor)
+		{
+			Color = *InsideColor;
+			const int32 e = AddVert(P0, -N), f = AddVert(P1, -N), g = AddVert(P2, -N), h = AddVert(P3, -N);
+			Quad(e, f, g, h, -N);
+		}
+	}
+	Color = Outer;
+}
+
+void FHGMeshKit::Fan(const TArray<FVector>& Ring, const FVector& Center, const FVector& N)
+{
+	const int32 C = AddVert(Center, N);
+	TArray<int32> R;
+	for (const FVector& P : Ring)
+	{
+		R.Add(AddVert(P, N));
+	}
+	for (int32 i = 0; i + 1 < R.Num(); ++i)
+	{
+		Tri(C, R[i], R[i + 1], N);
+		Tri(C, R[i + 1], R[i], -N);   // both sides (transoms are seen from inside the hull too)
+	}
+}
+
 UStaticMesh* FHGMeshKit::Build(FName Name, UMaterialInterface* Material) const
 {
 	FMeshDescription MD;

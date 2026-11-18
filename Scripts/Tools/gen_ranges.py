@@ -2,7 +2,7 @@
 """Layered distant karst ranges (Round 3B): Generated/Assets/Meshes/SM_HG_RangeLayer_0..3.obj
 
 Replaces the single flat ring (SM_HG_DistantRanges) that read as one pale blue band on the horizon.
-Four rings at 6 / 8 / 10.5 / 13.5 km from the map centre, each a ridge silhouette with sloped, gullied faces
+Four rings at 14 / 17.5 / 21 / 26 km from the map centre (beyond the real-terrain mesh), each a ridge silhouette with sloped, gullied faces
 (so the sun gives every layer lit and shaded flanks) and peaks that rise with distance so each layer shows
 above the one in front. Absolute world Z (cm = altitude ASL * 100); spawn at the origin.
 
@@ -20,10 +20,11 @@ OUT = ROOT / "Generated" / "Assets" / "Meshes"
 
 LAYERS = [
     # radius m, ridge base ASL m, ridge amplitude m, seed
-    (6000.0, 1180.0, 520.0, 11),
-    (8000.0, 1380.0, 620.0, 23),
-    (10500.0, 1600.0, 700.0, 37),
-    (13500.0, 1850.0, 780.0, 53),
+    # Beyond the real DEM terrain mesh (gen_farterrain.py, out to 12 km).
+    (14000.0, 1500.0, 650.0, 11),
+    (17500.0, 1700.0, 720.0, 23),
+    (21000.0, 1900.0, 780.0, 37),
+    (26000.0, 2100.0, 850.0, 53),
 ]
 SEG = 420          # around the ring (~90-200 m per segment)
 ROWS = 6           # foot -> ridge

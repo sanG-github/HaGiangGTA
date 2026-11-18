@@ -110,6 +110,16 @@ void AHGReviewDirector::BuildShots()
 		AddActorShot(Truck ? *Truck : nullptr, TEXT("truck_rear"), FVector(-900.f, -400.f, 150.f), FVector(0.f, 0.f, 0.f));
 		for (TActorIterator<ANhoQueBoatPawn> It(World); It; ++It)
 		{
+			if (!It->bAutoCruise && It->BoatType == EHGBoatType::Cano)
+			{
+				// The player's hire cano at the dock, from the boat camera's distance (~19 m back, 3.3 m up).
+				AddActorShot(*It, TEXT("player_cano_chase"), FVector(-1900.f, 0.f, 330.f), FVector(0.f, 0.f, 80.f));
+				AddActorShot(*It, TEXT("player_cano_side"), FVector(200.f, 1100.f, 250.f), FVector(0.f, 0.f, 80.f));
+				break;
+			}
+		}
+		for (TActorIterator<ANhoQueBoatPawn> It(World); It; ++It)
+		{
 			if (It->bAutoCruise)
 			{
 				AddActorShot(*It, TEXT("boat_side"), FVector(150.f, 1100.f, 160.f), FVector(0.f, 0.f, 60.f));

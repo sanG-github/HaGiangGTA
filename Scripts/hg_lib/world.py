@@ -601,6 +601,18 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
                           (0, 0, 80000 + 300), material=hg.color_material("MI_GB_Foothills", (0.13, 0.13, 0.065)),
                           tag=tag, folder=folder, collision=False)
     apron.static_mesh_component.set_editor_property("cast_shadow", False)
+    # Round 3B: the real DEM terrain beyond the map (gen_farterrain.py) replaces the apron in game (the flat
+    # one-colour sheet read as a hazy lake from the Ma Pi Leng rim); the apron stays as the fallback.
+    far_path = "/Game/HaGiang/Generated/Meshes/SM_HG_FarTerrain"
+    if unreal.EditorAssetLibrary.does_asset_exist(far_path) and "far_terrain" in mats:
+        far = hg.spawn_mesh("FarTerrain", far_path + ".SM_HG_FarTerrain", (0, 0, 0), material=mats["far_terrain"],
+                            tag=tag, folder=folder, collision=False)
+        far.static_mesh_component.set_editor_property("cast_shadow", False)
+        try:
+            unreal.EditorStaticMeshLibrary.remove_collisions(far.static_mesh_component.static_mesh)
+        except Exception as exc:
+            hg.warn(f"FarTerrain collision: {exc}")
+        apron.set_actor_hidden_in_game(True)
     try:
         unreal.EditorStaticMeshLibrary.remove_collisions(apron.static_mesh_component.static_mesh)
     except Exception as exc:

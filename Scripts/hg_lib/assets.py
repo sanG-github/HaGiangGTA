@@ -19,10 +19,10 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
           "SM_HG_StoneWall", "SM_HG_Monument"]
 # Round 3B: layered distant ranges (Scripts/Tools/gen_ranges.py) replace the single SM_HG_DistantRanges ring.
 RANGE_LAYERS = [f"SM_HG_RangeLayer_{i}" for i in range(4)]
-MESHES += RANGE_LAYERS
+MESHES += RANGE_LAYERS + ["SM_HG_FarTerrain"]
 PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron",
          "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument",
-         *RANGE_LAYERS)
+         *RANGE_LAYERS, "SM_HG_FarTerrain")
 NANITE = {m for m in MESHES if m not in PROPS}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
 COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
@@ -56,6 +56,7 @@ def ensure_generated() -> None:
     run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_Monument.obj")
     run_generator("gen_scatter.py", "Generated/Assets/Textures/T_HG_PathMask.png")
     run_generator("gen_ranges.py", "Generated/Assets/Meshes/SM_HG_RangeLayer_3.obj")
+    run_generator("gen_farterrain.py", "Generated/Assets/Meshes/SM_HG_FarTerrain.obj")
     run_generator("gen_signs.py", "Generated/Assets/Textures/T_HG_Sign_TuSan.png")
 
 

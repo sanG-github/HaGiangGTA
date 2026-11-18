@@ -160,15 +160,12 @@ class Graph:
 
 
 def road_along(g: Graph, v):
-    """Distance along the road in metres: AHGRoadSplineActor writes each segment's start distance (custom
-    primitive data 0) and length (1); V runs 0..1 along the segment. Markings and slabs then repeat per real
+    """Distance along the road in metres: AHGRoadSplineActor gives each segment a MID with its start distance
+    (RoadSegStartM) and length (RoadSegLenM); V runs 0..1 along the segment. Markings and slabs then repeat per real
     metre instead of per (slightly varying) segment."""
     def cpd(index, name):
-        # UE5: a Scalar Parameter flagged "Use Custom Primitive Data" reads the component's data slot.
-        e = g.scalar(name, 0.0)
-        e.set_editor_property("use_custom_primitive_data", True)
-        e.set_editor_property("primitive_data_index", index)
-        return e
+        # Per-segment MID parameters set by AHGRoadSplineActor::RebuildRoadMeshes (index kept for reference).
+        return g.scalar(name, 0.0)
     return g.add(cpd(0, "RoadSegStartM"), g.mul(v, cpd(1, "RoadSegLenM")))
 
 
@@ -234,10 +231,25 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # Limestone cliffs with rust and dark streaks running down the face.
     xy = g.add(g.mask(wp, r=True), g.mask(wp, g=True))
     streak = g.texture(tex["T_HG_Noise"], g.append(g.mul(xy, 1.0 / 900.0), g.mul(z, 1.0 / 5000.0)))
-    lime = g.mul(g.color("Limestone", (0.27, 0.27, 0.265)), g.add(0.7, g.mul((n_fine, "R"), 0.45)))
+    lime = g.mul(g.color("Limestone", (0.23, 0.228, 0.222)), g.add(0.7, g.mul((n_fine, "R"), 0.45)))   # 3B: 0.27 read as white sheets
     rust = g.mul(g.saturate(g.mul(g.sub((streak, "G"), 0.72), 5.0)), 0.6)   # rust only in patches (photos: grey walls)
     dark = g.saturate(g.mul(g.sub((streak, "R"), 0.6), 4.0))
     rock_col = g.lerp(g.lerp(lime, g.color("Rust", (0.46, 0.2, 0.08)), rust), g.color("Stain", (0.09, 0.085, 0.075)), g.mul(dark, 0.7))
+    # Round 3B - big faces read as one flat white sheet: bedding strata (warped horizontal bands, 1.5-5 m),
+    # darker vertical crevices / joints, and shrubs clinging to ledges and cracks in streaks.
+    warp = g.mul(g.sub((n_mid, "G"), 0.5), 380.0)
+    bed = g.node(unreal.MaterialExpressionFrac)
+    g.link(g.mul(g.add(z, warp), 1.0 / 340.0), bed)
+    bed_d = g.node(unreal.MaterialExpressionAbs)
+    g.link(g.sub(bed, 0.5), bed_d)
+    bedding = g.saturate(g.mul(g.sub(bed_d, 0.43), 14.0))                          # thin dark bedding planes
+    band_tone = g.add(0.82, g.mul(g.sub((streak, "B"), 0.5), 0.5))                    # alternating beds
+    rock_col = g.mul(rock_col, g.mul(band_tone, g.sub(1.0, g.mul(bedding, 0.35))))
+    crev_t = g.texture(tex["T_HG_Noise"], g.append(g.mul(xy, 1.0 / 260.0), g.mul(z, 1.0 / 3200.0)))
+    crev = g.saturate(g.mul(g.sub((crev_t, "R"), 0.72), 7.0))
+    rock_col = g.lerp(rock_col, g.color("Crevice", (0.045, 0.045, 0.042)), g.mul(crev, 0.75))
+    ledge_veg = g.mul(g.saturate(g.mul(g.sub((crev_t, "G"), 0.58), 5.0)), g.add(bedding, 0.35))
+    rock_col = g.lerp(rock_col, g.mul(green, 0.9), g.saturate(ledge_veg))
     # Even steep canyon slopes are grassed in the photos: bare rock only above ~68 deg.
     threshold = g.add(g.scalar("RockSlopeThreshold", 0.62), g.mul(g.sub((n_mid, "R"), 0.5), 0.25))
     rock = remap_mask(g, up, threshold, 6.0, invert=True)
@@ -407,8 +419,8 @@ def concrete_road(tex) -> unreal.Material:
     joint = g.saturate(g.add(joint_t, joint_c))
     base = g.lerp(base, g.color("Joint", (0.05, 0.045, 0.04)), joint)
     # Red-ochre dust blown onto the edges and into the joints.
-    edge = g.saturate(g.mul(g.sub(du, 0.37), 8.0))
-    base = g.lerp(base, g.color("Dust", (0.34, 0.2, 0.11)), g.mul(edge, g.add(0.35, g.mul((n, "R"), 0.6))))
+    edge = g.saturate(g.mul(g.sub(du, 0.44), 14.0))                    # last ~25 cm only
+    base = g.lerp(base, g.color("Dust", (0.3, 0.2, 0.13)), g.mul(edge, g.add(0.2, g.mul((n, "R"), 0.4))))
     g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(g.lerp(g.add(0.74, g.mul((fine, "R"), 0.18)), 0.92, joint), unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(g.const(0.45), unreal.MaterialProperty.MP_SPECULAR)
@@ -617,6 +629,29 @@ def sign_text(tex, key, color):
     return g.finish()
 
 
+def far_terrain(tex) -> unreal.Material:
+    """Real DEM terrain beyond the map edge (gen_farterrain.py): dry khaki grass and dark shrub patches like the
+    landscape, grey limestone on steep faces, valley floors fading into the low haze. Cheap: 2 samples."""
+    g = Graph("M_HG_FarTerrain")
+    wp = g.world_pos()
+    z = g.mask(wp, b=True)
+    n = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 40000.0))
+    n2 = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 7000.0))
+    up = g.up_facing()
+    steep = g.saturate(g.mul(g.sub(0.72, up), 4.0))
+    dry = g.lerp(g.color("Dry", (0.13, 0.11, 0.065)), g.color("Khaki", (0.15, 0.13, 0.07)), (n2, "G"))
+    shrub = g.color("Shrub", (0.035, 0.06, 0.025))
+    col = g.lerp(dry, shrub, g.saturate(g.mul(g.sub(g.add((n, "R"), g.mul((n2, "B"), 0.5)), 0.75), 2.5)))
+    rock = g.mul(g.color("Rock", (0.2, 0.2, 0.195)), g.add(0.75, g.mul((n2, "R"), 0.5)))
+    col = g.lerp(col, rock, g.mul(steep, g.add(0.5, g.mul((n, "G"), 0.5))))
+    valley = g.saturate(g.mul(g.sub(g.scalar("HazeTopZ", 90000.0), z), 1.0 / 45000.0))
+    col = g.lerp(col, g.color("Haze", (0.2, 0.24, 0.28)), g.mul(valley, 0.35))
+    g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.const(0.92), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.const(0.3), unreal.MaterialProperty.MP_SPECULAR)
+    return g.finish()
+
+
 def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
     hm = (layout or {}).get("heightmap", {})
     half_cm = hm.get("half_m", 2016.0) * 100.0
@@ -654,6 +689,7 @@ def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
         **({f"sign_{k}": sign_text(tex, k, c) for k, c in (("MaPiLeng", (0.32, 0.02, 0.012)), ("ThamMa", (0.62, 0.56, 0.42)),
                                                            ("TuSan", (0.62, 0.56, 0.42))) if f"T_HG_Sign_{k}" in tex}),
         "lamp": lamp(),
+        "far_terrain": far_terrain(tex),
         "range_0": range_layer(tex, "M_HG_RangeLayer_0", (0.05, 0.075, 0.045), (0.2, 0.25, 0.3), 0.35),
         "range_1": range_layer(tex, "M_HG_RangeLayer_1", (0.055, 0.075, 0.065), (0.22, 0.27, 0.33), 0.5),
         "range_2": range_layer(tex, "M_HG_RangeLayer_2", (0.065, 0.085, 0.09), (0.25, 0.3, 0.37), 0.6),

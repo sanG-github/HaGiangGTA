@@ -157,7 +157,7 @@ void AHGBikePawn::BeginPlay()
 {
 	Super::BeginPlay();
 	HGPaint::LimitDrawDistance(this);
-	SetNpcRiderVisible(IsAutoDriving());
+	SetNpcRiderVisible(IsAutoDriving() && !IsPlayerControlled());
 	LoadedScream = ScreamSound.LoadSynchronous();
 }
 
@@ -319,7 +319,9 @@ void AHGBikePawn::BuildVisuals()
 
 void AHGBikePawn::OnAutoDriveChanged(bool bNowAutoDriving)
 {
-	SetNpcRiderVisible(bNowAutoDriving);
+	// Never on a bike the player is sitting on (the playtest's auto stages drive the player's bike: the NPC
+	// rider - an olive-jacket man in a non la - appeared on top of the player).
+	SetNpcRiderVisible(bNowAutoDriving && !IsPlayerControlled());
 }
 
 void AHGBikePawn::PossessedBy(AController* NewController)
@@ -422,6 +424,10 @@ void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
 	if (!bVisualsBuilt)
 	{
 		BuildVisuals();
+	}
+	if (bRiderVisible && IsPlayerControlled())
+	{
+		SetNpcRiderVisible(false);   // whatever order auto-drive and possession arrived in
 	}
 	UpdatePassengerShown();   // follows the player getting on / off
 	VisualClock += DeltaSeconds;
