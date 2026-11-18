@@ -310,7 +310,7 @@ void AHGDressingProp::BuildCornField()
 	Corn->SetMaterial(0, FHGMeshKit::VertexColorMaterial());
 	Corn->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 	Corn->SetCastShadow(false);
-	Corn->SetCullDistances(0, 15000);
+	Corn->SetCullDistances(0, 8000);
 	Corn->SetUsingAbsoluteLocation(true);
 	Corn->SetUsingAbsoluteRotation(true);
 	Corn->RegisterComponent();
@@ -347,7 +347,7 @@ void AHGDressingProp::BuildCornField()
 		}
 	}
 	FRandomStream R(GetTypeHash(GetName()));
-	const float Step = 75.f;
+	const float Step = 130.f;   // budget: <= 2500 plants per field (the first version had 15-33k each)
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGCornField), false, this);
 	TArray<FTransform> Xfs;
 	for (float X = -Radius; X <= Radius; X += Step)
@@ -400,6 +400,10 @@ void AHGDressingProp::BuildCornField()
 			}
 			Xfs.Add(FTransform(FRotator(0.f, R.FRandRange(0.f, 360.f), 0.f), Hit.ImpactPoint, FVector(R.FRandRange(0.8f, 1.25f))));
 		}
+	}
+	while (Xfs.Num() > 2500)
+	{
+		Xfs.RemoveAtSwap(R.RandRange(0, Xfs.Num() - 1), EAllowShrinking::No);
 	}
 	Corn->AddInstances(Xfs, false, true);
 	UE_LOG(LogTemp, Log, TEXT("%s: %d corn plants"), *GetName(), Xfs.Num());
