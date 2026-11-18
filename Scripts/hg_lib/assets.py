@@ -40,7 +40,7 @@ def run_generator(script: str, check_file: str) -> None:
 
 
 def ensure_generated() -> None:
-    run_generator("gen_assets.py", "Generated/Assets/Audio/SW_HG_Moo.wav")
+    run_generator("gen_assets.py", "Generated/Assets/Audio/SW_HG_Heli_Loop.wav")
     run_generator("gen_scatter.py", "Generated/Heightmaps/HaGiang_scatter.json")
 
 
@@ -133,3 +133,17 @@ def import_flute(force: bool = False):
 def import_sfx(force: bool = False) -> dict:
     """CP04 sounds; C++ loads them by path (/Game/HaGiang/Generated/Audio/<name>)."""
     return {n: import_sound(n, force) for n in ("SW_HG_AirHorn", "SW_HG_Scream", "SW_HG_Moo")}
+
+
+LOOPS = ("SW_HG_BikeEngine_Loop", "SW_HG_TruckEngine_Loop", "SW_HG_BoatMotor_Loop", "SW_HG_Siren_Loop", "SW_HG_Heli_Loop")
+
+
+def import_loops(force: bool = False) -> dict:
+    """CP05 looping sounds (engines, siren, helicopter); C++ loads them by path."""
+    out = {}
+    for n in LOOPS:
+        snd = import_sound(n, force)
+        snd.set_editor_property("looping", True)
+        unreal.EditorAssetLibrary.save_loaded_asset(snd)
+        out[n] = snd
+    return out

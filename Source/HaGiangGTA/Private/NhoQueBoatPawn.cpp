@@ -8,6 +8,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "HGWaterBody.h"
 #include "Materials/MaterialInstanceDynamic.h"
+#include "Sound/SoundBase.h"
 #include "UObject/ConstructorHelpers.h"
 
 ANhoQueBoatPawn::ANhoQueBoatPawn()
@@ -32,6 +33,9 @@ ANhoQueBoatPawn::ANhoQueBoatPawn()
 	Paddle = AddPart(TEXT("Paddle"), CylMesh.Object);
 
 	DriverSeat->SetupAttachment(HullRoot);
+
+	EngineSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/HaGiang/Generated/Audio/SW_HG_BoatMotor_Loop.SW_HG_BoatMotor_Loop")));
+	EngineTopKmh = 60.f;
 
 	ApplyBoatType();
 }
@@ -85,6 +89,7 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		SetPart(Motor, true, FVector(-315.f, 0.f, 20.f), FRotator::ZeroRotator, FVector(40.f, 40.f, 90.f));
 		SetPart(Paddle, false);
 		DriverSeat->SetRelativeLocation(FVector(-220.f, 0.f, 130.f));
+		EngineVolume = 0.8f;
 
 		SpringArm->TargetArmLength = 1000.f;
 		SpringArm->SocketOffset = FVector(0.f, 0.f, 320.f);
@@ -113,6 +118,7 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		SetPart(Motor, false);
 		SetPart(Paddle, true, FVector(10.f, 0.f, 60.f), FRotator(0.f, 0.f, 90.f), FVector(5.f, 5.f, 230.f));
 		DriverSeat->SetRelativeLocation(FVector(-20.f, 0.f, 70.f));
+		EngineVolume = 0.f; // paddling: no motor
 
 		SpringArm->TargetArmLength = 600.f;
 		SpringArm->SocketOffset = FVector(0.f, 0.f, 200.f);

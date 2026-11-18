@@ -13,7 +13,10 @@ public class HaGiangGTA : ModuleRules
 			"Engine",
 			"InputCore",
 			"EnhancedInput",
-			"CinematicCamera"
+			"CinematicCamera",
+			"UMG",
+			"Slate",
+			"SlateCore"
 		});
 
 		PrivateDependencyModuleNames.AddRange(new string[] { });

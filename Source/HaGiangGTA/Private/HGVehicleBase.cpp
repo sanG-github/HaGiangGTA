@@ -1,6 +1,9 @@
 #include "HGVehicleBase.h"
 
 #include "Camera/CameraComponent.h"
+#include "Components/AudioComponent.h"
+#include "HGAudio.h"
+#include "Sound/SoundBase.h"
 #include "Components/BoxComponent.h"
 #include "Engine/World.h"
 #include "EnhancedInputComponent.h"
@@ -60,6 +63,30 @@ void AHGVehicleBase::BeginPlay()
 {
 	Super::BeginPlay();
 	SpawnTransform = GetActorTransform();
+	if (USoundBase* Engine = EngineSound.LoadSynchronous())
+	{
+		EngineAudio = HGAudio::CreateLoop(RootComponent, Engine, EngineFalloff);
+		if (EngineAudio)
+		{
+			EngineAudio->SetVolumeMultiplier(EngineVolume * 0.6f);
+			EngineAudio->Play(FMath::FRand() * 1.5f);
+		}
+	}
+}
+
+void AHGVehicleBase::Tick(float DeltaSeconds)
+{
+	Super::Tick(DeltaSeconds);
+	if (EngineAudio)
+	{
+		const float SpeedFrac = FMath::Clamp(FMath::Abs(GetSpeedKmh()) / FMath::Max(EngineTopKmh, 1.f), 0.f, 1.2f);
+		// Fake gears: pitch climbs, drops at shift points, climbs again.
+		const float Gear = FMath::Fmod(SpeedFrac * 3.f, 1.f);
+		const float Target = FMath::Lerp(EngineIdlePitch, EngineMaxPitch, 0.55f * SpeedFrac + 0.45f * Gear * FMath::Min(SpeedFrac * 4.f, 1.f));
+		EnginePitch = FMath::FInterpTo(EnginePitch, Target, DeltaSeconds, 6.f);
+		EngineAudio->SetPitchMultiplier(EnginePitch);
+		EngineAudio->SetVolumeMultiplier(EngineVolume * (0.55f + 0.45f * FMath::Min(SpeedFrac * 2.f, 1.f)) * (IsPlayerControlled() ? 1.f : 0.7f));
+	}
 }
 
 // ---------------------------------------------------------------------------

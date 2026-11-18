@@ -5,6 +5,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
+#include "HGAudio.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Sound/SoundBase.h"
@@ -143,7 +144,7 @@ void AHGCowActor::Tick(float DeltaSeconds)
 			if (FVector::DistSquared(Player->GetActorLocation(), Loc) < FMath::Square(2500.f))
 			{
 				MooCooldown = FMath::FRandRange(8.f, 16.f);
-				UGameplayStatics::PlaySoundAtLocation(this, LoadedMoo, Loc, 1.f, FMath::FRandRange(0.85f, 1.1f));
+				HGAudio::PlayAt(this, LoadedMoo, Loc, 1.f, FMath::FRandRange(0.85f, 1.1f), 6000.f);
 			}
 		}
 	}

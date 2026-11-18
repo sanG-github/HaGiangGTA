@@ -8,6 +8,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
+#include "HGAudio.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -161,6 +162,8 @@ AHGBikePawn::AHGBikePawn()
 	AddRiderPart(TEXT("R_Legs"), Cube, FVector(18.f, 0.f, 2.f), FRotator::ZeroRotator, FVector(40.f, 36.f, 14.f), EPartColor::Black);
 	AddRiderPart(TEXT("R_Arms"), Cyl, FVector(30.f, 0.f, 44.f), FRotator(70.f, 0.f, 90.f), FVector(9.f, 9.f, 62.f), EPartColor::HiVis);
 
+	EngineSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/HaGiang/Generated/Audio/SW_HG_BikeEngine_Loop.SW_HG_BikeEngine_Loop")));
+	EngineTopKmh = 90.f;
 	ScreamSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/HaGiang/Generated/Audio/SW_HG_Scream.SW_HG_Scream")));
 }
 
@@ -239,8 +242,8 @@ void AHGBikePawn::Scream()
 	ScreamTime = 1.6f;
 	if (LoadedScream)
 	{
-		UGameplayStatics::PlaySoundAtLocation(this, LoadedScream, PassengerRoot->GetComponentLocation(),
-			FMath::FRandRange(0.85f, 1.f), FMath::FRandRange(0.92f, 1.1f));
+		HGAudio::PlayAt(this, LoadedScream, PassengerRoot->GetComponentLocation(),
+			FMath::FRandRange(0.85f, 1.f), FMath::FRandRange(0.92f, 1.1f), 5000.f);
 	}
 }
 

@@ -6,6 +6,7 @@
 #include "GameFramework/Controller.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGRoadSplineActor.h"
+#include "HGWantedSubsystem.h"
 
 namespace
 {
@@ -137,6 +138,13 @@ void AHGGroundVehicle::MoveWithCollision(const FVector& Delta, const FVector& Mo
 	AddActorWorldOffset(Slide, true);
 
 	const float Impact = FMath::Abs(FVector::DotProduct(MoveDir, Hit.ImpactNormal));
+	if (IsPlayerControlled())
+	{
+		if (UHGWantedSubsystem* Wanted = GetWorld()->GetSubsystem<UHGWantedSubsystem>())
+		{
+			Wanted->ReportImpact(Hit.GetActor(), Hit.GetComponent(), FMath::Abs(Speed) * FMath::Max(Impact, 0.3f));
+		}
+	}
 	Speed *= (1.f - 0.85f * Impact);
 
 	if (!bGrounded && Hit.ImpactNormal.Z < -0.5f)

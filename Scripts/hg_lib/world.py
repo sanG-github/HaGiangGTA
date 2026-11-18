@@ -130,8 +130,11 @@ def load_scatter():
         return json.load(f)
 
 
-def spawn_scatter(label, mesh, material, instances, tag, folder, cull=(0.0, 0.0), collision=True, shadows=True):
+def spawn_scatter(label, mesh, material, instances, tag, folder, cull=(0.0, 0.0), collision=True, shadows=True,
+                  extra_tags=()):
     actor = hg.spawn_actor(unreal.HGInstancedScatterActor, label, (0, 0, 0), (0, 0, 0), tag, folder)
+    if extra_tags:
+        actor.set_editor_property("tags", list(actor.tags) + [unreal.Name(t) for t in extra_tags])
     actor.setup_scatter(mesh, material, float(cull[0]), float(cull[1]), collision, shadows)
     packed = []
     for inst in instances:
@@ -157,7 +160,7 @@ def build_scatter(scatter, meshes, mats, tag, folder):
         spawn_scatter(f"Scatter_bushes_{v + 1}", mesh, mats["bush"], scatter["bushes"][v::2], tag, folder,
                       cull=(18000.0, 26000.0), collision=False, shadows=True)
     spawn_scatter("Scatter_road_posts", meshes["SM_HG_RoadPost"], mats["post"], scatter["posts"], tag, folder,
-                  cull=(15000.0, 22000.0), collision=True, shadows=True)
+                  cull=(15000.0, 22000.0), collision=True, shadows=True, extra_tags=("RoadPosts",))
     counts = {k: len(v) for k, v in scatter.items() if isinstance(v, list)}
     hg.log(f"Scatter instances: {counts}")
 
@@ -231,10 +234,11 @@ def build_golden_hour(tag, folder):
     return sun
 
 
-def build_viewpoints(scatter, flute, tag, folder):
+def build_viewpoints(scatter, flute, tag, folder, names=None):
+    """names: optional {key: display name} override (CP05 uses Vietnamese with diacritics)."""
     for key, vp in scatter["viewpoints"].items():
         actor = hg.spawn_actor(unreal.HGViewpointActor, f"Viewpoint_{key}", vp["location_cm"], (0, 0, 0), tag, folder)
-        actor.set_editor_property("viewpoint_name", unreal.Text(vp["name"]))
+        actor.set_editor_property("viewpoint_name", unreal.Text((names or {}).get(key, vp["name"])))
         actor.set_editor_property("altitude_m", int(vp["altitude_m"]))
         actor.set_editor_property("activation_radius", 4500.0)
         actor.set_editor_property("orbit_center", hg.vec(vp["center_cm"]))
