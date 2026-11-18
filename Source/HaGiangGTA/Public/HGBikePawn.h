@@ -122,7 +122,8 @@ protected:
 	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bike")
 	bool bModelChosen = false;
 
-	/** SetBodyColor was called: keep that paint whatever model is picked. */
+	/** SetBodyColor was called (or BodyColor set in the editor): keep that paint whatever model is picked. */
+	UPROPERTY(EditAnywhere, BlueprintReadOnly, Category = "Bike")
 	bool bPaintChosen = false;
 
 	/** Who rides an NPC bike of this class (police: CSGT). */

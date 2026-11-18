@@ -39,6 +39,10 @@ private:
 	UPROPERTY(Transient) TObjectPtr<USoundBase> LoadedHorn;
 	UPROPERTY(Transient) TArray<TObjectPtr<UStaticMeshComponent>> Parts;
 	TArray<FLinearColor> PartColors;
+	/** Low-poly kit truck (HGMeshKit): cab-over Thaco-style dump truck + six spinning wheels. */
+	void BuildKit();
+	UPROPERTY(Transient) TArray<TObjectPtr<UStaticMeshComponent>> KitWheels;
+	float WheelAngle = 0.f;
 	float HornCooldown = 0.f;
 	float BlindCurveCheck = 0.f;
 };

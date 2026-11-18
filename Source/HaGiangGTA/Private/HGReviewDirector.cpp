@@ -7,6 +7,9 @@
 #include "GameFramework/PlayerController.h"
 #include "HGBikePawn.h"
 #include "HGTouristNPC.h"
+#include "HGCowActor.h"
+#include "HGTruckPawn.h"
+#include "NhoQueBoatPawn.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/CommandLine.h"
@@ -80,6 +83,38 @@ void AHGReviewDirector::BuildShots()
 		Front.LocalOffset = FVector(380.f, 120.f, 120.f);
 		Shots.Add(Front);
 		++Moving;
+	}
+	// Animals, a truck, a cruise boat.
+	auto AddActorShot = [this](AActor* A, const TCHAR* Label, const FVector& Offset, const FVector& Look)
+	{
+		if (A)
+		{
+			FShot S;
+			S.Label = Label;
+			S.Follow = A;
+			S.LocalOffset = Offset;
+			S.LocalLook = Look;
+			Shots.Add(S);
+		}
+	};
+	{
+		int32 Cows = 0;
+		for (TActorIterator<AHGCowActor> It(World); It && Cows < 2; ++It, ++Cows)
+		{
+			AddActorShot(*It, Cows ? TEXT("animal_1") : TEXT("animal_0"), FVector(120.f, 420.f, 60.f), FVector(0.f, 0.f, 20.f));
+		}
+		TActorIterator<AHGTruckPawn> Truck(World);
+		AddActorShot(Truck ? *Truck : nullptr, TEXT("truck_front"), FVector(900.f, 450.f, 120.f), FVector(0.f, 0.f, 0.f));
+		AddActorShot(Truck ? *Truck : nullptr, TEXT("truck_rear"), FVector(-900.f, -400.f, 150.f), FVector(0.f, 0.f, 0.f));
+		for (TActorIterator<ANhoQueBoatPawn> It(World); It; ++It)
+		{
+			if (It->bAutoCruise)
+			{
+				AddActorShot(*It, TEXT("boat_side"), FVector(150.f, 1100.f, 160.f), FVector(0.f, 0.f, 60.f));
+				AddActorShot(*It, TEXT("boat_quarter"), FVector(-700.f, 450.f, 260.f), FVector(-100.f, 0.f, 80.f));
+				break;
+			}
+		}
 	}
 	// Crowds: grouped by the point they look at; camera in front of them, looking back.
 	TMap<FIntVector, TArray<AHGTouristNPC*>> Crowds;

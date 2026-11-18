@@ -267,7 +267,8 @@ namespace
 		Arc(K, F, 33.f, 15.f, 125.f, 12.f, 1.2f, 9);
 		// Leg shield + inner panel, floorboard, underbone.
 		K.Box(FVector(43.f, 0.f, 64.f), FVector(5.f, St.bBoxy ? 36.f : 32.f, 46.f), FRotator(St.ShieldPitch, 0.f, 0.f));
-		K.Ellipsoid(FVector(45.f, 0.f, 64.f), FVector(4.f, St.bBoxy ? 18.f : 16.f, 23.f), FRotator(St.ShieldPitch, 0.f, 0.f), 10, 5);
+		// Curved shell of the leg shield (reads as one moulded panel wrapping the column).
+		K.Ellipsoid(FVector(46.f, 0.f, 66.f), FVector(9.f, St.bBoxy ? 21.f : 19.f, 30.f), FRotator(St.ShieldPitch, 0.f, 0.f), 14, 7);
 		K.Paint(FLC(0.05f, 0.05f, 0.055f), HGSurf::Satin);
 		K.Box(FVector(39.f, 0.f, 62.f), FVector(2.f, 28.f, 40.f), FRotator(St.ShieldPitch, 0.f, 0.f));
 		K.Paint(Rubber);

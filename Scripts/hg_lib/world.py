@@ -195,6 +195,12 @@ def build_vehicles(layout, tag, folder):
         actor = hg.spawn_actor(unreal.HGBikePawn, f"HondaWin_{i:02d}", bike["location_cm"], (0, bike["yaw"], 0),
                                tag, folder)
         actor.set_editor_property("body_color", colors[i % len(colors)])
+        # The player's rental at the start: the classic plain Win (the automatic pick could turn a bike with a
+        # passenger into a luggage-laden Easy Rider tour bike that hides the rider in the chase view).
+        actor.set_editor_property("bike_model", unreal.HGBikeModel.WIN)
+        actor.set_editor_property("bike_seed", i * 7 + 1)
+        actor.set_editor_property("model_chosen", True)
+        actor.set_editor_property("paint_chosen", True)
     for i, boat in enumerate(spawns["boats"]):
         x, y, z = boat["location_cm"]
         actor = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_{boat['type']}_{i:02d}", (x, y, z),
@@ -305,6 +311,14 @@ def build_golden_hour(tag, folder):
         ac.set_editor_property("mie_scattering_scale", 0.006)
     except Exception as exc:
         hg.warn(f"SkyAtmosphere: {exc}")
+    # Aerial perspective from the atmosphere (blue in-scatter that grows with distance but keeps the ridges'
+    # light / shade contrast) instead of relying on the flat height-fog colour, which washed the far ranges
+    # out to one grey-blue sheet. Property name has UE's own typo.
+    for k, v in (("aerial_pespective_view_distance_scale", 2.2), ("height_fog_contribution", 0.6)):
+        try:
+            ac.set_editor_property(k, v)
+        except Exception as exc:
+            hg.warn(f"SkyAtmosphere.{k}: {exc}")
 
     sky = hg.spawn_actor(unreal.SkyLight, "SkyLight", (0, 0, 150000), (0, 0, 0), tag, folder)
     skc = sky.get_component_by_class(unreal.SkyLightComponent)
@@ -325,13 +339,15 @@ def build_golden_hour(tag, folder):
     fog = hg.spawn_actor(unreal.ExponentialHeightFog, "Haze", (0, 0, 42000), (0, 0, 0), tag, folder)
     fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
     # UE falloff is per 1000 uu: 0.08 -> density e-folds every ~125 m above the fog actor.
-    for k, v in (("fog_density", 0.0028), ("fog_height_falloff", 0.04),
-                 ("fog_inscattering_luminance", unreal.LinearColor(0.32, 0.38, 0.45, 1.0)),
+    # Round 2B: thinner, bluer haze that starts further out (the near and mid ranges keep their contrast;
+    # the atmosphere's aerial perspective does the depth).
+    for k, v in (("fog_density", 0.002), ("fog_height_falloff", 0.04),
+                 ("fog_inscattering_luminance", unreal.LinearColor(0.26, 0.34, 0.48, 1.0)),
                  ("directional_inscattering_luminance", unreal.LinearColor(0.75, 0.68, 0.55, 1.0)),
                  ("directional_inscattering_exponent", 6.0),
                  ("enable_volumetric_fog", hg.PROFILE == "sm6"), ("volumetric_fog_scattering_distribution", 0.65),
                  ("volumetric_fog_extinction_scale", 1.2), ("volumetric_fog_distance", 25000.0),
-                 ("fog_max_opacity", 0.75), ("start_distance", 1500.0)):
+                 ("fog_max_opacity", 0.62), ("start_distance", 2500.0)):
         try:
             fc.set_editor_property(k, v)
         except Exception as exc:

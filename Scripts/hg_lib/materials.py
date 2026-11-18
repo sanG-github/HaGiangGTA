@@ -301,7 +301,8 @@ def wet_asphalt(tex) -> unreal.Material:
     g.link(g.sub(du, 0.455), de)
     edge = g.saturate(g.mul(g.sub(0.012, de), 400.0))
     flakes = g.saturate(g.mul(g.sub((fine, "B"), 0.3), 3.0))
-    paint_wear = g.mul(g.mul(flakes, g.add(0.45, g.mul((n, "G"), 0.5))), g.sub(1.0, g.mul(tracks, 0.5)))
+    # Faded, not gone: ~65-95 % paint with flaked spots, a little thinner in the wheel paths.
+    paint_wear = g.mul(g.add(0.62, g.mul(flakes, g.add(0.15, g.mul((n, "G"), 0.2)))), g.sub(1.0, g.mul(tracks, 0.3)))
     base = g.lerp(base, g.color("LaneYellow", (0.5, 0.36, 0.06)), g.mul(yellow, paint_wear))
     base = g.lerp(base, g.color("LaneWhite", (0.52, 0.52, 0.5)), g.mul(edge, paint_wear))
     rough = g.lerp(rough, 0.62, g.saturate(g.add(yellow, edge)))
