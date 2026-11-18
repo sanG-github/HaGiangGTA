@@ -6,6 +6,7 @@
 #include "Engine/World.h"
 #include "GameFramework/Pawn.h"
 #include "HGAudio.h"
+#include "HGWaterBody.h"
 #include "Kismet/GameplayStatics.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Sound/SoundBase.h"
@@ -85,7 +86,37 @@ void AHGCowActor::BeginPlay()
 			MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.05f, 0.04f, 0.03f));
 		}
 	}
-	LoadedMoo = MooSound.LoadSynchronous();
+	if (bHorse)
+	{
+		TArray<UStaticMeshComponent*> Parts;
+		GetComponents<UStaticMeshComponent>(Parts);
+		for (UStaticMeshComponent* C : Parts)
+		{
+			const FString N = C->GetName();
+			if (N.StartsWith(TEXT("Horn")))
+			{
+				C->SetVisibility(false);
+			}
+			else if (N == TEXT("Hump"))
+			{
+				// Re-used as the neck.
+				C->SetRelativeLocation(FVector(88.f, 0.f, 150.f));
+				C->SetRelativeRotation(FRotator(-55.f, 0.f, 0.f));
+				C->SetRelativeScale3D(FVector(0.75f, 0.28f, 0.3f));
+			}
+			else if (N == TEXT("Torso"))
+			{
+				C->SetRelativeScale3D(FVector(1.55f, 0.5f, 0.62f));
+			}
+			else if (N.StartsWith(TEXT("Leg")))
+			{
+				C->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.9f));
+				C->AddRelativeLocation(FVector(0.f, 0.f, 8.f));
+			}
+		}
+		Head->SetRelativeLocation(FVector(125.f, 0.f, 185.f));
+		LoadedMoo = nullptr;
+	}
 }
 
 void AHGCowActor::PickNewTarget()
@@ -118,11 +149,27 @@ void AHGCowActor::Tick(float DeltaSeconds)
 		const FRotator Want = ToTarget.Rotation();
 		const FRotator NewRot = FMath::RInterpConstantTo(GetActorRotation(), FRotator(0.f, Want.Yaw, 0.f), DeltaSeconds, 40.f);
 		SetActorRotation(NewRot);
-		FHitResult Block;
-		AddActorWorldOffset(NewRot.Vector() * WalkSpeed * DeltaSeconds, true, &Block);
-		if (Block.bBlockingHit)
+		// Look 1 m ahead: cows on the real map graze beside cliff roads and the reservoir - never walk onto
+		// ground steeper than MaxWanderSlopeDeg or into the water, pick another spot instead.
+		const FVector Ahead = Loc + NewRot.Vector() * 100.f;
+		FHitResult AheadGround;
+		FCollisionQueryParams AheadParams(SCENE_QUERY_STAT(HGCowAhead), false, this);
+		float SurfaceZ = 0.f;
+		const bool bGroundAhead = GetWorld()->LineTraceSingleByChannel(AheadGround, Ahead + FVector(0, 0, 300.f), Ahead - FVector(0, 0, 1500.f), ECC_Visibility, AheadParams);
+		const bool bTooSteep = !bGroundAhead || AheadGround.ImpactNormal.Z < FMath::Cos(FMath::DegreesToRadians(MaxWanderSlopeDeg));
+		const bool bWet = bGroundAhead && AHGWaterBody::FindSurface(GetWorld(), Ahead, SurfaceZ) && AheadGround.ImpactPoint.Z < SurfaceZ + 20.f;
+		if (bTooSteep || bWet)
 		{
 			PickNewTarget();
+		}
+		else
+		{
+			FHitResult Block;
+			AddActorWorldOffset(NewRot.Vector() * WalkSpeed * DeltaSeconds, true, &Block);
+			if (Block.bBlockingHit)
+			{
+				PickNewTarget();
+			}
 		}
 		Head->SetRelativeRotation(FRotator(-5.f + 4.f * FMath::Sin(Phase * 3.f), 0.f, 0.f));
 	}

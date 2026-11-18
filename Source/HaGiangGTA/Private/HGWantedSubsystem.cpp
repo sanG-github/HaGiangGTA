@@ -1,6 +1,7 @@
 #include "HGWantedSubsystem.h"
 
 #include "Components/PrimitiveComponent.h"
+#include "Components/SplineComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Pawn.h"
@@ -19,6 +20,7 @@ namespace
 	constexpr float StarHeat[5] = { 0.5f, 2.f, 4.f, 7.f, 11.f };
 	constexpr int32 BikesPerStar[6] = { 0, 1, 2, 2, 3, 4 };
 	constexpr float SightRange = 15000.f;   // police keep you "spotted" within 150 m
+	constexpr float MinSpawnSightCm = 15000.f;   // police bikes spawn at least this far away in a straight line
 	constexpr int32 BustFine = 200000;
 }
 
@@ -98,10 +100,13 @@ AHGRoadSplineActor* UHGWantedSubsystem::FindRoad()
 {
 	if (!CachedRoad)
 	{
+		// Main route = the longest road (QL4C stubs to the map edge are scenery).
 		for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It)
 		{
-			CachedRoad = *It;
-			break;
+			if (!CachedRoad || It->GetRoadLength() > CachedRoad->GetRoadLength())
+			{
+				CachedRoad = *It;
+			}
 		}
 	}
 	return CachedRoad;
@@ -114,13 +119,34 @@ void UHGWantedSubsystem::SpawnPoliceBike(APawn* Player)
 	{
 		return;
 	}
-	const float PlayerD = Road->GetDistanceAlongRoad(Player->GetActorLocation());
+	const FVector PlayerLoc = Player->GetActorLocation();
+	const float PlayerD = Road->GetDistanceAlongRoad(PlayerLoc);
 	const float Len = Road->GetRoadLength();
-	// Come from behind (or ahead if the player is near the start), out of sight.
-	float D = PlayerD - 25000.f - FMath::FRandRange(0.f, 8000.f);
+	// Come from behind (or ahead near the road ends), out of sight. 250 m along the road is not enough on
+	// the stacked Tham Ma / Ta Lang switchbacks (the spawn point can be 30 m away, straight up the slope):
+	// walk further along the road until the spawn point is also MinSpawnSightCm away in a straight line.
+	const float Jitter = FMath::FRandRange(0.f, 8000.f);
+	float D = -1.f;
+	for (float Off = 25000.f; Off <= 125000.f && D < 0.f; Off += 5000.f)
+	{
+		for (const float Sign : { -1.f, 1.f })
+		{
+			const float Cand = PlayerD + Sign * (Off + Jitter);
+			if (Cand < 0.f || Cand > Len)
+			{
+				continue;
+			}
+			const FVector P = Road->GetSpline()->GetLocationAtDistanceAlongSpline(Cand, ESplineCoordinateSpace::World);
+			if (FVector::Dist2D(P, PlayerLoc) >= MinSpawnSightCm)
+			{
+				D = Cand;
+				break;
+			}
+		}
+	}
 	if (D < 0.f)
 	{
-		D = FMath::Min(PlayerD + 25000.f, Len);
+		D = PlayerD > Len * 0.5f ? FMath::Max(PlayerD - 25000.f, 0.f) : FMath::Min(PlayerD + 25000.f, Len);
 	}
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
@@ -137,7 +163,14 @@ void UHGWantedSubsystem::SpawnHelicopter(APawn* Player)
 {
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-	const FVector Start = Player->GetActorLocation() - Player->GetActorForwardVector() * 40000.f + FVector(0.f, 0.f, 25000.f);
+	FVector Start = Player->GetActorLocation() - Player->GetActorForwardVector() * 40000.f + FVector(0.f, 0.f, 25000.f);
+	// 250 m above the player can still be inside a ridge with ~1,200 m of relief: start above the ground.
+	FHitResult Ground;
+	FCollisionQueryParams TraceParams(SCENE_QUERY_STAT(HGHeliSpawn), false, Player);
+	if (GetWorld()->LineTraceSingleByChannel(Ground, Start + FVector(0.f, 0.f, 200000.f), Start - FVector(0.f, 0.f, 200000.f), ECC_Visibility, TraceParams))
+	{
+		Start.Z = FMath::Max(Start.Z, Ground.ImpactPoint.Z + 8000.f);
+	}
 	Helicopter = GetWorld()->SpawnActor<AHGPoliceHelicopter>(AHGPoliceHelicopter::StaticClass(), Start, FRotator::ZeroRotator, Params);
 	if (Helicopter)
 	{

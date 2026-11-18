@@ -25,7 +25,6 @@ AHGTruckPawn::AHGTruckPawn()
 	BoostMultiplier = 1.15f;
 	GroundClearance = 25.f;
 	AutoDriveLateralAccel = 260.f;
-	AutoDriveLookahead = 1700.f;
 
 	Collision->SetBoxExtent(FVector(380.f, 125.f, 150.f));
 	SpringArm->TargetArmLength = 1300.f;

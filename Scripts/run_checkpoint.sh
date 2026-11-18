@@ -18,4 +18,4 @@ case "$(uname -s)" in
 esac
 [ -x "$EDITOR" ] || { echo "UnrealEditor not found at $EDITOR (set UE_ROOT)" >&2; exit 1; }
 
-exec "$EDITOR" "$PROJECT" -ExecutePythonScript="$SCRIPT"
+exec "$EDITOR" "$PROJECT" -ExecutePythonScript="$SCRIPT" -nocrashreports

@@ -7,6 +7,7 @@
 #include "HGHappyWaterSubsystem.h"
 #include "HGRoadSplineActor.h"
 #include "HGWantedSubsystem.h"
+#include "HGWaterBody.h"
 
 namespace
 {
@@ -311,6 +312,28 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 	UpdateOrientation(Dt);
 	UpdateVisuals(Dt, Steer);
 
+	// Splash-down: a bike that lands in the river sinks; the rider bails out and swims,
+	// the bike is recovered to its last spawn point a few seconds later.
+	float SurfaceZ = 0.f;
+	if (AHGWaterBody::FindSurface(GetWorld(), GetActorLocation(), SurfaceZ) && GetActorLocation().Z < SurfaceZ + 20.f)
+	{
+		SubmergedTime += Dt;
+		Speed = FMath::FInterpTo(Speed, 0.f, Dt, 3.f);
+		if (SubmergedTime > 0.25f && GetDriver())
+		{
+			ExitVehicle();
+		}
+		if (SubmergedTime > 6.f && !GetDriver())
+		{
+			SubmergedTime = 0.f;
+			ResetToSpawn();
+		}
+	}
+	else
+	{
+		SubmergedTime = 0.f;
+	}
+
 	if (GetActorLocation().Z < SpawnTransform.GetLocation().Z - KillDepth)
 	{
 		ResetToSpawn();
@@ -346,7 +369,7 @@ void AHGGroundVehicle::StartAutoDrive(AHGRoadSplineActor* Road, float DistanceCm
 	const FVector Tangent = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World) * float(AutoDriveDirection);
 	const FVector Right = FVector::CrossProduct(FVector::UpVector, Tangent).GetSafeNormal();
 	const FVector Loc = Spline->GetLocationAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World)
-		+ Right * AutoDriveLane + FVector(0.f, 0.f, Collision->GetScaledBoxExtent().Z + GroundClearance + 20.f);
+		+ Right * GetLaneOffsetAt(RoadDistance) + FVector(0.f, 0.f, Collision->GetScaledBoxExtent().Z + GroundClearance + 20.f);
 	const FRotator Rot(0.f, Tangent.Rotation().Yaw, 0.f);
 	SetActorLocationAndRotation(Loc, Rot, false, nullptr, ETeleportType::TeleportPhysics);
 	HeadingYaw = Rot.Yaw;
@@ -374,7 +397,23 @@ void AHGGroundVehicle::StopAutoDrive()
 	OnAutoDriveChanged(false);
 }
 
-float AHGGroundVehicle::GetMinRadiusAhead(float LookCm) const
+float AHGGroundVehicle::GetLaneOffsetAt(float DistanceCm) const
+{
+	if (!AutoDriveRoad)
+	{
+		return AutoDriveLane;
+	}
+	// Keep the whole body (not just the centre) LaneEdgeMargin inside the edge: a 2.5 m truck on a 1.7 m lane
+	// offset overhangs a 6 m road, and a bike on 1.7 m + 0.6 m convoy stagger is off the 4 m Ta Lang concrete.
+	const float HalfWidth = Collision ? Collision->GetScaledBoxExtent().Y : 0.f;
+	// Narrow down 15 m before the road does (the lane change lags the 20 m width blend otherwise).
+	const float Width = FMath::Min(AutoDriveRoad->GetWidthAtDistance(DistanceCm),
+		AutoDriveRoad->GetWidthAtDistance(DistanceCm + 1500.f * float(AutoDriveDirection)));
+	const float MaxLane = FMath::Max(Width * 0.5f - LaneEdgeMargin - HalfWidth, 0.f);
+	return FMath::Sign(AutoDriveLane) * FMath::Min(FMath::Abs(AutoDriveLane), MaxLane);
+}
+
+float AHGGroundVehicle::GetMinRadiusAhead(float LookCm, float StepCm) const
 {
 	if (!AutoDriveRoad)
 	{
@@ -383,7 +422,7 @@ float AHGGroundVehicle::GetMinRadiusAhead(float LookCm) const
 	const USplineComponent* Spline = AutoDriveRoad->GetSpline();
 	const float Len = Spline->GetSplineLength();
 	float MinRadius = BIG_NUMBER;
-	const float Step = 600.f;
+	const float Step = FMath::Max(StepCm, 50.f);
 	FVector Prev = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World);
 	for (float D = Step; D <= LookCm; D += Step)
 	{
@@ -419,9 +458,17 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		RoadResyncTimer = 0.25f;
 		RoadDistance = AutoDriveRoad->GetDistanceAlongRoad(GetActorLocation());
 	}
+	// Every tick: one Newton step (project onto the road tangent) so the cross-track error below is exact.
+	{
+		const FVector P = Spline->GetLocationAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World);
+		const FVector T = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World).GetSafeNormal2D();
+		RoadDistance = FMath::Clamp(RoadDistance + FVector::DotProduct((GetActorLocation() - P) * FVector(1.f, 1.f, 0.f), T), 0.f, Len);
+	}
 
-	// End of the road: loop or turn around.
-	const bool bAtEnd = (AutoDriveDirection > 0 && RoadDistance > Len - 1500.f) || (AutoDriveDirection < 0 && RoadDistance < 1500.f);
+	// End of the road (or of our stretch of it): loop or turn around.
+	const float RangeLo = AutoDriveRangeMin >= 0.f ? FMath::Max(AutoDriveRangeMin, 1500.f) : 1500.f;
+	const float RangeHi = AutoDriveRangeMax >= 0.f ? FMath::Min(AutoDriveRangeMax, Len - 1500.f) : Len - 1500.f;
+	const bool bAtEnd = (AutoDriveDirection > 0 && RoadDistance > RangeHi) || (AutoDriveDirection < 0 && RoadDistance < RangeLo);
 	if (bAtEnd)
 	{
 		if (LoopRestartDistance >= 0.f)
@@ -435,20 +482,26 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		return;
 	}
 
-	// Pure pursuit toward a point ahead on our lane.
-	const float Look = AutoDriveLookahead + FMath::Abs(Speed) * 0.35f;
-	const float TargetD = FMath::Clamp(RoadDistance + Look * AutoDriveDirection, 0.f, Len);
-	const FVector Tangent = Spline->GetDirectionAtDistanceAlongSpline(TargetD, ESplineCoordinateSpace::World) * float(AutoDriveDirection);
-	const FVector Right = FVector::CrossProduct(FVector::UpVector, Tangent).GetSafeNormal();
-	const FVector Target = Spline->GetLocationAtDistanceAlongSpline(TargetD, ESplineCoordinateSpace::World) + Right * AutoDriveLane;
-	const FVector ToTarget = (Target - GetActorLocation()).GetSafeNormal2D();
-	const float DesiredYaw = ToTarget.Rotation().Yaw;
+	// Lane keeping. This used to chase a point 13-17 m ahead on the lane, which cuts the inside of every bend
+	// by R - sqrt(R^2 - L^2) (4.6 m on a 30 m curve; off the road on the 8 m Ta Lang hairpins and the 4 m
+	// concrete). Now: steer for the road heading slightly ahead (covers the steering lag) minus a cross-track
+	// correction towards our lane line (Stanley controller).
+	const float Dir = float(AutoDriveDirection);
+	const FVector RoadP = Spline->GetLocationAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World);
+	const FVector RoadT = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World).GetSafeNormal2D() * Dir;
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, RoadT).GetSafeNormal();
+	const float CrossTrack = FVector::DotProduct(GetActorLocation() - (RoadP + Right * GetLaneOffsetAt(RoadDistance)), Right); // > 0: right of lane
+	const float PreviewD = FMath::Clamp(RoadDistance + Dir * FMath::Max(FMath::Abs(Speed) * LanePreviewSeconds, 150.f), 0.f, Len);
+	const FVector Ahead = Spline->GetDirectionAtDistanceAlongSpline(PreviewD, ESplineCoordinateSpace::World) * Dir;
+	const float DesiredYaw = Ahead.Rotation().Yaw - FMath::RadiansToDegrees(FMath::Atan2(LaneKeepGain * CrossTrack, FMath::Abs(Speed) + 300.f));
 	const float YawError = FRotator::NormalizeAxis(DesiredYaw - HeadingYaw);
 	OutSteer = FMath::Clamp(YawError / 22.f, -1.f, 1.f);
 
 	// Speed: cruise, slowed for curves (v = sqrt(a * R)) and by the vehicle ahead.
 	float TargetSpeed = AutoDriveCruise;
-	const float Radius = GetMinRadiusAhead(3600.f);
+	// Radius of our lane, assuming it is on the inside of the bend (conservative); 3 m steps resolve the
+	// 8 m Ta Lang hairpins that 6 m steps under-sample.
+	const float Radius = FMath::Max(GetMinRadiusAhead(3600.f, 300.f) - FMath::Abs(GetLaneOffsetAt(RoadDistance)), 150.f);
 	TargetSpeed = FMath::Min(TargetSpeed, FMath::Sqrt(AutoDriveLateralAccel * Radius));
 
 	if (const AHGGroundVehicle* Leader = AutoDriveLeader.Get())

@@ -130,12 +130,40 @@ void AHGPoliceHelicopter::Tick(float DeltaSeconds)
 		Desired = Target->GetActorLocation() + Offset + FVector(0.f, 0.f, FollowHeight);
 	}
 
-	// Terrain clearance.
-	FHitResult Ground;
+	// Terrain clearance at the desired point and along the next few seconds of flight: with ~1,200 m of
+	// relief a ridge between us and the player matters as much as the ground under the target point.
+	// Traces start 2 km above the probe so they never begin inside a mountain (a trace that starts under
+	// the landscape surface hits nothing and the clearance was silently skipped).
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGHeliGround), false, this);
-	if (GetWorld()->LineTraceSingleByChannel(Ground, FVector(Desired.X, Desired.Y, Desired.Z + 50000.f), FVector(Desired.X, Desired.Y, Desired.Z - 100000.f), ECC_Visibility, Params))
+	if (const APawn* Chased = ChaseTarget.Get())
 	{
-		Desired.Z = FMath::Max(Desired.Z, Ground.ImpactPoint.Z + MinTerrainClearance);
+		Params.AddIgnoredActor(Chased);
+	}
+	auto GroundZ = [&](const FVector& At, float& OutZ) -> bool
+	{
+		FHitResult Ground;
+		if (GetWorld()->LineTraceSingleByChannel(Ground, FVector(At.X, At.Y, FMath::Max(At.Z, Loc.Z) + 200000.f),
+			FVector(At.X, At.Y, FMath::Min(At.Z, Loc.Z) - 200000.f), ECC_Visibility, Params))
+		{
+			OutZ = Ground.ImpactPoint.Z;
+			return true;
+		}
+		return false;
+	};
+	float Highest = -BIG_NUMBER;
+	const FVector Ahead = Velocity.GetSafeNormal2D() * FMath::Min(Velocity.Size2D() * 3.f, 15000.f);
+	const FVector Probes[] = { Desired, Loc + Ahead * 0.33f, Loc + Ahead * 0.66f, Loc + Ahead, (Loc + Desired) * 0.5f };
+	for (const FVector& Probe : Probes)
+	{
+		float Z;
+		if (GroundZ(Probe, Z))
+		{
+			Highest = FMath::Max(Highest, Z);
+		}
+	}
+	if (Highest > -BIG_NUMBER)
+	{
+		Desired.Z = FMath::Max(Desired.Z, Highest + MinTerrainClearance);
 	}
 
 	// Critically-damped steering toward the desired point.

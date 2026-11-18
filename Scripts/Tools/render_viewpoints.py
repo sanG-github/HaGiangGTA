@@ -18,6 +18,8 @@ import math
 import time
 from pathlib import Path
 
+import sys
+
 import numpy as np
 from PIL import Image, ImageDraw
 
@@ -25,8 +27,8 @@ ROOT = Path(__file__).resolve().parents[2]
 HM = ROOT / "Generated" / "Heightmaps"
 OUT = ROOT / "Generated" / "Previews"
 
-SUN_PITCH, SUN_YAW = -13.0, 120.0          # same as world.build_golden_hour
-WATER_Z = 700.0
+SUN_PITCH, SUN_YAW = -50.0, -157.5         # same as world.build_golden_hour (ART_BIBLE: 10:30, ESE)
+WATER_Z = 420.0   # overwritten from the layout in main()
 
 
 def normalize(v):
@@ -34,12 +36,12 @@ def normalize(v):
 
 
 class Field:
-    def __init__(self, alt, stride):
-        self.s = stride
+    def __init__(self, alt, stride, cell=1.0):
+        self.s = stride * cell                       # metres per sample
         self.h = np.ascontiguousarray(alt[::stride, ::stride]).astype(np.float32)
         self.n = self.h.shape[0]
-        self.half = (alt.shape[0] - 1) / 2.0
-        gy, gx = np.gradient(self.h, float(stride))
+        self.half = (alt.shape[0] - 1) * cell / 2.0
+        gy, gx = np.gradient(self.h, float(self.s))
         self.gx, self.gy = gx.astype(np.float32), gy.astype(np.float32)
 
     def _idx(self, x, y):
@@ -77,7 +79,7 @@ def march(field, origin, dirs, t_max=7000.0, max_iter=420):
         h = field.height(x, y)
         clear = z - np.maximum(h, WATER_Z)
         done = clear < 0.05 + ta * 0.0004
-        out = (ta > t_max) | ~field.inside(x, y) | ((z > 2200) & (d[:, 2] > 0))
+        out = (ta > t_max) | ~field.inside(x, y) | ((z > 2400) & (d[:, 2] > 0))
         if done.any():
             idx = active[done]
             hit[idx] = ta[done]
@@ -102,7 +104,7 @@ def shadow(field, pts, sun, max_iter=160):
         clear = z - h
         blocked = clear < 0
         lit[active[blocked]] = 0.0
-        out = ~field.inside(x, y) | (z > 1700) | (ta > 6000)
+        out = ~field.inside(x, y) | (z > 2000) | (ta > 6000)
         keep = ~(blocked | out)
         t[active[keep]] = ta[keep] + np.maximum(clear[keep] * 0.5, 1.5 + ta[keep] * 0.01)
         active = active[keep]
@@ -184,7 +186,7 @@ def render(field, layout, cam, look, fov_deg, width, height, roadmask):
     alb = grass * (1 - rock_amt[:, None]) + rock * rock_amt[:, None]
     rm = field.sample(roadmask, p[:, 0], p[:, 1])
     alb = alb * (1 - rm[:, None]) + np.array([0.05, 0.05, 0.055]) * rm[:, None]
-    wet = np.clip((715 - p[:, 2]) / 15, 0, 1)
+    wet = np.clip((WATER_Z + 15 - p[:, 2]) / 15, 0, 1)
     alb *= (1 - 0.5 * wet)[:, None]
 
     lit = shadow(field, p + nrm * 1.5, sun)
@@ -211,7 +213,7 @@ def render(field, layout, cam, look, fov_deg, width, height, roadmask):
     k = 1.0 / 120.0
     dz = np.where(np.abs(zh - zc) < 1e-3, 1e-3, zh - zc)
     dens0 = 0.0005
-    integ = dens0 * np.exp(-k * (np.minimum(zc, zh) - 760)) * (1 - np.exp(-k * np.abs(dz))) / (k * np.abs(dz)) * t
+    integ = dens0 * np.exp(-k * (np.minimum(zc, zh) - (WATER_Z + 60))) * (1 - np.exp(-k * np.abs(dz))) / (k * np.abs(dz)) * t
     integ = np.minimum(integ, 20) + t * 0.00006
     fogf = 1 - np.exp(-integ)
     shade = shade * (1 - fogf[:, None]) + fog_col * fogf[:, None]
@@ -226,31 +228,10 @@ def render(field, layout, cam, look, fov_deg, width, height, roadmask):
 
 
 def cameras(layout, scatter):
-    vps = scatter["viewpoints"]
-    cm = lambda v: np.array(v, float) / 100.0
-    out = []
-    # VP1 Doc Tham Ma: from the check-in pad, eye height, looking down over the 9 hairpins.
-    p1 = cm(layout["viewpoints"]["doc_tham_ma"]["location_cm"]); c1 = cm(vps["doc_tham_ma"]["center_cm"])
-    d = c1[:2] - p1[:2]; d /= np.linalg.norm(d)
-    # Stand at the edge of the overlook terrace (the check-in ring is in its middle).
-    out.append(("VP1_ThamMa_eye", np.r_[p1[:2] + d * 10.0, p1[2] + 1.7], c1 + [0, 0, -40], 62))
-    out.append(("VP1_ThamMa_flycam", np.r_[c1[:2] - d * 180 + [120, 0], c1[2] + 260], c1, 50))
-    # VP2 Mom Da Tu Than: standing on the spur tip looking down the canyon, and the drone shot of the spur.
-    p2 = cm(layout["viewpoints"]["ma_pi_leng"]["location_cm"]); river = cm(layout["water"]["river_cm"])[:, :2]
-    j = np.argmin(np.linalg.norm(river - p2[:2], axis=1))
-    down = river[max(j - 32, 0)]
-    road2 = cm(layout["viewpoints"]["ma_pi_leng"]["road_cm"])
-    spur_dir = (p2[:2] - road2[:2]) / np.linalg.norm(p2[:2] - road2[:2])
-    edge = p2[:2] + spur_dir * 4.0
-    out.append(("VP2_MaPiLeng_spur", np.r_[edge, p2[2] + 1.7], np.r_[down, WATER_Z + 30], 78))
-    # Drone over the canyon, looking back at the spur with the river below.
-    out.append(("VP2_MaPiLeng_drone", np.r_[river[j][:2] + [60, -260], p2[2] + 40], np.r_[(p2[:2] + river[j][:2]) / 2, 980], 60))
-    # VP3 Tu San: from a boat on the river, looking up-canyon at the walls.
-    b = cm(layout["spawns"]["boats"][0]["location_cm"]); k = np.argmin(np.linalg.norm(river - b[:2], axis=1))
-    ahead = river[max(k - 45, 0)]
-    out.append(("VP3_TuSan_boat", np.r_[b[:2], WATER_Z + 2.0], np.r_[ahead, WATER_Z + 140], 70))
-    out.append(("VP3_TuSan_flycam", np.r_[river[k][:2] + [-220, 120], WATER_Z + 420], np.r_[river[max(k - 25, 0)], WATER_Z], 55))
-    return out
+    """Same framing as the in-editor screenshots (Scripts/hg_lib/shots.py)."""
+    sys.path.insert(0, str(ROOT / "Scripts"))
+    from hg_lib import shots as shot_lib
+    return [(n, np.array(c, np.float32), np.array(l, np.float32), f) for n, c, l, f in shot_lib.shots(layout, scatter)]
 
 
 def main():
@@ -259,12 +240,14 @@ def main():
     ap.add_argument("--stride", type=int, default=2)
     ap.add_argument("--only", default="")
     args = ap.parse_args()
+    global WATER_Z
     layout = json.loads((HM / "HaGiang_layout.json").read_text())
+    WATER_Z = layout["water"]["surface_z_cm"] / 100.0
     scatter = json.loads((HM / "HaGiang_scatter.json").read_text())
     n = layout["heightmap"]["size"]
     h16 = np.fromfile(HM / "HaGiang_4033.r16", dtype="<u2").reshape(n, n)
     alt = layout["heightmap"]["base_asl_m"] + h16.astype(np.float32) * layout["heightmap"]["m_per_unit"]
-    field = Field(alt, args.stride)
+    field = Field(alt, args.stride, layout["heightmap"].get("cell_m", 1.0))
     roadmask = road_mask_raster(layout, field)
     OUT.mkdir(parents=True, exist_ok=True)
     w, h = args.width, args.width * 9 // 16
@@ -273,6 +256,8 @@ def main():
         if args.only and args.only not in name:
             continue
         print(name)
+        ground = field.height(np.array([cam[0]]), np.array([cam[1]]))[0]
+        print(f"  cam {cam.round(1)} ground {ground:.1f} m (clearance {cam[2] - ground:.1f})")
         img = render(field, layout, cam, look, fov, w, h, roadmask)
         img.save(OUT / f"{name}.png")
         shots.append((name, img))

@@ -50,6 +50,16 @@ float AHGRoadSplineActor::GetDistanceAlongRoad(const FVector& WorldLocation) con
 	return Spline->GetDistanceAlongSplineAtSplineInputKey(Key);
 }
 
+float AHGRoadSplineActor::GetWidthAtDistance(float DistanceCm) const
+{
+	if (SecondaryFromDistance < 0.f)
+	{
+		return RoadWidth;
+	}
+	const float Alpha = FMath::Clamp((DistanceCm - SecondaryFromDistance + 1000.f) / 2000.f, 0.f, 1.f);
+	return FMath::Lerp(RoadWidth, SecondaryWidth, Alpha);
+}
+
 void AHGRoadSplineActor::RebuildRoadMeshes()
 {
 	Modify();
@@ -75,7 +85,6 @@ void AHGRoadSplineActor::RebuildRoadMeshes()
 	// Cube is 100 uu thick centred on the spline: lift by half the thickness so
 	// the top of the asphalt sits exactly on the spline points.
 	const FVector Lift(0.f, 0.f, RoadThickness * 0.5f);
-	const FVector2D Scale(RoadWidth / 100.f, RoadThickness / 100.f);
 
 	Segments.Reserve(Count);
 	for (int32 i = 0; i < Count; ++i)
@@ -92,15 +101,17 @@ void AHGRoadSplineActor::RebuildRoadMeshes()
 		Seg->SetMobility(EComponentMobility::Static);
 		Seg->SetupAttachment(Spline);
 		Seg->SetStaticMesh(RoadMesh);
-		if (RoadMaterial)
+		const bool bSecondary = SecondaryFromDistance >= 0.f && (D0 + D1) * 0.5f >= SecondaryFromDistance;
+		UMaterialInterface* Mat = (bSecondary && SecondaryMaterial) ? SecondaryMaterial.Get() : RoadMaterial.Get();
+		if (Mat)
 		{
-			Seg->SetMaterial(0, RoadMaterial);
+			Seg->SetMaterial(0, Mat);
 		}
 		Seg->SetForwardAxis(ESplineMeshAxis::X, false);
 		Seg->SetSplineUpDir(FVector::UpVector, false);
 		Seg->SetStartAndEnd(P0, T0, P1, T1, false);
-		Seg->SetStartScale(Scale, false);
-		Seg->SetEndScale(Scale, false);
+		Seg->SetStartScale(FVector2D(GetWidthAtDistance(D0) / 100.f, RoadThickness / 100.f), false);
+		Seg->SetEndScale(FVector2D(GetWidthAtDistance(D1) / 100.f, RoadThickness / 100.f), false);
 		Seg->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 		Seg->SetCanEverAffectNavigation(false);
 		Seg->SetCastShadow(false);

@@ -43,6 +43,21 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boat")
 	EHGBoatType BoatType = EHGBoatType::Cano;
 
+	/** Unpossessed boats with this on cruise back and forth along CruisePoints (tourist traffic). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boat|AI")
+	bool bAutoCruise = false;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boat|AI")
+	TArray<FVector> CruisePoints;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boat|AI")
+	float CruiseThrottle = 0.5f;
+
+	/** A cruise point counts as reached within this distance (cm). Must stay well under the point spacing
+	 *  (~30 m) or the boat skips points and cuts across the bends of the gorge onto the banks. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Boat|AI")
+	float CruiseAcceptRadius = 1200.f;
+
 protected:
 	virtual void BeginPlay() override;
 	virtual FVector GetExitLocation() const override;
@@ -64,6 +79,9 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> CanopyPostR;
 	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Motor;
 	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Paddle;
+	/** Yellow star on the red roof: the tourist boats on the Nho Que fly the national flag on top. */
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> RoofStar;
+	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Windows;
 
 	// ---- Tuning (set from BoatType) ----
 	UPROPERTY(EditAnywhere, Category = "Tuning") float MaxForwardSpeed = 1600.f;
@@ -79,6 +97,9 @@ protected:
 
 private:
 	bool HasWaterDepthAt(const FVector& Location, float SurfaceZ) const;
+	void ComputeCruiseInput(float& OutThrottle, float& OutSteer);
+	int32 CruiseIndex = 0;
+	int32 CruiseDir = 1;
 
 	float Speed = 0.f;
 	float HeadingYaw = 0.f;

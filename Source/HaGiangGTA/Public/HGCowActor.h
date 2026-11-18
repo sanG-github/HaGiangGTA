@@ -29,6 +29,14 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cow")
 	float WalkSpeed = 45.f;
 
+	/** Never wander onto ground steeper than this (degrees) or into water. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cow")
+	float MaxWanderSlopeDeg = 35.f;
+
+	/** Hmong pack horse (Doc Tham Ma "horse-testing slope"): no horns/hump, raised neck, no moo. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cow")
+	bool bHorse = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cow")
 	FLinearColor CoatColor = FLinearColor(0.32f, 0.17f, 0.07f);
 

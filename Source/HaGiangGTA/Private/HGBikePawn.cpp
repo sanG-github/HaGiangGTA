@@ -7,6 +7,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/Controller.h"
 #include "HGAudio.h"
 #include "Kismet/GameplayStatics.h"

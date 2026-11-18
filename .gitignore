@@ -43,3 +43,6 @@ __pycache__/
 
 # ---- local python env for offline generators ----
 .venv/
+Data/Geo/*.tif
+Data/Geo/*.json
+.claude/worktrees/

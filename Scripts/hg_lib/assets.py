@@ -12,10 +12,17 @@ from . import editor_utils as hg
 DEST = f"{hg.GENERATED_ROOT}"
 MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "SM_HG_KarstCliff_04",
           "SM_HG_Boulder_01", "SM_HG_Boulder_02", "SM_HG_Boulder_03",
-          "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost"]
-NANITE = {m for m in MESHES if m != "SM_HG_RoadPost"}
+          "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost",
+          "SM_HG_Kapok_Trunk", "SM_HG_Kapok_Bloom", "SM_HG_Tree_Trunk", "SM_HG_Tree_Crown",
+          "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
+          "SM_HG_DistantRanges", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
+          "SM_HG_StoneWall", "SM_HG_Monument"]
+PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_Chevron",
+         "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument")
+NANITE = {m for m in MESHES if m not in PROPS}
+TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
 COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
-TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask"}
+TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask", "T_HG_PathMask": "mask"}
 
 
 def _python():
@@ -40,8 +47,8 @@ def run_generator(script: str, check_file: str) -> None:
 
 
 def ensure_generated() -> None:
-    run_generator("gen_assets.py", "Generated/Assets/Audio/SW_HG_Heli_Loop.wav")
-    run_generator("gen_scatter.py", "Generated/Heightmaps/HaGiang_scatter.json")
+    run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_Monument.obj")
+    run_generator("gen_scatter.py", "Generated/Assets/Textures/T_HG_PathMask.png")
 
 
 def _import(src: str, dest_folder: str, name: str):
@@ -75,21 +82,62 @@ def import_textures(force: bool = False) -> dict:
         if tex is None:
             src = os.path.join(hg.project_dir(), "Generated", "Assets", "Textures", f"{name}.png")
             tex = _import(src, folder, name)
+        # Always (re)apply settings so older imports get fixed too. All non-normal textures are
+        # TC_Masks (linear) -> sampled with the Masks sampler in hg_lib.materials.
+        want_cs = unreal.TextureCompressionSettings.TC_NORMALMAP if kind == "normal" else unreal.TextureCompressionSettings.TC_MASKS
+        if tex.get_editor_property("compression_settings") != want_cs or tex.get_editor_property("srgb"):
             tex.set_editor_property("srgb", False)
+            tex.set_editor_property("compression_settings", want_cs)
             if kind == "normal":
-                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_NORMALMAP)
                 tex.set_editor_property("flip_green_channel", True)
-            else:
-                tex.set_editor_property("compression_settings", unreal.TextureCompressionSettings.TC_MASKS)
             unreal.EditorAssetLibrary.save_loaded_asset(tex)
         out[name] = tex
     return out
 
 
-def _enable_nanite(mesh: unreal.StaticMesh) -> None:
+def _set_nanite(mesh: unreal.StaticMesh, enabled: bool) -> None:
     settings = mesh.get_editor_property("nanite_settings")
-    settings.set_editor_property("enabled", True)
-    mesh.set_editor_property("nanite_settings", settings)
+    if settings.get_editor_property("enabled") != enabled:
+        settings.set_editor_property("enabled", enabled)
+        mesh.set_editor_property("nanite_settings", settings)
+
+
+# Classic LOD chains for the M1 profile (percent of LOD0 triangles, screen size).
+LOD_CHAINS = {
+    "Cliff": [(1.0, 1.0), (0.18, 0.45), (0.05, 0.16), (0.012, 0.05), (0.004, 0.015)],
+    "Boulder": [(1.0, 1.0), (0.2, 0.3), (0.05, 0.1), (0.015, 0.03)],
+    "Bush": [(1.0, 1.0), (0.25, 0.25), (0.06, 0.08), (0.02, 0.025)],
+    "Crown": [(1.0, 1.0), (0.3, 0.2), (0.08, 0.06), (0.03, 0.02)],
+    "Bloom": [(1.0, 1.0), (0.3, 0.2), (0.08, 0.06)],
+    "Trunk": [(1.0, 1.0), (0.5, 0.15), (0.25, 0.05)],
+}
+
+
+def _apply_profile(mesh: unreal.StaticMesh, name: str) -> None:
+    """Nanite on SM6 hardware; on M1 (SM5) Nanite is unavailable, so build reduced LODs instead."""
+    if name not in NANITE:
+        return
+    if hg.USE_NANITE:
+        _set_nanite(mesh, True)
+        return
+    _set_nanite(mesh, False)
+    chain = next((c for k, c in LOD_CHAINS.items() if k in name), None)
+    if chain is None:
+        return
+    sm_sub = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
+    if sm_sub.get_lod_count(mesh) == len(chain):
+        return
+    opts = unreal.StaticMeshReductionOptions()
+    opts.set_editor_property("auto_compute_lod_screen_size", False)
+    settings = []
+    for pct, screen in chain:
+        s = unreal.StaticMeshReductionSettings()
+        s.set_editor_property("percent_triangles", float(pct))
+        s.set_editor_property("screen_size", float(screen))
+        settings.append(s)
+    opts.set_editor_property("reduction_settings", settings)
+    lods = sm_sub.set_lods(mesh, opts)
+    hg.log(f"{name}: {lods} LODs (M1 profile, Nanite off)")
 
 
 def import_meshes(force: bool = False) -> dict:
@@ -102,15 +150,16 @@ def import_meshes(force: bool = False) -> dict:
         if mesh is None:
             src = os.path.join(hg.project_dir(), "Generated", "Assets", "Meshes", f"{name}.obj")
             mesh = _import(src, folder, name)
-            if name in NANITE:
-                _enable_nanite(mesh)
             body = mesh.get_editor_property("body_setup")
             if name in COMPLEX_COLLISION and body is not None:
                 body.set_editor_property("collision_trace_flag", unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
-            elif name == "SM_HG_RoadPost":
+            elif name in ("SM_HG_RoadPost", "SM_HG_Guardrail", "SM_HG_UtilityPole", "SM_HG_HouseWalls",
+                          "SM_HG_StoneWall", "SM_HG_Monument"):
                 sm_sub.remove_collisions(mesh)
                 sm_sub.add_simple_collisions(mesh, unreal.ScriptCollisionShapeType.BOX)
             unreal.EditorAssetLibrary.save_loaded_asset(mesh)
+        _apply_profile(mesh, name)
+        unreal.EditorAssetLibrary.save_loaded_asset(mesh)
         out[name] = mesh
     return out
 

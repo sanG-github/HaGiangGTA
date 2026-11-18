@@ -1,12 +1,12 @@
 {
   "active_work_seconds": 3563,
   "cooldown_wait_seconds": 0,
-  "state": "stopped",
-  "segment_started_at": null,
+  "state": "running",
+  "segment_started_at": 1794985947,
   "current_branch": "main",
-  "current_checkpoint": "photoreal-pass",
+  "current_checkpoint": "compile-fix",
   "last_completed_step": "photoreal pass merged",
-  "next_pending_step": "UE 5.8 installed -> compile + fix",
+  "next_pending_step": "first compile",
   "pause_reason": null,
   "history": [
     {
@@ -186,6 +186,12 @@
       "t": 1794978209,
       "event": "stop",
       "active": 3563
+    },
+    {
+      "t": 1794985947,
+      "event": "start",
+      "active": 3563,
+      "checkpoint": "compile-fix"
     }
   ]
 }
