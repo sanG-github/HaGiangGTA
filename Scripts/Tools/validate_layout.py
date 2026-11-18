@@ -440,6 +440,22 @@ def check_road(ctx, g, rep):
               f"tightest {R.min():.1f} m (at {m_k:.0f} m)")
     rep.check("road", "maximum turn per metre", None if turn.max() <= ROAD_MAX_TURN_DEG_PER_M else
               f"{turn.max():.1f} deg/m > {ROAD_MAX_TURN_DEG_PER_M:.1f}", f"{turn.max():.1f} deg/m")
+    grade = np.abs(np.diff(pts[:, 2] / 100.0)) / np.maximum(seg, 1e-3)
+    kg = int(np.argmax(grade))
+    rep.check("road", "maximum grade", None if grade.max() <= 0.21 else
+              f"{grade.max():.0%} at {road.closest(*(xy[kg] * 100.0))[0]:.0f} m (DEM under a cliff road: gen_heightmap fit_to_shelf)",
+              f"{grade.max():.0%}, {(grade > 0.15).sum()} segments over 15 %")
+    # Different parts of the route (more than 40 m apart along it) at least 8 m apart: no leg laid onto another.
+    sxy = np.concatenate([[0.0], np.cumsum(seg)])
+    close = []
+    for i in range(0, len(xy), 2):
+        d = np.linalg.norm(xy - xy[i], axis=1)
+        far = np.abs(sxy - sxy[i]) > 40.0
+        if far.any() and d[far].min() < 8.0:
+            close.append((sxy[i], d[far].min()))
+    rep.check("road", "legs apart", None if not close else
+              f"{len(close)} points within 8 m of another part of the route (closest {min(c for _, c in close):.1f} m at {close[0][0]:.0f} m)",
+              "every part of the route >= 8 m from the others")
     if cusps:
         rep.add("road", "spline cusps (decimated hairpins)", "FAIL",
                 f"{len(cusps)} spots turn tighter than 6 m radius, e.g. at " + ", ".join(f"{m:.0f}" for m in cusps[:8]) + " m")

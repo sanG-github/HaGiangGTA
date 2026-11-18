@@ -58,6 +58,7 @@ ROAD_HALF_WIDTH_M = 3.0          # QL4C asphalt
 CONCRETE_HALF_WIDTH_M = 2.0      # Ta Lang concrete road
 ROAD_SHOULDER_M = 1.0
 ROAD_MIN_RADIUS_M = 9.0          # centreline; enforce_min_radius
+ROAD_MAX_GRADE = 0.14            # road profile (real QL4C / Ta Lang ramps are 8-12 %, a few short 14 % pitches)
 RIVER_HALF_WIDTH_M = 26.0        # Tu San narrows (the wide reservoir comes from the OSM polygon)
 DOWNSTREAM_DROP_M = 18.0         # water level below the Nho Que 1 dam
 SEED = 20261118
@@ -248,7 +249,7 @@ def enforce_min_radius(xy, r_min=9.0, step=2.0, leg_gap=8.0, max_iter=4000, verb
     dmin = 2.0 * r_min * math.sin(phi)              # second neighbours on a circle of radius r_min
     r_goal = r_min
     r_min = r_goal * 1.15        # relax to a little more than the goal: resampling afterwards costs ~10 %
-    for _round in range(8):
+    for _round in range(12):
         r = vertex_radius(xy, 1)
         bad = np.where(r < r_goal)[0]
         if len(bad) == 0:
@@ -270,6 +271,12 @@ def enforce_min_radius(xy, r_min=9.0, step=2.0, leg_gap=8.0, max_iter=4000, verb
             if w0 == 0: fixed[:3] = True
             if w1 == len(xy) - 1: fixed[-3:] = True
             ii, jj = np.triu_indices(n, 9)
+            # The rest of the route near this window is a fixed obstacle: a balloon must not push into the next
+            # leg of a stacked hairpin (it laid two Ta Lang legs 1.8 m apart, 10 m apart in height).
+            lo_, hi_ = p.min(axis=0) - 40.0, p.max(axis=0) + 40.0
+            outside = np.concatenate([np.arange(0, max(w0 - 4, 0)), np.arange(min(w1 + 5, len(xy)), len(xy))])
+            outside = outside[((xy[outside] >= lo_) & (xy[outside] <= hi_)).all(axis=1)]
+            obst = xy[outside]
             for it in range(max_iter):
                 moved = 0.0
                 # bending: the sagitta of p[i] over the chord p[i-1]p[i+1] at most that of a circle of radius
@@ -306,6 +313,15 @@ def enforce_min_radius(xy, r_min=9.0, step=2.0, leg_gap=8.0, max_iter=4000, verb
                     corr = (d[v] / np.maximum(dl[v], 1e-9)[:, None]) * ((leg_gap - dl[v]) * 0.25)[:, None]
                     np.add.at(p, jj[v], corr * (~fixed[jj[v]])[:, None])
                     np.add.at(p, ii[v], -corr * (~fixed[ii[v]])[:, None])
+                if len(obst):
+                    d = p[:, None, :] - obst[None, :, :]
+                    dl = np.linalg.norm(d, axis=2)
+                    near = dl < leg_gap
+                    if near.any():
+                        push = (d / np.maximum(dl, 1e-9)[:, :, None]) * ((leg_gap - dl) * near)[:, :, None]
+                        corr = push.sum(axis=1) * 0.5
+                        p += corr * (~fixed)[:, None]
+                        moved += float(np.abs(corr).sum())
                 if moved < 1e-3 and it > 20:
                     break
             new = np.vstack([xy[:w0], p, xy[w1 + 1:]])
@@ -314,6 +330,91 @@ def enforce_min_radius(xy, r_min=9.0, step=2.0, leg_gap=8.0, max_iter=4000, verb
         if verbose:
             print("round", _round, "clusters", len(clusters), "min R now", vertex_radius(xy, 1).min().round(2))
     return xy
+
+
+def grade_limit(z, s, gmax, iters=4):
+    """Road (not terrain): the profile closest to z with |dz/ds| <= gmax (forward / backward clamping)."""
+    z = np.asarray(z, np.float64).copy()
+    ds = np.diff(s)
+    for _ in range(iters):
+        for i in range(1, len(z)):
+            z[i] = min(max(z[i], z[i - 1] - gmax * ds[i - 1]), z[i - 1] + gmax * ds[i - 1])
+        for i in range(len(z) - 2, -1, -1):
+            z[i] = min(max(z[i], z[i + 1] - gmax * ds[i]), z[i + 1] + gmax * ds[i])
+    return z
+
+
+def fit_to_shelf(road_xy, height, gmax=ROAD_MAX_GRADE, reach_m=15.0):
+    """Road (not terrain): where the DEM under the OSM line climbs or drops faster than a road can (the Ma Pi Leng
+    rim road is a shelf cut into a cliff the 30 m DEM can't resolve - its profile reached 87 % grades, 30 % averaged
+    over 400 m, and bikes stalled on it), slide the line up to reach_m sideways onto the slope at the height a
+    gmax-limited profile wants, i.e. onto the shelf. Offsets are smoothed along the road; elsewhere it is unchanged."""
+    road_xy = np.asarray(road_xy, np.float64)
+    s = np.concatenate([[0.0], np.cumsum(np.linalg.norm(np.diff(road_xy, axis=0), axis=1))])
+    z0 = proc.smooth_1d(proc.smooth_1d(bilinear(height, road_xy), 41), 21)
+    zt = grade_limit(z0, s, gmax)
+    t = np.gradient(road_xy, axis=0)
+    t /= np.maximum(np.linalg.norm(t, axis=1, keepdims=True), 1e-9)
+    nrm = np.stack([-t[:, 1], t[:, 0]], axis=1)
+    need = np.abs(z0 - zt) > 2.0
+    off = np.zeros(len(road_xy))
+    offs = np.arange(-reach_m, reach_m + 0.5, 1.0)
+    # Spatial hash of the road (10 m cells): a shifted point must stay 12 m from any other part of the route
+    # (|ds| > 40 m) - on the stacked Ta Lang hairpins a free shift laid one leg onto the next.
+    cell = 10.0
+    grid = {}
+    for j, p in enumerate(road_xy):
+        grid.setdefault((int(p[0] // cell), int(p[1] // cell)), []).append(j)
+
+    def crowded(q, i):
+        cx, cy = int(q[0] // cell), int(q[1] // cell)
+        for gx in (cx - 1, cx, cx + 1):
+            for gy in (cy - 1, cy, cy + 1):
+                for j in grid.get((gx, gy), ()):
+                    if abs(s[j] - s[i]) > 40.0 and (q[0] - road_xy[j, 0]) ** 2 + (q[1] - road_xy[j, 1]) ** 2 < 144.0:
+                        return True
+        return False
+
+    for i in np.nonzero(need)[0]:
+        pts = road_xy[i][None, :] + offs[:, None] * nrm[i][None, :]
+        h = bilinear(height, pts)
+        cost = np.abs(h - zt[i]) + 0.05 * np.abs(offs)
+        for k_i in np.argsort(cost):
+            if offs[k_i] == 0.0 or not crowded(pts[k_i], i):
+                off[i] = offs[k_i]
+                break
+    k = np.exp(-0.5 * (np.arange(-24, 25) / 8.0) ** 2); k /= k.sum()
+    off = np.convolve(np.pad(off, 24, mode="edge"), k, "valid")
+    # Two legs shifted towards each other can still meet: halve the shifts around any point of the shifted road
+    # that comes within 12 m of another part of it, until none does.
+    for _ in range(8):
+        new = road_xy + off[:, None] * nrm
+        g2 = {}
+        for j, p in enumerate(new):
+            g2.setdefault((int(p[0] // cell), int(p[1] // cell)), []).append(j)
+        bad = []
+        for i in np.nonzero(np.abs(off) > 0.05)[0]:
+            q = new[i]
+            cx, cy = int(q[0] // cell), int(q[1] // cell)
+            hit = False
+            for gx in (cx - 1, cx, cx + 1):
+                for gy in (cy - 1, cy, cy + 1):
+                    for j in g2.get((gx, gy), ()):
+                        if abs(s[j] - s[i]) > 40.0 and (q[0] - new[j, 0]) ** 2 + (q[1] - new[j, 1]) ** 2 < 144.0:
+                            hit = True
+                            break
+                    if hit:
+                        break
+                if hit:
+                    break
+            if hit:
+                bad.append(i)
+        if not bad:
+            break
+        for i in bad:
+            off[max(i - 20, 0):i + 21] *= 0.5
+    print(f"shelf fit: {need.sum()} of {len(need)} points steeper than {gmax:.0%}, lateral shift max {np.abs(off).max():.1f} m")
+    return road_xy + off[:, None] * nrm
 
 
 def least_cost_road(height, a, b, spacing=8.0, margin=450.0, ideal_grade=0.07, avoid=None, avoid_m=45.0):
@@ -558,6 +659,8 @@ def generate():
         pad_ = np.vstack([np.repeat(road_xy[:1], 6, 0), road_xy, np.repeat(road_xy[-1:], 6, 0)])
         road_xy = np.stack([np.convolve(pad_[:, 0], k_, "valid"), np.convolve(pad_[:, 1], k_, "valid")], 1)
     # Then cap the curvature (min radius ~9 m), and a light pass to take out the resampling kinks.
+    road_xy, _ = proc.resample(road_xy, 2.0)
+    road_xy = fit_to_shelf(road_xy, height)
     road_xy = enforce_min_radius(road_xy, ROAD_MIN_RADIUS_M)
     k_ = np.exp(-0.5 * (np.arange(-3, 4) / 1.2) ** 2); k_ /= k_.sum()
     pad_ = np.vstack([np.repeat(road_xy[:1], 3, 0), road_xy, np.repeat(road_xy[-1:], 3, 0)])
@@ -576,6 +679,8 @@ def generate():
     # Road profile: real terrain under the centreline, smoothed (~80 m), dock ramp to the water.
     z = bilinear(height, road_xy)
     z = proc.smooth_1d(proc.smooth_1d(z, 41), 21)
+    # No ramp steeper than ROAD_MAX_GRADE (the carve cuts / fills the rest), then a light smoothing of the kinks.
+    z = proc.smooth_1d(grade_limit(z, road_s, ROAD_MAX_GRADE), 9)
     s_dock = piece_len["descent"]
     tdock = np.clip((road_s - s_dock) / max(road_s[-1] - s_dock, 1.0), 0, 1)
     road_z = (z * (1 - tdock) + (WATER_ASL_M + 1.6) * tdock).astype(np.float32)

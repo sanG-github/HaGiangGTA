@@ -180,6 +180,7 @@ void UHGMissionSubsystem::TickActive(FHGMission& M, APawn* Player, float DeltaTi
 	M.Elapsed += DeltaTime;
 	const FVector Loc = Player->GetActorLocation();
 	const float Dist = FVector::Dist2D(Loc, M.Target);
+	ActiveDistance = Dist;
 	if (M.Id == TourId)
 	{
 		AHGBikePawn* Bike = Cast<AHGBikePawn>(Player);

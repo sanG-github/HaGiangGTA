@@ -56,11 +56,27 @@ def build_water(layout, material, tag, folder):
     if water.get("bodies"):
         # Real map: rotated planes following the reservoir + one below the dam (gen_heightmap.py).
         actors = []
+        half = layout["heightmap"].get("half_m", 2016.0) * 100.0 - 2000.0
         for b in water["bodies"]:
-            actor = hg.spawn_actor(unreal.HGWaterBody, b["name"], (b["center_cm"][0], b["center_cm"][1], b["z_cm"]),
-                                   (0, b["yaw"], 0), tag, folder)
+            cx, cy, (sx, sy) = b["center_cm"][0], b["center_cm"][1], b["size_cm"]
+            # Keep every plane inside the landscape: the below-dam plane ran 590 m past the map edge, a flat lake
+            # floating beyond the end of the terrain in the rim views. Trim the end that sticks out.
+            yr = math.radians(b["yaw"])
+            ux, uy, vx, vy = math.cos(yr), math.sin(yr), -math.sin(yr), math.cos(yr)
+            for _ in range(400):
+                ends = [max(max(abs(cx + a * sx / 2 * ux + c * sy / 2 * vx), abs(cy + a * sx / 2 * uy + c * sy / 2 * vy)) for c in (-1, 1)) for a in (-1, 1)]
+                if max(ends) <= half or sx < 4000.0:
+                    break
+                a = -1 if ends[0] > ends[1] else 1
+                if ends[0] > half and ends[1] > half:
+                    sy = max(sy - 2000.0, 4000.0)   # too wide for the map at both ends: narrow it
+                    continue
+                sx -= 2000.0
+                cx -= a * ux * 1000.0
+                cy -= a * uy * 1000.0
+            actor = hg.spawn_actor(unreal.HGWaterBody, b["name"], (cx, cy, b["z_cm"]), (0, b["yaw"], 0), tag, folder)
             actor.set_editor_property("water_material", material)
-            actor.set_editor_property("size_cm", unreal.Vector2D(*b["size_cm"]))
+            actor.set_editor_property("size_cm", unreal.Vector2D(sx, sy))
             rerun(actor)
             actors.append(actor)
         return actors[0]
@@ -545,6 +561,15 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
         hg.warn(f"DistantRanges collision: {exc}")
     origin, extent = ranges.get_actor_bounds(False)
     hg.log(f"DistantRanges bounds: origin {origin} extent {extent}")
+    # Foothills between the map edge and the ranges, in a dry-grass olive (drawn on top of the ranges' skirt).
+    apron = hg.spawn_mesh("DistantApron", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantApron.SM_HG_DistantApron",
+                          (0, 0, 80000 + 300), material=hg.color_material("MI_GB_Foothills", (0.13, 0.13, 0.065)),
+                          tag=tag, folder=folder, collision=False)
+    apron.static_mesh_component.set_editor_property("cast_shadow", False)
+    try:
+        unreal.EditorStaticMeshLibrary.remove_collisions(apron.static_mesh_component.static_mesh)
+    except Exception as exc:
+        hg.warn(f"DistantApron collision: {exc}")
     spawn_scatter("Scatter_chevrons", meshes["SM_HG_Chevron"], mats["chevron"], scatter.get("chevrons", []), tag, folder,
                   cull=(20000.0, 30000.0), collision=True, extra_tags=("RoadPosts",))
     spawn_scatter("Scatter_poles", meshes["SM_HG_UtilityPole"], mats["pole"], scatter.get("poles", []), tag, folder,

@@ -15,9 +15,9 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
           "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost",
           "SM_HG_Kapok_Trunk", "SM_HG_Kapok_Bloom", "SM_HG_Tree_Trunk", "SM_HG_Tree_Crown",
           "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
-          "SM_HG_DistantRanges", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
+          "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
           "SM_HG_StoneWall", "SM_HG_Monument"]
-PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_Chevron",
+PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron",
          "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument")
 NANITE = {m for m in MESHES if m not in PROPS}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}

@@ -70,6 +70,12 @@ public:
 	/** Seconds since the photo shutter (white flash on the HUD). */
 	float GetFlashTime() const { return FlashTime; }
 
+	/** Drop the active job (scripted playtest between missions). */
+	void AbortActive() { if (Missions.IsValidIndex(ActiveIndex)) { Missions[ActiveIndex].State = EHGMissionState::Available; } ActiveIndex = INDEX_NONE; Objective.Reset(); }
+
+	/** Distance (cm, 2D) from the player to the active job's target, or -1. */
+	float GetActiveDistance() const { return ActiveDistance; }
+
 	/** On foot near the dock: pay and board the dock cano. Returns true if it handled [F]. */
 	bool TryBoatHire(AHGPlayerCharacter* Player);
 
@@ -97,5 +103,6 @@ private:
 	FVector BoatHirePoint = FVector::ZeroVector;
 	int32 BustCountAtStart = 0;
 	bool bPassengerAboard = false;
+	float ActiveDistance = -1.f;
 	TWeakObjectPtr<AHGRoadSplineActor> Road;
 };
