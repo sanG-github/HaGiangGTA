@@ -58,8 +58,19 @@ class Shooter:
         self.handle = unreal.register_slate_post_tick_callback(self.tick)
 
     def tick(self, dt):
+        if self.done:
+            # Quit only after the screenshot toasts / async tasks have finished ticking: quitting while a Slate
+            # async-task notification is alive crashes the editor at teardown (and a CrashReportClient is left
+            # spinning - see ci_run_checkpoint.py).
+            self.quit_in -= min(dt, 0.5)
+            if self.quit_in <= 0.0 and not self.quitting:
+                self.quitting = True
+                unreal.unregister_slate_post_tick_callback(self.handle)
+                unreal.EditorPythonScripting.set_keep_python_script_alive(False)
+                unreal.SystemLibrary.quit_editor()
+            return
         # Loading/flush calls pump Slate, which re-enters this callback: ignore nested ticks.
-        if self.busy or self.done:
+        if self.busy:
             return
         self.busy = True
         try:
@@ -119,10 +130,9 @@ class Shooter:
         if self.done:
             return
         self.done = True
-        unreal.unregister_slate_post_tick_callback(self.handle)
-        unreal.log(f"[HG_SHOTS] done -> {OUT}")
-        unreal.EditorPythonScripting.set_keep_python_script_alive(False)
-        unreal.SystemLibrary.quit_editor()
+        self.quit_in = 10.0
+        self.quitting = False
+        unreal.log(f"[HG_SHOTS] done -> {OUT}; quitting in 10 s")
 
 
 Shooter()
