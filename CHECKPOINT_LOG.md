@@ -645,3 +645,34 @@ terrain vs 61.4 without. validate_layout: 0 FAIL.
   hazy far palette by ~6 km (no pale band at the seam; rim_000 / rim_240).
 - Dry-stone fences: 4 courses of 15-28 cm stones (were 3 courses of 26-48 cm boxes).
 - CP05 OK (deferred-quit runner), validate_layout 0 FAIL, no new crash folder / CrashReportClient.
+
+---
+
+## Stabilisation (agent A, after round 5)
+
+- **CrashReportClient pile-up (root cause)**: every editor run with -ExecutePythonScript that quit itself (CP05
+  rebuilds via ci_run_checkpoint.py - A's and B's - and B's probe scripts) crashed at static teardown:
+  `SNotificationExtendable::~SNotificationExtendable` <- `FSlotBase::~FSlotBase` / `SBoxPanel::~SBoxPanel` <-
+  `TBaseStaticDelegateInstance<bool(float), TWeakPtr<FSlateAsyncTaskNotificationImpl>, TSharedPtr<SNotificationItem>>`
+  <- `TDelegateBase::~TDelegateBase` (Core). `quit_editor()` was called inside the script frame while an editor
+  async-task toast still ticked; its delegate released the widget tree after Slate shut down. The crash comes after
+  the command line is released ("CommandLineRemoved"), so -nocrashreports no longer applied and an -Unattended
+  CrashReportClient started each time (~95 % CPU each). Fix: ci_run_checkpoint.py and ci_screenshots.py quit from
+  a Slate post-tick callback once the editor is idle (CP05: >= 12 s idle; shots: 10 s after the last one). Three CP05
+  runs since: exit 0, no crash folder, no reporter.
+- Harness: key taps by state (a 400 ms hitch skipped the 0.2 s tap window, so the pause menu's Enter never came and
+  the auto stages ran paused); the intro Enter press counted by frames (the first tick after the spawn screenshot
+  is a 300-400 ms hitch, which skipped the old window) - Enter was never "swallowed", the bot never pressed it;
+  chase timeout 120 s under load; engine screen messages off in -hgplaytest / -hgperf (DisableAllScreenMessages).
+- Ma Pi Leng drink stall: the blue awning floated 2.4 m over the stall with nothing under it - four posts.
+- Spawn_ThamMa census: 102 primitives (27 scatter HISMs with 56.7k instances, 23 road segments, 17 bikes, 17
+  landscape components). Runtime A/B overrides -hgtreecull=<m> / -hgtreeshadow=0 added; under the load at the time
+  (FPS 20-32) the A/B was inside the noise, so the defaults are unchanged.
+- Merged B's Round 4B (3332f66) and final (6db1c2d); Generated/ regenerated, CP05 rebuilt with the idle-quit runner.
+- Final, quiet machine (load 3.4-5.2, no CrashReportClient), merged tip with B's 6db1c2d:
+  - -hgperf x2 (locked, 1280x720 window): SUMMARY PASS both, min 79 FPS. Medians: Spawn_ThamMa 89, ThamMa eye 82,
+    ThamMa drone 120, MomDa ledge 88, MaPiLeng plaza 92.5, MaPiLeng drone 119.5, NhoQue rim 87, TaLang dock 83,
+    TuSan_boat 79 (GPU 11.8 / draw 12.6 ms), TuSan flycam 120.
+  - Final playtest: missions 4/4 PASS (boat tour back in 171 s), intro closed with Enter PASS, list + grip tyres
+    PASS (48 -> 58 km/h), pause + restart at a viewpoint PASS, profile round trip PASS; traffic 1 AI dead stop,
+    0 re-placements; average 75 FPS. CP05 rebuilt 3x with the idle-quit runner: no crash, no reporter.
