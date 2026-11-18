@@ -668,6 +668,21 @@ def far_terrain(tex) -> unreal.Material:
     col = g.lerp(col, rock, g.mul(steep, g.add(0.5, g.mul((n, "G"), 0.5))))
     valley = g.saturate(g.mul(g.sub(g.scalar("HazeTopZ", 90000.0), z), 1.0 / 45000.0))
     col = g.lerp(col, g.color("Haze", (0.15, 0.18, 0.21)), g.mul(valley, 0.2))
+    # Round 5B: near the map edge the far terrain takes the landscape's own tones (same dry grass / khaki / shrub
+    # colours as M_HG_Terrain) so the seam does not read as a pale band; from ~1.5 km beyond the edge it blends
+    # into the hazier far palette above, fully hazy from ~6 km out.
+    ax = g.node(unreal.MaterialExpressionAbs)
+    g.link(g.mask(wp, r=True), ax)
+    ay = g.node(unreal.MaterialExpressionAbs)
+    g.link(g.mask(wp, g=True), ay)
+    beyond = g.sub(g.binary(unreal.MaterialExpressionMax, ax, ay), g.scalar("MapHalfCm", 294336.0))
+    near = g.sub(1.0, g.saturate(g.mul(g.sub(beyond, 150000.0), 1.0 / 450000.0)))
+    dry_l = g.lerp(g.color("NearDry", (0.15, 0.12, 0.075)), g.color("NearKhaki", (0.17, 0.15, 0.08)), (n2, "G"))
+    green_l = g.lerp(g.color("NearShrub", (0.015, 0.04, 0.012)), g.color("NearShrubLight", (0.045, 0.085, 0.025)), (n, "G"))
+    col_n = g.lerp(dry_l, green_l, g.saturate(g.mul(g.sub(g.add((n, "R"), g.mul((n2, "B"), 0.5)), 0.45), 2.0)))
+    rock_n = g.mul(g.color("NearRock", (0.2, 0.195, 0.185)), g.add(0.7, g.mul((n2, "R"), 0.45)))
+    col_n = g.lerp(col_n, rock_n, g.mul(steep, g.add(0.5, g.mul((n, "G"), 0.5))))
+    col = g.lerp(col, col_n, near)
     g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(g.const(0.92), unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(g.const(0.3), unreal.MaterialProperty.MP_SPECULAR)
