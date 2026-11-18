@@ -32,7 +32,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
 
     step("Building materials")
     mats = materials.build_all(tex, layout["water"]["surface_z_cm"], layout)
-    mat_ring = hg.color_material("MI_GB_CheckIn", (1.0, 0.75, 0.05))
+    mat_ring = hg.color_material("MI_GB_CheckIn", (0.72, 0.52, 0.06))
     mat_wood = hg.color_material("MI_GB_Wood", (0.25, 0.14, 0.06))
 
     step("Opening level")
@@ -84,6 +84,9 @@ PHOTOREAL_STEPS = 9
 def finish_level(game_mode: str = GAME_MODE) -> None:
     hg.set_world_game_mode(game_mode)
     hg.editor_world().get_world_settings().set_editor_property("kill_z", 30000.0)   # river is at 420 m
+    # All heightmap mips resident: streamed ones showed stair-stepped terrain after every teleport.
+    if hasattr(unreal, "HGLandscapeBuilder"):
+        hg.log(f"Landscape textures pinned: {unreal.HGLandscapeBuilder.pin_landscape_textures()}")
     hg.save_current_level()
 
 

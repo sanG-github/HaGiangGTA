@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "HGPeopleBuilder.h"
 #include "HGPlayerCharacter.generated.h"
 
 class AHGVehicleBase;
@@ -100,6 +101,12 @@ private:
 	void UpdateFocusedVehicle();
 	void ApplyMaxSpeed();
 	void SetSeatedPose(bool bSeated);
+
+	/** Low-poly body (HGPeopleBuilder): standing (non la) and seated (helmet) rigs, procedurally animated. */
+	FHGPersonRig StandRig;
+	FHGPersonRig SeatRig;
+	bool bSeatedVisual = false;
+	void AnimateBody(float DeltaSeconds);
 
 	EHGOnFootState State = EHGOnFootState::Walking;
 	bool bSprinting = false;

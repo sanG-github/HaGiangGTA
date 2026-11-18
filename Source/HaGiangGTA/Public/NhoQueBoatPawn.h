@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "HGVehicleBase.h"
+#include "HGPeopleBuilder.h"
 #include "NhoQueBoatPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -106,6 +107,11 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Tuning") float TurnRollDeg = 9.f;
 
 private:
+	/** Cruise canoes: boatman at the stern wheel + seated tourists on the benches (HGPeopleBuilder). */
+	void BuildCrew();
+	TArray<FHGPersonRig> Crew;
+	bool bCrewBuilt = false;
+
 	bool HasWaterDepthAt(const FVector& Location, float SurfaceZ) const;
 	void ComputeCruiseInput(float& OutThrottle, float& OutSteer);
 	int32 CruiseIndex = 0;

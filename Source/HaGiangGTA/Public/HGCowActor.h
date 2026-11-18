@@ -58,6 +58,14 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<UStaticMeshComponent>> DarkParts;
 	UPROPERTY(Transient) TObjectPtr<USoundBase> LoadedMoo;
 
+	/** Low-poly kit animal (HGMeshKit): body, head on a neck pivot, four legs that swing when walking. */
+	void BuildKit();
+	void SetHeadRotation(const FRotator& R);
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitHead;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitTail;
+	UPROPERTY(Transient) TArray<TObjectPtr<UStaticMeshComponent>> KitLegs;
+	float StepPhase = 0.f;
+
 	FVector Home = FVector::ZeroVector;
 	FVector Target = FVector::ZeroVector;
 	float IdleTime = 0.f;

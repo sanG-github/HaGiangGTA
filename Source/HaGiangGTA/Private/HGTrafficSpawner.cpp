@@ -29,10 +29,6 @@ void AHGTrafficSpawner::BeginPlay()
 	FActorSpawnParameters Params;
 	Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
 
-	static const FLinearColor BikeColors[] = {
-		FLinearColor(0.55f, 0.02f, 0.02f), FLinearColor(0.05f, 0.08f, 0.35f), FLinearColor(0.08f, 0.08f, 0.08f),
-		FLinearColor(0.6f, 0.6f, 0.62f), FLinearColor(0.02f, 0.25f, 0.08f) };
-
 	for (const FHGConvoySpec& Spec : Convoys)
 	{
 		AHGGroundVehicle* Leader = nullptr;
@@ -50,7 +46,6 @@ void AHGTrafficSpawner::BeginPlay()
 				continue;
 			}
 			Bike->SetHasPassenger(FMath::FRand() < PassengerChance);
-			Bike->SetBodyColor(BikeColors[FMath::RandRange(0, int32(UE_ARRAY_COUNT(BikeColors)) - 1)]);
 			ConfigureBikeVariant(Bike, /*bConvoy*/ true, Convoys.IndexOfByPredicate([&Spec](const FHGConvoySpec& S) { return &S == &Spec; }));
 			// Stagger the column a little inside the lane so it reads as a group of riders.
 			const float Lane = LaneOffset + ((i % 2) ? 60.f : -40.f);
@@ -100,7 +95,6 @@ void AHGTrafficSpawner::BeginPlay()
 		if (AHGBikePawn* Bike = Cast<AHGBikePawn>(V))
 		{
 			Bike->SetHasPassenger(FMath::FRand() < 0.5f);
-			Bike->SetBodyColor(BikeColors[FMath::RandRange(0, int32(UE_ARRAY_COUNT(BikeColors)) - 1)]);
 			ConfigureBikeVariant(Bike, /*bConvoy*/ false, INDEX_NONE);
 		}
 		V->SetActorHiddenInGame(true);
@@ -116,12 +110,19 @@ void AHGTrafficSpawner::ConfigureBikeVariant(AHGBikePawn* Bike, bool bConvoy, in
 	{
 		return;
 	}
-	// Variant hook: every traffic bike passes through here with a reproducible seed. Easy Rider convoys share a
-	// tour group (same guide vests / tour bikes); solo traffic picks any local bike.
-	// TODO(merge with agent B's bike builder): Bike->SetBikeModel(HGBikeBuilder::RandomModel(Seed, bConvoy), Seed);
-	//                                        if (bConvoy) { Bike->SetTourGroup(ConvoyIndex); }
+	// Every traffic bike passes through here with a reproducible seed: Easy Rider convoys ride matching tour bikes
+	// (one tour group = one colour scheme per convoy); solo traffic is the local mix (Win, Wave, Dream, Sirius,
+	// loaded farm bikes). SetBodyColor afterwards would override the model's paint, so it is not called here.
 	const int32 Seed = int32(GetTypeHash(Bike->GetFName())) ^ (bConvoy ? (ConvoyIndex + 1) * 7919 : 0);
-	(void)Seed;
+	if (bConvoy)
+	{
+		Bike->SetBikeModel(EHGBikeModel::EasyRiderWin, Seed);
+		Bike->SetTourGroup(FMath::Max(ConvoyIndex, 0) % 4);
+	}
+	else
+	{
+		Bike->SetBikeModel(AHGBikePawn::RandomTrafficModel(Seed), Seed);
+	}
 }
 
 bool AHGTrafficSpawner::PlaceAmbient(AHGGroundVehicle* V, bool bTruck, float PlayerDist, int32 PlayerDir)

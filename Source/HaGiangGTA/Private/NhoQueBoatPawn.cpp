@@ -1,5 +1,6 @@
 #include "NhoQueBoatPawn.h"
 #include "HGPaint.h"
+#include "HGMeshKit.h"
 #include "HaGiangGTA.h"
 
 #include "Components/BoxComponent.h"
@@ -89,7 +90,9 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		SetPart(Hull, true, FVector(-30.f, 0.f, -5.f), FRotator::ZeroRotator, FVector(1180.f, 270.f, 90.f));
 		SetPart(Bow, true, FVector(575.f, 0.f, -5.f), FRotator(-90.f, 0.f, 0.f), FVector(270.f, 90.f, 140.f));
 		SetPart(Deck, true, FVector(-60.f, 0.f, 40.f), FRotator::ZeroRotator, FVector(1100.f, 250.f, 6.f));
-		SetPart(Windows, true, FVector(-60.f, 0.f, 120.f), FRotator::ZeroRotator, FVector(1040.f, 262.f, 70.f));
+		// Open-sided tour canoe: a low bulwark instead of the solid white "window" block, so the seated
+		// tourists show (the river boats in the photos are open under the red roof).
+		SetPart(Windows, true, FVector(-60.f, 0.f, 62.f), FRotator::ZeroRotator, FVector(1040.f, 262.f, 36.f));
 		SetPart(Canopy, true, FVector(-60.f, 0.f, 205.f), FRotator::ZeroRotator, FVector(1120.f, 290.f, 10.f));
 		SetPart(RoofStar, true, FVector(-60.f, 0.f, 212.f), FRotator::ZeroRotator, FVector(170.f, 170.f, 2.f));
 		SetPart(CanopyPostL, true, FVector(-60.f, -125.f, 120.f), FRotator::ZeroRotator, FVector(8.f, 8.f, 170.f));
@@ -189,7 +192,11 @@ void ANhoQueBoatPawn::BeginPlay()
 	Paint(Deck, bCano ? FLinearColor(0.35f, 0.2f, 0.1f) : FLinearColor(0.05f, 0.05f, 0.05f));
 	Paint(Canopy, FLinearColor(0.62f, 0.03f, 0.02f));   // co do sao vang roof
 	Paint(RoofStar, FLinearColor(1.f, 0.78f, 0.f));
-	Paint(Windows, FLinearColor(0.75f, 0.78f, 0.8f));
+	Paint(Windows, bCano ? FLinearColor(0.05f, 0.2f, 0.5f) : FLinearColor(0.75f, 0.78f, 0.8f));
+	if (bCano && bAutoCruise)
+	{
+		BuildCrew();
+	}
 	Paint(CanopyPostL, FLinearColor(0.7f, 0.7f, 0.7f));
 	Paint(CanopyPostR, FLinearColor(0.7f, 0.7f, 0.7f));
 	Paint(Motor, FLinearColor(0.08f, 0.08f, 0.1f));
@@ -358,6 +365,17 @@ bool ANhoQueBoatPawn::HasWaterDepthAt(const FVector& Location, float SurfaceZ) c
 void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	if (Crew.Num() > 0)
+	{
+		Crew[0].SetVisible(!IsPlayerControlled());
+		const float Wind = FMath::Clamp(FMath::Abs(Speed) / 1500.f, 0.f, 1.f);
+		for (int32 i = 0; i < Crew.Num(); ++i)
+		{
+			Crew[i].Wind = Wind;
+			Crew[i].bWave = i > 0 && FMath::Fmod(Crew[i].Clock + Crew[i].IdleSeed, 23.f) < 1.8f;
+			Crew[i].Animate(this, DeltaSeconds);
+		}
+	}
 	const float Dt = FMath::Min(DeltaSeconds, 1.f / 20.f);
 	const float Time = GetWorld()->GetTimeSeconds();
 
@@ -481,5 +499,64 @@ void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 	if (Loc.Z < SpawnTransform.GetLocation().Z - 100000.f)
 	{
 		ResetToSpawn();
+	}
+}
+
+void ANhoQueBoatPawn::BuildCrew()
+{
+	if (bCrewBuilt)
+	{
+		return;
+	}
+	bCrewBuilt = true;
+	const int32 Seed = int32(GetTypeHash(GetName()) & 0x7fffffff);
+	// Benches across the deck.
+	UStaticMesh* Benches = FHGMeshKit::Cached(TEXT("SM_HGBoatBenches"), [](FHGMeshKit& K)
+	{
+		for (int32 r = 0; r < 6; ++r)
+		{
+			const float X = -400.f + r * 140.f;
+			K.Paint(FLinearColor(0.3f, 0.17f, 0.08f), HGSurf::Satin);
+			K.Box(FVector(X, 0.f, 80.f), FVector(34.f, 236.f, 5.f));
+			K.Paint(FLinearColor(0.2f, 0.11f, 0.05f), HGSurf::Satin);
+			K.Box(FVector(X, -90.f, 61.f), FVector(6.f, 6.f, 38.f));
+			K.Box(FVector(X, 90.f, 61.f), FVector(6.f, 6.f, 38.f));
+		}
+	});
+	if (UStaticMeshComponent* B = FHGMeshKit::AddComponent(this, HullRoot, Benches, TEXT("Benches"), FVector::ZeroVector))
+	{
+		B->SetCullDistance(12000.f);
+	}
+	// Boatman at the stern wheel.
+	FHGPersonRig Boatman = HGPeople::Spawn(this, DriverSeat, EHGPersonLook::LocalMan, EHGPersonPose::Rider, Seed % 4, TEXT("Boatman"));
+	Crew.Add(Boatman);
+	// Tourists: some benches full, some empty; a mix of backpackers, Easy Rider groups and locals.
+	int32 n = 0;
+	for (int32 r = 0; r < 6; ++r)
+	{
+		for (const float Y : { -60.f, 60.f })
+		{
+			const int32 h = (Seed >> ((n % 12) + 1)) + n * 7;
+			++n;
+			if ((h % 5) < 2)   // ~60 % of the seats taken
+			{
+				continue;
+			}
+			const EHGPersonLook Look = (h % 4 == 1) ? EHGPersonLook::HmongWoman : ((h % 4 == 2) ? EHGPersonLook::LocalMan : EHGPersonLook::Backpacker);
+			FHGPersonRig P = HGPeople::Spawn(this, HullRoot, Look, EHGPersonPose::Passenger, h % 4, *FString::Printf(TEXT("Tourist%d"), n),
+				FVector(-400.f + r * 140.f - 2.f, Y, 83.f), Look == EHGPersonLook::Backpacker && (h & 1));
+			P.IdleSeed += float(n) * 3.1f;
+			Crew.Add(P);
+		}
+	}
+	for (FHGPersonRig& P : Crew)
+	{
+		for (UStaticMeshComponent* C : { P.Body, P.Head, P.Arm[0], P.Arm[1], P.ScarfTail })
+		{
+			if (C)
+			{
+				C->SetCullDistance(7000.f);   // a few pixels under the roof past 70 m (boat stage was 5-15 FPS down)
+			}
+		}
 	}
 }

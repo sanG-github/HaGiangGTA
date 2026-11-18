@@ -321,3 +321,58 @@ Known / open: AI still re-places itself ("unstick") at the 47 decimated hairpins
 2.77 km: the spline turns 128 deg in 5 m, bikes swing onto the rim wall) and where the road profile is off the
 landscape (dock spur, up to 14 m): road data in gen_heightmap, next round. The test window was sometimes shrunk
 to 679 px by another Unreal instance starting; the playtest now restores 1280x720 when that happens.
+
+## Round 2B - visual realism (agent B, `worktree-agent-a492f1a4f1c84f0fb`, merged A's ea0b965)
+
+Root causes:
+- **Stair-stepped terrain / flat green slab** (09_W_straight, 08_after_R): not the heightmap (bicubic DEM, 2.3 cm
+  steps) and not DistantRanges (5-14 km ring). The playtest shot was taken one frame after a 1.6 km teleport, and
+  the landscape heightmaps are *streamed*: the vertex shader point-samples whatever mip is resident, so until the
+  streamer catches up the terrain is built from a coarse mip -> 6-50 m terraces and flat slabs. Players hit the
+  same after any respawn / [R] / teleport. Fix: `UHGLandscapeBuilder::PinLandscapeTextures` (NeverStream on the
+  64 heightmap / weightmap textures, ~90 MB) called by `scenes.finish_level` before saving. (A also moved the
+  playtest screenshot before its teleports.)
+- **Red smear / white halo**: the sun is a non-physical 10 lux, but the bike lights were real candelas: tail
+  15 / 60 cd lit the road at ~26 lux (2.6x the sun) metres around the bike; the 1500 cd headlamp sat next to the
+  rider's arms and hat; police 400 cd, Happy Water 30 cd. Now 4 cd head / 0.25-1 cd tail / 3 cd police /
+  3 cd pickup with short radii and no specular / volumetric, and the lamps read through small unlit emissive
+  lenses (`M_HG_Lamp`, MID "Intensity": brake light, flashing light bar) that cast nothing and stay out of Lumen.
+- **"Orange block" rider**: the passenger's 52 cm orange rain cover hid everything in the chase view.
+- **Washed-out first pass of the new people / bikes**: the static-mesh build stores vertex colours as sRGB bytes
+  but the material's VertexColor node returns the bytes as-is (linear 0.02 black came out 0.15 grey):
+  `FHGMeshKit` pre-decodes.
+- **Oil-stain asphalt**: `wet_asphalt` lerped to near-black "puddle" patches wherever the 3 m noise passed 0.6.
+
+New: `HGMeshKit` (runtime-built merged vertex-colour meshes: box / tube / ellipsoid / pleated frustum / torus,
+cached per archetype, one draw per part, `M_HG_VertexColor` with surface class in UV.x and a "Tint" mask in UV.y),
+`HGPeopleBuilder` (`FHGPersonRig`: core + head + arms + legs + scarf tail on pivots, procedural walk / idle /
+photo / wave / scream / steer-and-lean animation, off past 60 m; looks: H'Mong woman with pleated batik skirt,
+leg wraps, head wrap, basket or tho cam bag; local men; backpackers with yellow duck-bill "non vit" helmets;
+Easy Rider guides in 4 tour colours with tho cam scarves; player; CSGT police), `HGBikeBuilder`
+(`EHGBikeModel` Win / Wave / Dream / Sirius / EasyRiderWin / LocalLoaded: spoked wheels with knobby or street
+tyres, raked fork, tank, seat, big rack, exhaust with heat shield, shocks, lamps, plate, flag; grass / firewood /
+pig-basket loads), `HGReviewDirector` (`-game -hgreview`: close-up shots of every bike model, riders, animals,
+truck, boat and crowds -> Saved/HG_CI/Review). Cows / pack horse and the Thaco dump truck rebuilt with the kit;
+cruise canoes open-sided with benches, boatman and tourists. Asphalt: bleached grey, wheel paths, crack seals,
+rare low-contrast patches, faded paint. Ta Lang concrete: per-pour slab tone, broom grain, sawn joints, tyre
+grime, red dust. Haze: thinner / bluer height fog starting at 25 m + SkyAtmosphere aerial perspective x2.2.
+Check-in ring painted as a dashed circle instead of a 4 m yellow disc.
+
+API for traffic: `AHGBikePawn::SetBikeModel(EHGBikeModel, Seed)`, `SetTourGroup(0..3)`,
+`AHGBikePawn::RandomTrafficModel(Seed)` (weighted mix); call right after spawning (or any time: visuals rebuild).
+Without a call a bike picks from its name (passenger -> Win / EasyRiderWin, else the local mix).
+
+Perf (M1 Pro, 1280x720, every FPS run under /tmp/hg_perf.lock): playtest before (65f6559) 67.0 FPS average,
+checks 64-76; after (this branch incl. A's ea0b965) **69.2 FPS average**, bike checks 68-85, boat stage 51-68
+(was 59-66). -hgperf spots 75-80 / 66-74 FPS; `-hgnokit` A/B (no kit people / bikes / animals at all) gives
+the same numbers within run-to-run noise (+-7 FPS on this machine). Budget: one draw per person part (core /
+head / 2 arms / 2 legs / scarf), bike = body + 2 wheels + 2 lamps; people culled at 150 m (boat crews 70 m), only
+core + legs cast shadows, poses at half rate past 20 m and frozen past 60 m.
+validate_layout: 119 checks, 0 FAIL (4 pre-existing road / terrain / heli warnings).
+Self-review fixes (from -hgreview / playtest shots): bleached colours (sRGB vertex colours), backpacker floating
+alone on parked bikes, knobby tyres on scooters, step-through shield with daylight round it, mannequin legs /
+flipper feet, 4 m yellow check-in disc, 30 cd yellow pool under the Happy Water bottle, the player's rental
+turning into a luggage-stacked tour bike, faded-to-nothing centre line, giraffe-necked pack horse.
+Open: Ta Lang slab joints still hard to read from the chase camera; DistantRanges is a flat blue band; people
+are mannequin-like at close range (no faces / hands detail); boat crews sit under the roof and are mostly hidden
+from the high boat camera.

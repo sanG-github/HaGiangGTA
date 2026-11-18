@@ -19,6 +19,6 @@ public class HaGiangGTA : ModuleRules
 			"SlateCore"
 		});
 
-		PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI", "Json" });
+		PrivateDependencyModuleNames.AddRange(new string[] { "RenderCore", "RHI", "Json", "MeshDescription", "StaticMeshDescription" });
 	}
 }
