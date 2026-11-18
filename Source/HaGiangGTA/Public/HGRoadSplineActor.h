@@ -54,6 +54,22 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Road")
 	float RoadThickness = 10.f;
 
+	/** From this distance along the spline (cm) the road changes surface (e.g. the narrow concrete
+	 *  Ta Lang road after the QL4C asphalt). < 0 = one surface for the whole road. Gameplay (AI, minimap,
+	 *  police) still sees a single continuous road. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Road")
+	float SecondaryFromDistance = -1.f;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Road")
+	TObjectPtr<UMaterialInterface> SecondaryMaterial;
+
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Road")
+	float SecondaryWidth = 400.f;
+
+	/** Road width (cm) at a distance along the spline: blends to SecondaryWidth over 20 m. */
+	UFUNCTION(BlueprintPure, Category = "HaGiang|Road")
+	float GetWidthAtDistance(float DistanceCm) const;
+
 	/** Length of each spline-mesh piece (cm). Shorter = smoother hairpins. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Road")
 	float SegmentLength = 800.f;

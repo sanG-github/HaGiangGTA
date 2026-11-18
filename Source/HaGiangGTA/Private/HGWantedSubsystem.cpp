@@ -98,10 +98,13 @@ AHGRoadSplineActor* UHGWantedSubsystem::FindRoad()
 {
 	if (!CachedRoad)
 	{
+		// Main route = the longest road (QL4C stubs to the map edge are scenery).
 		for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It)
 		{
-			CachedRoad = *It;
-			break;
+			if (!CachedRoad || It->GetRoadLength() > CachedRoad->GetRoadLength())
+			{
+				CachedRoad = *It;
+			}
 		}
 	}
 	return CachedRoad;

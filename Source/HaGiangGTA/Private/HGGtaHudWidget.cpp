@@ -103,16 +103,24 @@ void UHGGtaHudWidget::CacheRoad()
 	{
 		return;
 	}
+	// Minimap: the main route (longest road) - stubs would draw stray lines between polylines.
+	const AHGRoadSplineActor* Main = nullptr;
 	for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It)
 	{
-		const USplineComponent* Spline = It->GetSpline();
+		if (!Main || It->GetRoadLength() > Main->GetRoadLength())
+		{
+			Main = *It;
+		}
+	}
+	if (Main)
+	{
+		const USplineComponent* Spline = Main->GetSpline();
 		const float Len = Spline->GetSplineLength();
 		for (float D = 0.f; D <= Len; D += 1200.f)
 		{
 			const FVector P = Spline->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
 			RoadPoints.Add(FVector2D(P.X, P.Y));
 		}
-		break;
 	}
 }
 

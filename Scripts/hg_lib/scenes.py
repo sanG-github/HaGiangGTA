@@ -34,7 +34,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
     flute = assets.import_flute()
 
     step("Building materials")
-    mats = materials.build_all(tex)
+    mats = materials.build_all(tex, layout["water"]["surface_z_cm"], layout)
     mat_ring = hg.color_material("MI_GB_CheckIn", (1.0, 0.75, 0.05))
     mat_wood = hg.color_material("MI_GB_Wood", (0.25, 0.14, 0.06))
 
@@ -51,9 +51,11 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
             hg.warn(f"Nanite landscape: {exc} (enable it in the Landscape details panel)")
 
     step("Road, river, dock, vehicles")
-    road = world.build_road(layout, mats["asphalt"], tag, f"{prefix}/Road", meshes.get("SM_HG_RoadStrip"))
+    road = world.build_road(layout, mats["asphalt"], tag, f"{prefix}/Road", meshes.get("SM_HG_RoadStrip"),
+                            concrete=mats.get("concrete"))
     world.build_water(layout, mats["water"], tag, f"{prefix}/Water")
     world.build_dock(layout, mat_wood, tag, f"{prefix}/Dock")
+    world.build_dam(layout, mats, tag, f"{prefix}/Dam")
     world.build_checkin_rings(layout, mat_ring, tag, f"{prefix}/Viewpoints")
     world.build_vehicles(layout, tag, f"{prefix}/Vehicles")
 
@@ -66,6 +68,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
     step("Viewpoints + PlayerStart")
     world.build_viewpoints(scatter, flute, tag, f"{prefix}/Viewpoints", viewpoint_names)
     world.build_viewpoint_props(layout, scatter, meshes, mats, tag, f"{prefix}/Viewpoints")
+    world.build_landmarks(layout, meshes, mats, mat_wood, tag, f"{prefix}/Landmarks")
     world.build_set_dressing(scatter, meshes, mats, tag, f"{prefix}/Dressing")
     world.build_river_traffic(layout, tag, f"{prefix}/River")
     world.build_player_start(layout, tag, f"{prefix}/Gameplay")
@@ -78,7 +81,7 @@ PHOTOREAL_STEPS = 9
 
 def finish_level(game_mode: str = GAME_MODE) -> None:
     hg.set_world_game_mode(game_mode)
-    hg.editor_world().get_world_settings().set_editor_property("kill_z", 60000.0)
+    hg.editor_world().get_world_settings().set_editor_property("kill_z", 30000.0)   # river is at 420 m
     hg.save_current_level()
 
 

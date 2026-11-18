@@ -15,9 +15,10 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
           "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost",
           "SM_HG_Kapok_Trunk", "SM_HG_Kapok_Bloom", "SM_HG_Tree_Trunk", "SM_HG_Tree_Crown",
           "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
-          "SM_HG_DistantRanges", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof"]
+          "SM_HG_DistantRanges", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
+          "SM_HG_StoneWall", "SM_HG_Monument"]
 PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_Chevron",
-         "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof")
+         "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument")
 NANITE = {m for m in MESHES if m not in PROPS}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
 COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
@@ -46,7 +47,7 @@ def run_generator(script: str, check_file: str) -> None:
 
 
 def ensure_generated() -> None:
-    run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_HouseRoof.obj")
+    run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_Monument.obj")
     run_generator("gen_scatter.py", "Generated/Assets/Textures/T_HG_PathMask.png")
 
 
@@ -152,7 +153,8 @@ def import_meshes(force: bool = False) -> dict:
             body = mesh.get_editor_property("body_setup")
             if name in COMPLEX_COLLISION and body is not None:
                 body.set_editor_property("collision_trace_flag", unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
-            elif name in ("SM_HG_RoadPost", "SM_HG_Guardrail", "SM_HG_UtilityPole", "SM_HG_HouseWalls"):
+            elif name in ("SM_HG_RoadPost", "SM_HG_Guardrail", "SM_HG_UtilityPole", "SM_HG_HouseWalls",
+                          "SM_HG_StoneWall", "SM_HG_Monument"):
                 sm_sub.remove_collisions(mesh)
                 sm_sub.add_simple_collisions(mesh, unreal.ScriptCollisionShapeType.BOX)
             unreal.EditorAssetLibrary.save_loaded_asset(mesh)

@@ -623,7 +623,7 @@ def make_set_dressing(rng):
     verts, faces = [], []
     for j, r in enumerate(radii):
         for i, a in enumerate(ang):
-            h = (30000.0 + 110000.0 * ridge[j, i]) * envelope[j]
+            h = (60000.0 + 150000.0 * ridge[j, i]) * envelope[j]
             verts.append((np.cos(a) * r, np.sin(a) * r, h))
     for j in range(rings - 1):
         for i in range(seg):
@@ -654,6 +654,13 @@ def make_set_dressing(rng):
     rv = np.array([(-520, -380, 300), (520, -380, 300), (520, 380, 300), (-520, 380, 300), (-520, 0, 470), (520, 0, 470)], float)
     rf = np.array([(0, 1, 5), (0, 5, 4), (3, 4, 5), (3, 5, 2), (0, 4, 3), (1, 2, 5)])
     write_obj(out / "SM_HG_HouseRoof.obj", rv, rf)
+
+    # Low dry-stone wall segment (4 m) for the Ma Pi Leng edge and the Mom Da fence.
+    v, f = boxes([(200, 0, 35, 400, 45, 70), (200, 0, 76, 400, 52, 12)])
+    write_obj(out / "SM_HG_StoneWall.obj", v, f)
+    # Youth Volunteers monument at the Ma Pi Leng summit: stepped plinth + tapering obelisk.
+    v, f = boxes([(0, 0, 40, 420, 420, 80), (0, 0, 110, 300, 300, 60), (0, 0, 520, 120, 120, 760), (0, 0, 930, 80, 80, 60)])
+    write_obj(out / "SM_HG_Monument.obj", v, f)
 
 
 def main():

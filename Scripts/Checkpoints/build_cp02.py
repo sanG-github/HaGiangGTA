@@ -90,7 +90,7 @@ def build():
 
         task.enter_progress_frame(1, "World settings + save")
         hg.set_world_game_mode(GAME_MODE)
-        hg.editor_world().get_world_settings().set_editor_property("kill_z", 60000.0)
+        hg.editor_world().get_world_settings().set_editor_property("kill_z", 30000.0)
         hg.save_current_level()
 
     hg.log("CP02 built. Play: WASD walk, F ride the Honda Win, drive to Ta Lang dock, F to take the cano/kayak.")

@@ -50,20 +50,69 @@ def build_landscape(layout, tag, folder, material=None):
 
 
 def build_water(layout, material, tag, folder):
-    actor = hg.spawn_actor(unreal.HGWaterBody, "Water_NhoQue", (0, 0, layout["water"]["surface_z_cm"]), (0, 0, 0),
-                           tag, folder)
-    actor.set_editor_property("water_material", material)
-    actor.set_editor_property("size_cm", unreal.Vector2D(403200.0, 403200.0))
-    rerun(actor)
-    return actor
+    """Nho Que 1 reservoir (420 m) up to the dam, and the lower river below it."""
+    water = layout["water"]
+    if water.get("bodies"):
+        # Real map: rotated planes following the reservoir + one below the dam (gen_heightmap.py).
+        actors = []
+        for b in water["bodies"]:
+            actor = hg.spawn_actor(unreal.HGWaterBody, b["name"], (b["center_cm"][0], b["center_cm"][1], b["z_cm"]),
+                                   (0, b["yaw"], 0), tag, folder)
+            actor.set_editor_property("water_material", material)
+            actor.set_editor_property("size_cm", unreal.Vector2D(*b["size_cm"]))
+            rerun(actor)
+            actors.append(actor)
+        return actors[0]
+    half = layout["heightmap"].get("half_m", 2016.0) * 100.0
+    dam_y = water.get("dam_y_cm", half)
+    bodies = [("Water_NhoQue_Reservoir", water["surface_z_cm"], -half, dam_y)]
+    if dam_y < half:
+        bodies.append(("Water_NhoQue_BelowDam", water.get("downstream_surface_z_cm", water["surface_z_cm"]), dam_y, half))
+    actors = []
+    for name, z, y0, y1 in bodies:
+        actor = hg.spawn_actor(unreal.HGWaterBody, name, (0, (y0 + y1) * 0.5, z), (0, 0, 0), tag, folder)
+        actor.set_editor_property("water_material", material)
+        actor.set_editor_property("size_cm", unreal.Vector2D(2 * half, y1 - y0))
+        rerun(actor)
+        actors.append(actor)
+    return actors[0]
 
 
-def build_road(layout, material, tag, folder, strip_mesh=None):
-    """strip_mesh: SM_HG_RoadStrip (top at z=0, lane-paint UVs). Without it the engine cube is used."""
+def build_dam(layout, mats, tag, folder):
+    """Nho Que 1 hydropower dam: concrete gravity wall with spillway piers and a powerhouse."""
+    dam = layout["water"].get("dam")
+    if not dam:
+        return
+    x, y, z0 = dam["location_cm"]
+    crest = dam["crest_z_cm"]
+    yaw = dam["yaw"] + 90.0                         # wall across the river
+    concrete = mats.get("pole")
+    h = crest - z0
+    hg.box("Dam_NhoQue1_Wall", (x, y, z0 + h * 0.5), (dam["width_cm"], 1600, h), yaw=yaw, material=concrete,
+           tag=tag, folder=folder)
+    r = math.radians(yaw)
+    for i in range(5):
+        off = (i - 2) * 1700.0
+        hg.box(f"Dam_Pier_{i}", (x + math.cos(r) * off, y + math.sin(r) * off, crest + 350), (250, 1700, 700),
+               yaw=yaw, material=concrete, tag=tag, folder=folder)
+    hg.box("Dam_Bridge", (x, y, crest + 760), (dam["width_cm"], 700, 60), yaw=yaw, material=concrete, tag=tag,
+           folder=folder)
+    side = dam["width_cm"] * 0.5 + 1500.0
+    hg.box("Dam_Powerhouse", (x + math.cos(r) * side, y + math.sin(r) * side, z0 + 900), (2200, 1600, 1800), yaw=yaw,
+           material=mats.get("house_wall"), tag=tag, folder=folder)
+
+
+def build_road(layout, material, tag, folder, strip_mesh=None, concrete=None):
+    """strip_mesh: SM_HG_RoadStrip (top at z=0, lane-paint UVs). Without it the engine cube is used.
+    concrete: material for the narrow Ta Lang concrete road (from layout road.concrete_from_m on)."""
     road = layout["road"]
     actor = hg.spawn_actor(unreal.HGRoadSplineActor, "Road_MaPiLeng", (0, 0, 0), (0, 0, 0), tag, folder)
     actor.set_editor_property("road_material", material)
     actor.set_editor_property("road_width", road["half_width_cm"] * 2.0)
+    if concrete is not None and "concrete_from_m" in road:
+        actor.set_editor_property("secondary_material", concrete)
+        actor.set_editor_property("secondary_width", road["concrete_half_width_cm"] * 2.0)
+        actor.set_editor_property("secondary_from_distance", road["concrete_from_m"] * 100.0)
     offset = ROAD_MESH_OFFSET_CM
     if strip_mesh is not None:
         actor.set_editor_property("road_mesh", strip_mesh)
@@ -73,6 +122,18 @@ def build_road(layout, material, tag, folder, strip_mesh=None):
     actor.set_road_points(pts)
     actor.rebuild_road_meshes()
     hg.log(f"Road: {len(pts)} points, {road['length_m'] / 1000:.2f} km")
+    # QL4C continuing beyond the route to the map edge (scenery; AI/minimap use the longest road).
+    for k, stub in enumerate(road.get("stubs_cm", [])):
+        if len(stub) < 3:
+            continue
+        sa = hg.spawn_actor(unreal.HGRoadSplineActor, f"Road_QL4C_Stub_{k}", (0, 0, 0), (0, 0, 0), tag, folder)
+        sa.set_editor_property("road_material", material)
+        sa.set_editor_property("road_width", road["half_width_cm"] * 2.0)
+        if strip_mesh is not None:
+            sa.set_editor_property("road_mesh", strip_mesh)
+            sa.set_editor_property("road_thickness", 100.0)
+        sa.set_road_points([unreal.Vector(p[0], p[1], p[2] + offset) for p in stub])
+        sa.rebuild_road_meshes()
     return actor
 
 
@@ -175,6 +236,7 @@ def build_scatter(scatter, meshes, mats, tag, folder):
         "kapok": (("SM_HG_Kapok_Trunk", "kapok_bark"), ("SM_HG_Kapok_Bloom", "kapok_bloom")),
         "broadleaf": (("SM_HG_Tree_Trunk", "bark"), ("SM_HG_Tree_Crown", "leaf")),
         "pine": (("SM_HG_Pine_Trunk", "bark"), ("SM_HG_Pine_Crown", "pine")),
+        "peach": (("SM_HG_Tree_Trunk", "bark"), ("SM_HG_Kapok_Bloom", "peach")),
     }
     for kind, parts in tree_parts.items():
         items = scatter.get("trees", {}).get(kind, [])
@@ -187,26 +249,28 @@ def build_scatter(scatter, meshes, mats, tag, folder):
     if scatter.get("guardrails") and "SM_HG_Guardrail" in meshes:
         spawn_scatter("Scatter_guardrails", meshes["SM_HG_Guardrail"], mats["guardrail"], scatter["guardrails"], tag,
                       folder, cull=(18000.0, 26000.0), collision=True, shadows=True, extra_tags=("RoadPosts",))
+    if scatter.get("stone_walls") and "SM_HG_StoneWall" in meshes:
+        spawn_scatter("Scatter_stone_walls", meshes["SM_HG_StoneWall"], mats["stone"], scatter["stone_walls"], tag,
+                      folder, cull=(30000.0, 40000.0), collision=True, shadows=True, extra_tags=("RoadPosts",))
     counts = {k: len(v) for k, v in scatter.items() if isinstance(v, list)}
     hg.log(f"Scatter instances: {counts}")
 
 
 def build_golden_hour(tag, folder):
-    """Late-afternoon sun from the south-east (13 deg), raking along the N-S Tu San canyon so the
-    light shafts run down the gorge, lighting the east-facing Ma Pi Leng rim, the spur and the
-    south-facing Tham Ma hairpins. Valley mist (height fog) pools below ~950 m - the 'sea of
-    clouds' seen from the pass - while the VolumetricCloud layer sits above the peaks.
-    (Composition checked with Scripts/Tools/render_viewpoints.py.)"""
-    # Bright dry-season afternoon like the reference photos: sun 38 deg up from the south-east.
-    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun", (0, 0, 200000), (-62.0, 95.0, 0), tag, folder)   # near-midday, like the photos
+    """Locked weather (docs/ART_BIBLE.md): late March ~10:30, clear dry-season sky with light haze.
+    Sun ~50 deg up from the east-south-east (map +X = east, +Y = south), so the east-facing Ma Pi Leng
+    wall and the Tham Ma bends are lit and the gorge floor still gets light. No VolumetricCloud on the
+    M1 profile (measured -10..-25 FPS); exponential height fog gives the aerial haze only."""
+    # Map axes: +X east, +Y south (north is -Y). Light travelling WNW from an ESE sun: yaw atan2(-0.383, -0.924).
+    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun", (0, 0, 200000), (-50.0, -157.5, 0), tag, folder)
     sc = sun.get_component_by_class(unreal.DirectionalLightComponent)
     sc.set_mobility(unreal.ComponentMobility.MOVABLE)
     for k, v in (("intensity", 10.0), ("use_temperature", True), ("temperature", 5600.0),
                  ("atmosphere_sun_light", True), ("cast_cloud_shadows", True),
                  ("enable_light_shaft_bloom", True), ("enable_light_shaft_occlusion", True),
                  ("bloom_scale", 0.25), ("volumetric_scattering_intensity", 1.6),
-                 # M1: 3 cascaded shadow maps out to 400 m; no distance-field shadows (banding on steep landscape).
-                 ("dynamic_shadow_cascades", 3), ("dynamic_shadow_distance_movable_light", 40000.0),
+                 # M1 budget: 3 cascaded shadow maps out to 150 m (400 m cost ~12 FPS); no DF shadows (banding).
+                 ("dynamic_shadow_cascades", 3), ("dynamic_shadow_distance_movable_light", 15000.0),
                  ("cascade_distribution_exponent", 3.0), ("use_ray_traced_distance_field_shadows", False)):
         try:
             sc.set_editor_property(k, v)
@@ -226,26 +290,24 @@ def build_golden_hour(tag, folder):
     skc.set_editor_property("real_time_capture", True)
     skc.set_editor_property("intensity", 1.35)      # brighter shade on the west-facing canyon walls
 
-    cloud = hg.spawn_actor(unreal.VolumetricCloud, "SeaOfClouds", (0, 0, 0), (0, 0, 0), tag, folder)
-    cc = cloud.get_component_by_class(unreal.VolumetricCloudComponent)
-    cloud_mat = unreal.EditorAssetLibrary.load_asset("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst")
-    if cloud_mat:
-        cc.set_editor_property("material", cloud_mat)
-    else:
-        hg.warn("Engine volumetric cloud material not found; using component default.")
-    cc.set_editor_property("layer_bottom_altitude", 1.65)   # km above sea level: clouds hugging the summits
-    cc.set_editor_property("layer_height", 2.0)
+    if hg.PROFILE == "sm6":
+        cloud = hg.spawn_actor(unreal.VolumetricCloud, "Cumulus", (0, 0, 0), (0, 0, 0), tag, folder)
+        cc = cloud.get_component_by_class(unreal.VolumetricCloudComponent)
+        cloud_mat = unreal.EditorAssetLibrary.load_asset("/Engine/EngineSky/VolumetricClouds/m_SimpleVolumetricCloud_Inst")
+        if cloud_mat:
+            cc.set_editor_property("material", cloud_mat)
+        cc.set_editor_property("layer_bottom_altitude", 2.6)
+        cc.set_editor_property("layer_height", 1.5)
 
-    # Fog actor at 820 m with a steep falloff: dense mist in the valleys and the gorge,
-    # clear air at the 1200 m road -> looking down from the pass reads as a sea of clouds.
-    fog = hg.spawn_actor(unreal.ExponentialHeightFog, "ValleyMist", (0, 0, 82000), (0, 0, 0), tag, folder)
+    # Dry-season haze: thin fog from the reservoir up, no valley "sea of clouds" at 10:30.
+    fog = hg.spawn_actor(unreal.ExponentialHeightFog, "Haze", (0, 0, 42000), (0, 0, 0), tag, folder)
     fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
     # UE falloff is per 1000 uu: 0.08 -> density e-folds every ~125 m above the fog actor.
-    for k, v in (("fog_density", 0.0035), ("fog_height_falloff", 0.05),
+    for k, v in (("fog_density", 0.0028), ("fog_height_falloff", 0.04),
                  ("fog_inscattering_luminance", unreal.LinearColor(0.32, 0.38, 0.45, 1.0)),
-                 ("directional_inscattering_luminance", unreal.LinearColor(0.9, 0.6, 0.35, 1.0)),
+                 ("directional_inscattering_luminance", unreal.LinearColor(0.75, 0.68, 0.55, 1.0)),
                  ("directional_inscattering_exponent", 6.0),
-                 ("enable_volumetric_fog", True), ("volumetric_fog_scattering_distribution", 0.65),
+                 ("enable_volumetric_fog", hg.PROFILE == "sm6"), ("volumetric_fog_scattering_distribution", 0.65),
                  ("volumetric_fog_extinction_scale", 1.2), ("volumetric_fog_distance", 25000.0),
                  ("fog_max_opacity", 0.75), ("start_distance", 1500.0)):
         try:
@@ -320,6 +382,76 @@ def build_viewpoint_props(layout, scatter, meshes, mats, tag, folder):
     girl.set_editor_property("look_at_point", hg.vec(centre))
 
 
+def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
+    """Landmarks from docs/ART_BIBLE.md section 3, on the pads stamped by gen_heightmap.py:
+    Ma Pi Leng summit (Youth Volunteers monument, name stone, Panorama cafe), Doc Tham Ma coffee shop
+    with Hmong pack horses, Ta Lang dock yard (ticket booth, cafe deck)."""
+    marks = layout.get("landmarks", {})
+    if not marks:
+        hg.warn("layout has no landmarks; regenerate the heightmap")
+        return
+    walls, roof = meshes.get("SM_HG_HouseWalls"), meshes.get("SM_HG_HouseRoof")
+    mesh_path = lambda m: m.get_path_name()
+
+    def frame(key):
+        m = marks[key]
+        x, y, z = m["location_cm"]
+        yaw = m["yaw"]
+        tx, ty = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+        ux, uy = m["up"]
+        at = lambda along, up, dz=0.0: (x + tx * along * 100 + ux * up * 100, y + ty * along * 100 + uy * up * 100, z + dz * 100)
+        return at, yaw
+
+    def building(label, at_xyz, yaw, scale, wall_mat, roof_mat):
+        hg.spawn_mesh(f"{label}_Walls", mesh_path(walls), at_xyz, (0, yaw, 0), scale, wall_mat, tag, folder)
+        hg.spawn_mesh(f"{label}_Roof", mesh_path(roof), at_xyz, (0, yaw, 0), scale, roof_mat, tag, folder, collision=False)
+
+    if "ma_pi_leng_plaza" in marks:
+        at, yaw = frame("ma_pi_leng_plaza")
+        if "youth_monument" not in marks:
+            hg.spawn_mesh("MPL_Monument", mesh_path(meshes["SM_HG_Monument"]), at(6, 2, -0.1), (0, yaw, 0), (1, 1, 1),
+                          mats["monument"], tag, folder)
+        # Name stone: a big upright limestone block by the road edge.
+        hg.spawn_mesh("MPL_NameStone", mesh_path(meshes["SM_HG_Boulder_01"]), at(-6, -4, -0.3), (0, yaw + 90, 0),
+                      (1.1, 0.45, 1.0), mats["monument"], tag, folder)
+        building("MPL_PanoramaCafe", at(-15, 4.5, -0.1), yaw, (1.25, 1.0, 1.05), mats["cafe_wall"], mats["roof_green"])
+        stall = at(16, 3.5, 0.0)
+        hg.box("MPL_DrinkStall", (stall[0], stall[1], stall[2] + 55), (260, 120, 110), yaw=yaw, material=mat_wood, tag=tag, folder=folder)
+        hg.box("MPL_StallAwning", (stall[0], stall[1], stall[2] + 240), (320, 220, 8), yaw=yaw,
+               material=mats["roof_blue"], tag=tag, folder=folder, collision=False)
+
+    if "youth_monument" in marks:
+        at, yaw = frame("youth_monument")
+        hg.spawn_mesh("YouthVolunteers_Monument", mesh_path(meshes["SM_HG_Monument"]), at(0, 2, -0.1), (0, yaw, 0),
+                      (1, 1, 1), mats["monument"], tag, folder)
+
+    if "tham_ma_cafe" in marks:
+        at, yaw = frame("tham_ma_cafe")
+        building("ThamMa_Cafe", at(0, 3.0, -0.1), yaw, (0.95, 0.85, 0.9), mats["cafe_wall"], mats["roof_blue"])
+        for i, (along, coat) in enumerate(((-8.0, (0.28, 0.15, 0.07)), (-10.5, (0.75, 0.72, 0.66)))):
+            horse = hg.spawn_actor(unreal.HGCowActor, f"ThamMa_PackHorse_{i}", at(along, -0.5, 1.0), (0, yaw + 180, 0), tag, folder)
+            horse.set_editor_property("horse", True)
+            horse.set_editor_property("wander_radius", 250.0)
+            horse.set_editor_property("coat_color", unreal.LinearColor(*coat, 1.0))
+        granny = hg.spawn_actor(unreal.HGTouristNPC, "ThamMa_FlowerGranny", at(6, -0.5, 1.0), (0, yaw, 0), tag, folder)
+        granny.set_editor_property("style", unreal.HGTouristStyle.LOCAL)
+
+    if "dock_yard" in marks:
+        at, yaw = frame("dock_yard")
+        # The yard frame's "along" axis points at the river; build sideways along the bank.
+        building("TaLang_TicketBooth", at(-2, 0, -0.1), yaw + 90, (0.38, 0.4, 0.75),
+                 mats["cafe_wall"], mats["roof_blue"])
+        deck = at(2, 9, 0.0)
+        hg.box("TaLang_CafeDeck", (deck[0], deck[1], deck[2] + 20), (900, 650, 40), yaw=yaw, material=mat_wood, tag=tag, folder=folder)
+        hg.spawn_mesh("TaLang_CafeRoof", mesh_path(roof), (deck[0], deck[1], deck[2] - 70), (0, yaw, 0), (0.85, 0.85, 0.7),
+                      mats["roof_green"], tag, folder, collision=False)
+        for k, (ax, ay) in enumerate(((-380, -280), (380, -280), (-380, 280), (380, 280))):
+            c, s_ = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+            hg.box(f"TaLang_CafePost_{k}", (deck[0] + ax * c - ay * s_, deck[1] + ax * s_ + ay * c, deck[2] + 120),
+                   (14, 14, 210), yaw=yaw, material=mat_wood, tag=tag, folder=folder)
+    hg.log(f"Landmarks: {sorted(marks)}")
+
+
 def build_river_traffic(layout, tag, folder):
     """Ta Lang: green-roofed floating pontoons, moored tourist boats, and boats cruising the gorge."""
     dock = layout["spawns"]["dock"]
@@ -368,7 +500,7 @@ def build_river_traffic(layout, tag, folder):
 def build_set_dressing(scatter, meshes, mats, tag, folder):
     """Reference-photo dressing: distant blue ranges, chevrons on the bends, utility poles, hamlets."""
     ranges = hg.spawn_mesh("DistantRanges", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantRanges.SM_HG_DistantRanges",
-                           (0, 0, 60000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
+                           (0, 0, 80000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
     ranges.static_mesh_component.set_editor_property("cast_shadow", False)
     origin, extent = ranges.get_actor_bounds(False)
     hg.log(f"DistantRanges bounds: origin {origin} extent {extent}")

@@ -85,7 +85,37 @@ void AHGCowActor::BeginPlay()
 			MID->SetVectorParameterValue(TEXT("Color"), FLinearColor(0.05f, 0.04f, 0.03f));
 		}
 	}
-	LoadedMoo = MooSound.LoadSynchronous();
+	if (bHorse)
+	{
+		TArray<UStaticMeshComponent*> Parts;
+		GetComponents<UStaticMeshComponent>(Parts);
+		for (UStaticMeshComponent* C : Parts)
+		{
+			const FString N = C->GetName();
+			if (N.StartsWith(TEXT("Horn")))
+			{
+				C->SetVisibility(false);
+			}
+			else if (N == TEXT("Hump"))
+			{
+				// Re-used as the neck.
+				C->SetRelativeLocation(FVector(88.f, 0.f, 150.f));
+				C->SetRelativeRotation(FRotator(-55.f, 0.f, 0.f));
+				C->SetRelativeScale3D(FVector(0.75f, 0.28f, 0.3f));
+			}
+			else if (N == TEXT("Torso"))
+			{
+				C->SetRelativeScale3D(FVector(1.55f, 0.5f, 0.62f));
+			}
+			else if (N.StartsWith(TEXT("Leg")))
+			{
+				C->SetRelativeScale3D(FVector(0.1f, 0.1f, 0.9f));
+				C->AddRelativeLocation(FVector(0.f, 0.f, 8.f));
+			}
+		}
+		Head->SetRelativeLocation(FVector(125.f, 0.f, 185.f));
+		LoadedMoo = nullptr;
+	}
 }
 
 void AHGCowActor::PickNewTarget()

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import json
 import math
+import sys
 import time
 from pathlib import Path
 
@@ -41,20 +42,21 @@ class Terrain:
     def __init__(self, alt, layout):
         self.alt = alt
         self.n = alt.shape[0]
-        self.half = (self.n - 1) / 2.0
-        gy, gx = np.gradient(alt)          # metres per metre (1 m grid)
+        self.cell = layout["heightmap"].get("cell_m", 1.0)
+        self.half = (self.n - 1) * self.cell / 2.0            # metres
+        gy, gx = np.gradient(alt, self.cell)                    # metres per metre
         self.gx, self.gy = gx.astype(np.float32), gy.astype(np.float32)
         self.slope = np.degrees(np.arctan(np.hypot(gx, gy))).astype(np.float32)
         self.water = layout["water"]["surface_z_cm"] / 100.0
 
     def idx(self, x, y):
-        c = np.clip(np.round(np.asarray(x) + self.half).astype(int), 0, self.n - 1)
-        r = np.clip(np.round(np.asarray(y) + self.half).astype(int), 0, self.n - 1)
+        c = np.clip(np.round((np.asarray(x) + self.half) / self.cell).astype(int), 0, self.n - 1)
+        r = np.clip(np.round((np.asarray(y) + self.half) / self.cell).astype(int), 0, self.n - 1)
         return r, c
 
     def height(self, x, y):
-        fx = np.clip(np.asarray(x, float) + self.half, 0, self.n - 1.001)
-        fy = np.clip(np.asarray(y, float) + self.half, 0, self.n - 1.001)
+        fx = np.clip((np.asarray(x, float) + self.half) / self.cell, 0, self.n - 1.001)
+        fy = np.clip((np.asarray(y, float) + self.half) / self.cell, 0, self.n - 1.001)
         c0, r0 = np.floor(fx).astype(int), np.floor(fy).astype(int)
         tx, ty = fx - c0, fy - r0
         a = self.alt[r0, c0]; b = self.alt[r0, c0 + 1]
@@ -63,7 +65,8 @@ class Terrain:
 
 
 def road_distance_coarse(road_xy, n, half, stride=2, margin=60.0):
-    m = (n - 1) // stride + 1
+    """stride in metres; half in metres."""
+    m = int(2 * half // stride) + 1
     dist = np.full((m, m), np.inf, np.float32)
     coords = np.arange(m) * stride - half
     for i in range(len(road_xy) - 1):
@@ -127,7 +130,9 @@ def main():
     road = np.array(layout["road"]["points_cm"], float) / 100.0
     road_xy = road[:, :2]
     stride = 2
-    rd = road_distance_coarse(road_xy, T.n, T.half, stride)
+    # QL4C beyond the route (stubs) counts as road too.
+    rd = road_distance_coarse(np.vstack([road_xy] + [np.array(st, float)[:, :2] / 100.0 for st in layout["road"].get("stubs_cm", [])]),
+                              T.n, T.half, stride)
 
     def road_dist(x, y):
         c = np.clip(((np.asarray(x) + T.half) / stride).round().astype(int), 0, rd.shape[1] - 1)
@@ -149,10 +154,9 @@ def main():
     near_vp = np.zeros(x.size, bool)
     for vp in vp_pts:
         near_vp |= np.hypot(x - vp[0], y - vp[1]) < 45.0
-    # Exposed cliff only where the photos show it: the Tu San narrows (y ~ -800..800 m) and very
-    # steep faces elsewhere; vegetated slopes are left to the terrain material + trees.
-    gorge = (y > -800) & (y < 800)
-    keep = (slope > 62) & gorge & (road_dist(x, y) > 16) & (z > T.water + 5) & ~near_vp     # Tu San narrows only
+    # Exposed limestone wherever the real slope is cliff-steep (Tu San walls, karst faces);
+    # vegetated slopes are left to the terrain material + trees.
+    keep = (slope > 50) & (road_dist(x, y) > 16) & (z > T.water + 5) & ~near_vp
     cliffs = []
     for xi, yi, zi, ri, ci in zip(x[keep], y[keep], z[keep], r[keep], c[keep]):
         gx, gy = float(T.gx[ri, ci]), float(T.gy[ri, ci])
@@ -184,7 +188,7 @@ def main():
     peaks = np.argwhere((coarse >= local_max) & (coarse > T.water + 150))
     summits = []
     for pr, pc in peaks:
-        xi, yi = pc * s - T.half, pr * s - T.half
+        xi, yi = pc * s * T.cell - T.half, pr * s * T.cell - T.half
         if road_dist(xi, yi) < 40:
             continue
         zi = float(T.height(xi, yi))
@@ -199,7 +203,7 @@ def main():
     r, c = T.idx(x, y)
     z = T.height(x, y)
     keep = (T.slope[r, c] > 24) & (T.slope[r, c] < 52) & (road_dist(x, y) > 7) & (z > T.water + 1) \
-        & (rng.random(x.size) < 0.45)
+        & (rng.random(x.size) < 0.25)
     out["boulders"] = [inst(xi, yi, zi - 0.4, rng.uniform(0, 360), rng.uniform(-15, 15), rng.uniform(-15, 15),
                             *(rng.uniform(0.4, 1.6) * np.array([1, rng.uniform(0.8, 1.2), rng.uniform(0.7, 1.1)])))
                        for xi, yi, zi in zip(x[keep], y[keep], z[keep])]
@@ -208,7 +212,7 @@ def main():
     x, y = jitter_grid(7.0, T.half - 5, rng)
     r, c = T.idx(x, y)
     z = T.height(x, y)
-    keep = (T.slope[r, c] < 58) & (road_dist(x, y) > 5.5) & (z > T.water + 4.5) & (rng.random(x.size) < 0.55)
+    keep = (T.slope[r, c] < 58) & (road_dist(x, y) > 5.5) & (z > T.water + 4.5) & (rng.random(x.size) < 0.3)
     out["bushes"] = [inst(xi, yi, zi - 0.1, rng.uniform(0, 360), 0, 0, *([rng.uniform(0.6, 1.5)] * 3))
                      for xi, yi, zi in zip(x[keep], y[keep], z[keep])]
 
@@ -217,15 +221,23 @@ def main():
     r, c = T.idx(x, y)
     z = T.height(x, y)
     sl = T.slope[r, c]
-    lush = np.clip((-200.0 - x) / 900.0, 0, 1) * 0.75 + 0.18          # tree density by region
-    ok = (sl < np.where(x > -200, 56, 42)) & (road_dist(x, y) > 7) & (z > T.water + 6)
+    # Tree density by region (ART_BIBLE): forested Tham Ma valley; dry grass + scattered trees on the
+    # canyon slopes; a greener strip with red kapok just above the reservoir.
+    tm = layout.get("geo", {}).get("tham_ma_patch")
+    if tm:
+        cheb = np.maximum(np.abs(x - tm["center_m"][0]), np.abs(y - tm["center_m"][1]))
+        lush = 0.18 + 0.7 * np.clip((tm["core_m"] + tm["band_m"] - cheb) / tm["band_m"], 0, 1)
+    else:
+        lush = np.clip((-200.0 - x) / 900.0, 0, 1) * 0.75 + 0.18
+    canyon = lush < 0.5
+    ok = (sl < np.where(canyon, 56, 42)) & (road_dist(x, y) > 7) & (z > T.water + 6)
     near_vp = np.zeros(x.size, bool)
     for vp in vp_pts:
         near_vp |= np.hypot(x - vp[0], y - vp[1]) < 25.0
-    low = np.clip((830.0 - z) / 100.0, 0, 1) * (x > -200)                 # greener strip above the water
+    low = np.clip((T.water + 160.0 - z) / 120.0, 0, 1) * canyon            # greener strip above the water
     pick = ok & ~near_vp & (rng.random(x.size) < (lush + low * 0.35) * 0.55)
     kinds = rng.random(x.size)
-    canyon = x > -200
+    canyon = canyon & (z < T.water + 260.0)                                  # kapok only low in the valley
     trees = {"kapok": [], "broadleaf": [], "pine": []}
     for xi, yi, zi, kv, cz in zip(x[pick], y[pick], z[pick], kinds[pick], canyon[pick]):
         s_ = rng.uniform(0.7, 1.25)
@@ -244,6 +256,7 @@ def main():
     # Every 4 m: W-beam guardrails on the Doc Tham Ma hairpins (as in the photos), concrete
     # red/white posts (coc tieu) every 8 m elsewhere. Only on the valley (drop-off) side.
     tham_end = layout["road"]["sections_m"]["tham_ma"] + 300.0
+    concrete_from = layout["road"].get("concrete_from_m", 1e9)   # Ta Lang concrete road: no posts / chevrons
     targets = np.arange(2.0, s_road[-1] - 6.0, 4.0)
     px = np.interp(targets, s_road, road[:, 0]); py = np.interp(targets, s_road, road[:, 1])
     pz = np.interp(targets, s_road, road[:, 2])
@@ -252,10 +265,14 @@ def main():
     ty = np.interp(targets + 1.0, s_road, road[:, 1]) - np.interp(targets - 1.0, s_road, road[:, 1])
     norm = np.hypot(tx, ty) + 1e-9
     nx, ny = -ty / norm, tx / norm
-    posts, rails = [], []
+    posts, rails, walls = [], [], []
+    mpl_road = np.array(layout["viewpoints"]["ma_pi_leng"]["road_cm"][:2]) / 100.0
+    mpl_s = float(s_road[np.argmin(np.linalg.norm(road_xy - mpl_road, axis=1))])
     for i in range(len(targets)):
         yaw = math.degrees(math.atan2(ty[i], tx[i]))
         guard = targets[i] < tham_end
+        if targets[i] > concrete_from - 10.0:
+            break
         if not guard and i % 2:
             continue
         for side in (1, -1):
@@ -263,6 +280,14 @@ def main():
             sx_, sy_ = px[i] + nx[i] * off * side, py[i] + ny[i] * off * side
             beyond = T.height(px[i] + nx[i] * (off + 6) * side, py[i] + ny[i] * (off + 6) * side)
             if beyond >= pz[i] - 1.5:   # no drop-off on this side
+                continue
+            in_wall_zone = abs(targets[i] - mpl_s) < 650.0 and abs(targets[i] - mpl_s) > 12.0
+            if in_wall_zone and (int(targets[i] // 4.0) % 9) < 6:      # 24 m wall runs, 12 m gaps with posts
+                pitch = math.degrees(math.atan2(pz4[i] - pz[i], 4.0))
+                wx_, wy_ = px[i] + nx[i] * (half_w + 0.5) * side, py[i] + ny[i] * (half_w + 0.5) * side
+                # Wall mesh runs along +X from its pivot: start the 4 m piece 2 m behind the sample point.
+                wx_ -= tx[i] / norm[i] * 2.0; wy_ -= ty[i] / norm[i] * 2.0
+                walls.append(inst(wx_, wy_, pz[i] - 0.25, yaw, pitch, 0, 1, rng.uniform(0.9, 1.1), rng.uniform(0.85, 1.1)))
                 continue
             if guard:
                 pitch = math.degrees(math.atan2(pz4[i] - pz[i], 4.0))
@@ -273,6 +298,7 @@ def main():
                 posts.append(inst(sx_, sy_, pz[i] - 0.12, yaw, 0, 0, 1, 1, 1))
     out["posts"] = posts
     out["guardrails"] = rails
+    out["stone_walls"] = walls
 
 
     # ---- set dressing from the reference photos ----
@@ -283,7 +309,7 @@ def main():
     chevrons = []
     last = -1e9
     for i in range(5, len(road) - 5):
-        if curv[i] > 1.0 / 40.0 and seg_s[i] - last > 30.0:
+        if curv[i] > 1.0 / 40.0 and seg_s[i] - last > 30.0 and seg_s[i] < concrete_from:
             last = seg_s[i]
             turn = np.sign(np.gradient(hd)[i])                      # +1 = turning left
             nx_, ny_ = -np.sin(hd[i]), np.cos(hd[i])                # left normal
@@ -302,19 +328,38 @@ def main():
         dx_ = np.interp(t + 1, s_road, road[:, 0]) - np.interp(t - 1, s_road, road[:, 0])
         dy_ = np.interp(t + 1, s_road, road[:, 1]) - np.interp(t - 1, s_road, road[:, 1])
         n_ = np.hypot(dx_, dy_) + 1e-9
+        hw_ = half_w if t < concrete_from else layout["road"]["concrete_half_width_cm"] / 100.0
+        cand = []
         for side in (1, -1):
-            px_, py_ = x0 - dy_ / n_ * side * (half_w + 3.0), y0 + dx_ / n_ * side * (half_w + 3.0)
-            if T.height(px_, py_) > z0 + 0.5:                         # uphill side
-                poles.append(inst(px_, py_, T.height(px_, py_) - 0.3, math.degrees(math.atan2(dy_, dx_)), 0, 0, 1, 1, 1))
-                break
+            px_, py_ = x0 - dy_ / n_ * side * (hw_ + 3.0), y0 + dx_ / n_ * side * (hw_ + 3.0)
+            far = T.height(x0 - dy_ / n_ * side * (hw_ + 12.0), y0 + dx_ / n_ * side * (hw_ + 12.0))
+            cand.append((far, px_, py_))
+        far, px_, py_ = max(cand)                                        # uphill side
+        if far > z0 - 1.0 and road_dist(px_, py_) > hw_ + 1.5:
+            poles.append(inst(px_, py_, T.height(px_, py_) - 0.3, math.degrees(math.atan2(dy_, dx_)), 0, 0, 1, 1, 1))
     out["poles"] = poles
 
-    # Hmong / Tay hamlets on gentle ground: above the Ta Lang dock, on the canyon rim, at the foot of Tham Ma.
+    # Hmong hamlets where they really are: OSM landuse=residential (Pai Lung, Ta Lang ...), plus the
+    # houses above the Ta Lang dock and in the Tham Ma valley.
     dock_xy = np.array(layout["spawns"]["dock"]["location_cm"][:2]) / 100.0
     rim_xy = np.array(layout["viewpoints"]["ma_pi_leng"]["road_cm"][:2]) / 100.0
-    base_xy = road_xy[min(60, len(road_xy) - 1)]
+    hamlets = [(dock_xy + [-60, 0], 12, 130)]
+    if tm:
+        hamlets.append((road_xy[min(40, len(road_xy) - 1)] + [60, 60], 8, 120))
+    try:
+        sys.path.insert(0, str(Path(__file__).resolve().parent))
+        import gen_heightmap as geo
+        lu = json.loads((ROOT / "Data/Geo/osm_landuse.json").read_text(encoding="utf-8"))
+        for e in lu["elements"]:
+            if e.get("tags", {}).get("landuse") == "residential" and "geometry" in e:
+                ll = np.array([(q["lat"], q["lon"]) for q in e["geometry"]]).mean(axis=0)
+                c_xy = geo.to_xy(*ll)
+                if np.abs(c_xy).max() < T.half - 150:
+                    hamlets.append((c_xy, 10, 140))
+    except Exception as exc:                                   # no geo data: keep the two hamlets above
+        print(f"hamlets: {exc}")
     houses = {"grey": [], "green": [], "blue": []}
-    for centre, n_houses, radius in ((dock_xy + [-60, 40], 14, 160), (rim_xy + [-180, 380], 10, 140), (base_xy + [80, -120], 9, 150)):
+    for centre, n_houses, radius in hamlets:
         placed = []
         for _ in range(400):
             if len(placed) >= n_houses:
@@ -332,10 +377,21 @@ def main():
             sc = rng.uniform(0.8, 1.2)
             houses[rng.choice(["grey", "grey", "green", "blue"])].append(inst(hx, hy, hz - 0.8, yaw, 0, 0, sc, sc * rng.uniform(0.8, 1.1), 1))
     out["houses"] = houses
+    peach = []
+    for hx_, hy_, *_ in [h for v in houses.values() for h in v]:
+        for _ in range(2):
+            a_ = rng.uniform(0, 2 * math.pi); r0 = rng.uniform(9, 16)
+            tx_, ty_ = hx_ / 100.0 + math.cos(a_) * r0, hy_ / 100.0 + math.sin(a_) * r0
+            r_, c_ = T.idx(tx_, ty_)
+            if T.slope[r_, c_] > 35 or road_dist(tx_, ty_) < 6 or T.height(tx_, ty_) < T.water + 6:
+                continue
+            sc_ = rng.uniform(0.45, 0.65)
+            peach.append(inst(tx_, ty_, T.height(tx_, ty_) - 0.2, rng.uniform(0, 360), 0, 0, sc_, sc_, sc_))
+    out["trees"]["peach"] = peach
 
     # Footpath mask (2 m / px): zig-zag trails across the canyon slopes and around the hamlets,
     # the pale lines that stand out on the dry grass in the Nho Que photos.
-    res = 2016
+    res = int(2 * T.half / 2.0)
     mask = np.zeros((res, res), np.float32)
     def plot(px_, py_, val=1.0):
         c_ = int((px_ + T.half) / 2.0); r_ = int((py_ + T.half) / 2.0)
@@ -353,7 +409,7 @@ def main():
                 r_, c_ = T.idx(px_, py_)
                 gx_, gy_ = float(T.gx[r_, c_]), float(T.gy[r_, c_])
                 g_ = math.hypot(gx_, gy_) + 1e-6
-                if T.height(px_, py_) > 1300 or T.height(px_, py_) < T.water + 2:
+                if T.height(px_, py_) > 1550 or T.height(px_, py_) < T.water + 2:
                     break
                 cx_, cy_ = -gy_ / g_ * heading, gx_ / g_ * heading          # along the contour
                 ux_, uy_ = gx_ / g_, gy_ / g_                                # uphill
@@ -388,6 +444,15 @@ def main():
         spur.append(inst(xx, yy, sz2 - 1.5, spur_yaw + rng.uniform(-10, 10), rng.uniform(-8, 8), 180.0,
                          1.4, 1.2, 1.0 + 0.4 * k))
     out["spur"] = spur
+    ax_, ay_ = (sx2 - rx2), (sy2 - ry2)
+    al_ = math.hypot(ax_, ay_) + 1e-6
+    ax_, ay_ = ax_ / al_, ay_ / al_
+    fence = []
+    for k in range(2):                                      # two 4 m pieces = half the spur root
+        fx = rx2 + ax_ * 12.0 + (-ay_) * (-0.5 + 4.0 * k)
+        fy = ry2 + ay_ * 12.0 + (ax_) * (-0.5 + 4.0 * k)
+        fence.append(inst(fx, fy, T.height(fx, fy) - 0.2, math.degrees(math.atan2(ax_, -ay_)), 0, 0, 1, 1, 1))
+    out["stone_walls"] += fence
 
     # ---- flycam viewpoints ----
     sec = layout["road"]["sections_m"]

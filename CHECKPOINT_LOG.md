@@ -187,3 +187,34 @@ Goal: make the three viewpoints read as Ha Giang, checked with an offline render
   spur and hairpins); clouds moved above the peaks; dense valley mist below ~950 m for the sea-of-clouds look
   (fog falloff corrected to UE units).
 - Terrain material: rock only on >~50° slopes plus noisy outcrops, greener scrub with dry-grass/maize patches.
+
+---
+
+## Real-places pass (`fix/ue58-compile`)
+
+Goal (user): "as we focus on only some places, make them exactly as much as possible". The hand-modelled
+4 km map is replaced by real data.
+
+- `Scripts/Tools/gen_heightmap.py` (new; the procedural generator is kept as `gen_heightmap_procedural.py` for
+  its helpers): Copernicus GLO-30 DEM (bicubic, float64 geo-coordinates) + OpenStreetMap (`Data/Geo`, fetched by
+  `Scripts/Tools/fetch_geo.sh`, not committed). 5.89 km frame at true scale centred on 23.2450 N 105.4040 E,
+  1.46 m cells, north = -Y.
+  - Route: real Doc Tham Ma bends (1.5 km real-terrain patch pasted SW of Ma Pi Leng) -> least-cost link road
+    (Dijkstra, grade-penalised, avoids doubling QL4C) -> real QL4C from the Panorama north past the Youth
+    Volunteers monument -> real Ta Lang road (OSM way 855373895, 35 hairpins) -> dock on the Nho Que.
+    QL4C beyond the route is carved and meshed as stub roads; AI / police / minimap use the longest road.
+  - Water: OSM reservoir polygon + river line + the DSM's low valley floor; Nho Que 1 dam from OSM, 18 m drop
+    below it; rotated water planes along the reservoir.
+  - Sub-DEM detail (slope-scaled multi-octave relief, light droplet erosion), cut/fill road carving with a
+    smoothed bank target, pads at the real viewpoint / cafe / monument positions, Mom Da ledge on the rim
+    nearest the Panorama (its exact position is not documented).
+- Scatter, offline renderer, terrain material and water now read `cell_m` / `half_m` from the layout; hamlets
+  from OSM residential areas; forest in the Tham Ma patch, kapok low in the canyon.
+- `Scripts/hg_lib/shots.py`: one shot list shared by the offline renderer and the UE screenshot runner (UE
+  cine camera FOV now set through the focal length - it ignored `field_of_view`).
+- Weather locked (docs/ART_BIBLE.md): late March 10:30, clear, light haze, sun 50 deg from ESE; no
+  VolumetricCloud on M1. Benchmark (M1 Pro, 1600x900, CP05): 71-76 FPS at spawn and all viewpoints.
+- Roads: asphalt QL4C with lane paint, narrow concrete Ta Lang road (secondary surface on the same spline).
+- Landmarks: Youth Volunteers monument, Panorama cafe + name stone + drink stall, low stone walls / partial
+  Mom Da fence, Tham Ma coffee shop + Hmong pack horses (`AHGCowActor::bHorse`), dock ticket booth + cafe deck,
+  peach blossom near the hamlets.

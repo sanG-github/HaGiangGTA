@@ -1,8 +1,8 @@
 """Editor-side viewpoint screenshots (UE Python, runs unattended then quits).
 
 Loads a checkpoint map, waits for shaders/streaming, then takes high-res screenshots
-from the same six cameras as Scripts/Tools/render_viewpoints.py (player eye + flycam
-for each viewpoint). Output: Saved/HG_CI/Shots/<map>/<name>.png
+from the shared review shots in Scripts/hg_lib/shots.py (same framing as the offline
+renderer, one per reference photo). Output: Saved/HG_CI/Shots/<map>/<name>.png
 
   HG_MAP=/Game/Maps/L_HaGiang_CP05 UnrealEditor HaGiangGTA.uproject \
       -ExecutePythonScript=Scripts/Tools/ci_screenshots.py -nocrashreports
@@ -35,47 +35,13 @@ def norm2(dx, dy):
 
 
 def cameras():
+    """Same shots as the offline renderer (Scripts/hg_lib/shots.py), converted to cm."""
+    import sys
+    sys.path.insert(0, os.path.join(PROJECT, "Scripts"))
+    from hg_lib import shots as shot_lib
     layout, scatter = load("HaGiang_layout.json"), load("HaGiang_scatter.json")
-    vps = scatter["viewpoints"]
-    river = [p[:2] for p in layout["water"]["river_cm"]]
-    water_z = layout["water"]["surface_z_cm"]
-
-    def nearest(xy):
-        return min(range(len(river)), key=lambda i: (river[i][0] - xy[0]) ** 2 + (river[i][1] - xy[1]) ** 2)
-
-    shots = []
-    p1 = layout["viewpoints"]["doc_tham_ma"]["location_cm"]; c1 = vps["doc_tham_ma"]["center_cm"]
-    dx, dy = norm2(c1[0] - p1[0], c1[1] - p1[1])
-    shots.append(("VP1_ThamMa_eye", v(p1[0] + dx * 1000, p1[1] + dy * 1000, p1[2] + 170), v(c1[0], c1[1], c1[2] - 4000), 62))
-    shots.append(("VP1_ThamMa_flycam", v(c1[0] - dx * 18000 + 12000, c1[1] - dy * 18000, c1[2] + 26000), v(*c1), 50))
-
-    p2 = layout["viewpoints"]["ma_pi_leng"]["location_cm"]; r2 = layout["viewpoints"]["ma_pi_leng"]["road_cm"]
-    sx, sy = norm2(p2[0] - r2[0], p2[1] - r2[1])
-    j = nearest(p2)
-    down = river[max(j - 32, 0)]
-    shots.append(("VP2_MaPiLeng_spur", v(p2[0] + sx * 400, p2[1] + sy * 400, p2[2] + 170), v(down[0], down[1], water_z + 3000), 78))
-    shots.append(("VP2_MaPiLeng_drone", v(river[j][0] + 6000, river[j][1] - 26000, p2[2] + 4000),
-                  v((p2[0] + river[j][0]) / 2, (p2[1] + river[j][1]) / 2, 98000), 60))
-
-    # Classic photo: from the Ma Pi Leng rim down onto the river and the Ta Lang dock.
-    dock = layout["spawns"]["dock"]["location_cm"]
-    rim_pts = layout["road"]["points_cm"]
-    near = [p for p in rim_pts if (p[0] - dock[0]) ** 2 + (p[1] - dock[1]) ** 2 < 70000.0 ** 2] or rim_pts
-    top = max(near, key=lambda p: p[2])          # highest road point within 700 m of the dock
-    ox, oy = norm2(dock[0] - top[0], dock[1] - top[1])
-    shots.append(("VP3_TaLang_from_rim", v(top[0] + ox * 2500, top[1] + oy * 2500, top[2] + 2500), v(dock[0], dock[1], dock[2]), 55))
-    # Tham Ma like the reference photo: standing at the parapet, looking out level over the bends.
-    shots.append(("VP1_ThamMa_parapet", v(p1[0] + dx * 750, p1[1] + dy * 750, p1[2] + 165),
-                  v(c1[0] + dx * 30000, c1[1] + dy * 30000, c1[2] - 3000), 75))
-
-    b = layout["spawns"]["boats"][0]["location_cm"]; k = nearest(b)
-    ahead = river[max(k - 45, 0)]
-    # Just behind and above the cano (not inside its hull), looking up-canyon.
-    bx, by = norm2(ahead[0] - b[0], ahead[1] - b[1])
-    shots.append(("VP3_TuSan_boat", v(b[0] - bx * 1700, b[1] - by * 1700, water_z + 650), v(ahead[0], ahead[1], water_z + 14000), 70))
-    shots.append(("VP3_TuSan_flycam", v(river[k][0] - 22000, river[k][1] + 12000, water_z + 42000),
-                  v(river[max(k - 25, 0)][0], river[max(k - 25, 0)][1], water_z), 55))
-    return shots
+    return [(name, v(*[c * 100.0 for c in cam]), v(*[c * 100.0 for c in look]), fov)
+            for name, cam, look, fov in shot_lib.shots(layout, scatter)]
 
 
 class Shooter:
@@ -136,7 +102,13 @@ class Shooter:
                 self.cam = unreal.get_editor_subsystem(unreal.EditorActorSubsystem).spawn_actor_from_class(
                     unreal.CineCameraActor, loc, rot)
             self.cam.set_actor_location_and_rotation(loc, rot, False, False)
-            self.cam.get_cine_camera_component().set_editor_property("field_of_view", float(fov))
+            cc = self.cam.get_cine_camera_component()
+            # A CineCamera ignores field_of_view: set the focal length for this horizontal FOV instead.
+            fb = cc.get_editor_property("filmback")
+            fb.set_editor_property("sensor_width", 36.0)
+            fb.set_editor_property("sensor_height", 20.25)
+            cc.set_editor_property("filmback", fb)
+            cc.set_editor_property("current_focal_length", 18.0 / math.tan(math.radians(float(fov)) * 0.5))
             unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).set_level_viewport_camera_info(loc, rot)
             self.i += 1
             unreal.AutomationLibrary.take_high_res_screenshot(RES[0], RES[1], os.path.join(OUT, f"{name}.png"), self.cam)
