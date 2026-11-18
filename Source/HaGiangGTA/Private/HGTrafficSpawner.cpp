@@ -62,7 +62,11 @@ void AHGTrafficSpawner::BeginPlay()
 		{
 			continue;
 		}
-		Truck->StartAutoDrive(Road, FMath::Clamp(Spec.StartMeters * 100.f, 0.f, Length), Spec.Direction, Spec.CruiseKmh, LaneOffset + 40.f);
+		const float MinCm = Spec.MinMeters >= 0.f ? Spec.MinMeters * 100.f : -1.f;
+		const float MaxCm = Spec.MaxMeters >= 0.f ? Spec.MaxMeters * 100.f : -1.f;
+		Truck->SetAutoDriveRange(MinCm, MaxCm);
+		const float StartCm = FMath::Clamp(Spec.StartMeters * 100.f, FMath::Max(MinCm, 0.f), MaxCm >= 0.f ? FMath::Min(MaxCm, Length) : Length);
+		Truck->StartAutoDrive(Road, StartCm, Spec.Direction, Spec.CruiseKmh, LaneOffset + 40.f);
 		Spawned.Add(Truck);
 	}
 	UE_LOG(LogHaGiang, Log, TEXT("Traffic: %d vehicles (%d convoys, %d trucks)"), Spawned.Num(), Convoys.Num(), Trucks.Num());

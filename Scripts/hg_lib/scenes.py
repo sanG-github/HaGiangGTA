@@ -1,12 +1,9 @@
 """Whole-scene recipes reused by later checkpoints (CP03 photoreal world is the base of CP04/CP05)."""
 from __future__ import annotations
 
-import math
-import random
-
 import unreal
 
-from . import assets, materials, world
+from . import assets, materials, placements, world
 from . import editor_utils as hg
 
 GAME_MODE = "/Script/HaGiangGTA.HGOpenWorldGameMode"
@@ -87,116 +84,79 @@ def finish_level(game_mode: str = GAME_MODE) -> None:
 
 # ---------------------------------------------------------------------------
 # CP04 living world (convoys, trucks, crowds, cows, Happy Water)
+#
+# All positions come from placements.py (pure Python), which Scripts/Tools/validate_layout.py checks offline
+# against the heightmap: run it after regenerating the map.
 # ---------------------------------------------------------------------------
 
-_RNG = random.Random(404)
 
-
-def road_frame(road, meters):
-    """(location, forward, right) on the road spline at a distance in metres."""
-    spline = road.get_spline()
-    d = max(0.0, min(meters * 100.0, spline.get_spline_length()))
-    loc = spline.get_location_at_distance_along_spline(d, unreal.SplineCoordinateSpace.WORLD)
-    fwd = spline.get_direction_at_distance_along_spline(d, unreal.SplineCoordinateSpace.WORLD)
-    right = unreal.Vector(-fwd.y, fwd.x, 0.0)
-    return loc, fwd, right
-
-
-def offset(loc, fwd, right, along, side, up=0.0):
-    return (loc.x + fwd.x * along + right.x * side, loc.y + fwd.y * along + right.y * side, loc.z + up)
-
-
-def build_traffic(road, length_m, tag, prefix):
+def build_traffic(road, ctx, tag, prefix):
+    plan = placements.traffic_plan(ctx)
     spawner = hg.spawn_actor(unreal.HGTrafficSpawner, "Traffic_HaGiangLoop", (0, 0, 0), (0, 0, 0), tag, f"{prefix}/Traffic")
     spawner.set_editor_property("road", road)
+    spawner.set_editor_property("bike_spacing", plan["bike_spacing_m"] * 100.0)
 
-    def convoy(start, direction, bikes, kmh):
+    def convoy(spec):
         c = unreal.HGConvoySpec()
-        c.set_editor_property("start_meters", float(start))
-        c.set_editor_property("direction", int(direction))
-        c.set_editor_property("num_bikes", int(bikes))
-        c.set_editor_property("cruise_kmh", float(kmh))
+        c.set_editor_property("start_meters", float(spec["start_m"]))
+        c.set_editor_property("direction", int(spec["dir"]))
+        c.set_editor_property("num_bikes", int(spec["bikes"]))
+        c.set_editor_property("cruise_kmh", float(spec["kmh"]))
         return c
 
-    def truck(start, direction, kmh):
+    def truck(spec):
         t = unreal.HGTruckSpec()
-        t.set_editor_property("start_meters", float(start))
-        t.set_editor_property("direction", int(direction))
-        t.set_editor_property("cruise_kmh", float(kmh))
+        t.set_editor_property("start_meters", float(spec["start_m"]))
+        t.set_editor_property("direction", int(spec["dir"]))
+        t.set_editor_property("cruise_kmh", float(spec["kmh"]))
+        t.set_editor_property("min_meters", float(spec["min_m"]))
+        t.set_editor_property("max_meters", float(spec["max_m"]))
         return t
 
-    spawner.set_editor_property("convoys", [
-        convoy(650, +1, 10, 38),                       # climbing the Tham Ma hairpins with the player
-        convoy(min(5200, length_m - 600), +1, 8, 46),  # along the Ma Pi Leng rim
-        convoy(min(6400, length_m - 300), -1, 12, 44), # coming back down towards Tham Ma
-    ])
-    spawner.set_editor_property("trucks", [
-        truck(min(6100, length_m - 200), -1, 36),
-        truck(2600, -1, 34),
-    ])
+    spawner.set_editor_property("convoys", [convoy(c) for c in plan["convoys"]])
+    spawner.set_editor_property("trucks", [truck(t) for t in plan["trucks"]])
+    hg.log("Traffic: " + ", ".join(f"{c['name']} @{c['start_m']:.0f} m" for c in plan["convoys"])
+           + f"; trucks {plan['trucks'][0]['min_m']:.0f}-{plan['trucks'][0]['max_m']:.0f} m")
     return spawner
 
 
-def build_checkin_crowd(road, layout, key, road_m, look_at, tag, prefix):
-    loc, fwd, right = road_frame(road, road_m)
-    vp = layout["viewpoints"][key]
-    cx, cy, cz = vp["location_cm"]
-    # Parked tour bikes on the shoulder.
-    for i in range(5):
-        x, y, z = offset(loc, fwd, right, -900 + i * 240, 520, 70)
-        bike = hg.spawn_actor(unreal.HGBikePawn, f"Parked_{key}_{i}", (x, y, z),
-                              (0, math.degrees(math.atan2(fwd.y, fwd.x)) + 70, 0), tag, f"{prefix}/Crowds")
+def build_checkin_crowd(ctx, key, look_at, rng, tag, prefix):
+    crowd = placements.checkin_crowd(ctx, key, rng)
+    # Parked tour bikes off the carriageway (convoys brake for anything in their lane).
+    for i, (x, y, z, yaw) in enumerate(crowd["bikes"]):
+        bike = hg.spawn_actor(unreal.HGBikePawn, f"Parked_{key}_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Crowds")
         bike.set_editor_property("has_passenger", False)
     styles = [unreal.HGTouristStyle.BACKPACKER] * 5 + [unreal.HGTouristStyle.EASY_RIDER] * 3 + [unreal.HGTouristStyle.LOCAL]
-    for i, style in enumerate(styles):
-        a = _RNG.uniform(0, 2 * math.pi)
-        r = _RNG.uniform(250, 900)
-        npc = hg.spawn_actor(unreal.HGTouristNPC, f"Tourist_{key}_{i}", (cx + math.cos(a) * r, cy + math.sin(a) * r, cz + 120),
-                             (0, 0, 0), tag, f"{prefix}/Crowds")
-        npc.set_editor_property("style", style)
+    for i, (x, y, z) in enumerate(crowd["tourists"]):
+        npc = hg.spawn_actor(unreal.HGTouristNPC, f"Tourist_{key}_{i}", (x, y, z), (0, 0, 0), tag, f"{prefix}/Crowds")
+        npc.set_editor_property("style", styles[i % len(styles)])
         npc.set_editor_property("look_at_point", hg.vec(look_at))
 
 
-def build_cows(road, at_m, count, tag, prefix):
-    loc, fwd, right = road_frame(road, at_m)
+def build_cows(ctx, at_m, count, rng, tag, prefix):
     coats = [unreal.LinearColor(0.32, 0.17, 0.07, 1), unreal.LinearColor(0.12, 0.08, 0.05, 1),
              unreal.LinearColor(0.55, 0.38, 0.2, 1)]
-    for i in range(count):
-        x, y, z = offset(loc, fwd, right, _RNG.uniform(-700, 700), _RNG.uniform(-300, 300), 120)
-        cow = hg.spawn_actor(unreal.HGCowActor, f"Cow_{int(at_m)}_{i}", (x, y, z), (0, _RNG.uniform(0, 360), 0),
-                             tag, f"{prefix}/Cows")
+    # Grazing on the verge; a 4 m wander radius still brings them onto the road now and then.
+    for i, (x, y, z, yaw) in enumerate(placements.cow_spots(ctx, at_m, count, rng)):
+        cow = hg.spawn_actor(unreal.HGCowActor, f"Cow_{int(at_m)}_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Cows")
         cow.set_editor_property("coat_color", coats[i % len(coats)])
-        cow.set_editor_property("wander_radius", 600.0)
+        cow.set_editor_property("wander_radius", 400.0)
 
 
-def build_happy_water(road, length_m, layout, tag, prefix):
-    n = 9
-    for i in range(n):
-        m = 400 + (length_m - 800) * i / (n - 1)
-        loc, fwd, right = road_frame(road, m)
-        side = 150 if i % 2 else -150
-        hg.spawn_actor(unreal.HGHappyWaterPickup, f"HappyWater_{i}", offset(loc, fwd, right, 0, side, 20),
-                       (0, 0, 0), tag, f"{prefix}/HappyWater")
-    # One at each viewpoint, of course.
-    for key, vp in layout["viewpoints"].items():
-        x, y, z = vp["location_cm"]
-        hg.spawn_actor(unreal.HGHappyWaterPickup, f"HappyWater_{key}", (x + 400, y, z + 20), (0, 0, 0), tag,
-                       f"{prefix}/HappyWater")
+def build_happy_water(ctx, rng, tag, prefix):
+    for label, x, y, z in placements.happy_water(ctx, rng):
+        hg.spawn_actor(unreal.HGHappyWaterPickup, label, (x, y, z), (0, 0, 0), tag, f"{prefix}/HappyWater")
 
 
 def build_living_world(base: dict, tag: str, prefix: str) -> None:
     world.require_cpp("HGTrafficSpawner", "HGTruckPawn", "HGCowActor", "HGTouristNPC", "HGHappyWaterPickup")
-    _RNG.seed(404)
     layout, scatter, road = base["layout"], base["scatter"], base["road"]
-    length_m = road.get_road_length() / 100.0
-    sec = layout["road"]["sections_m"]
+    ctx = placements.ctx_for(layout, scatter)
+    rng = placements.rng()          # same seed and call order as validate_layout.py
     assets.import_sfx()
-    build_traffic(road, length_m, tag, prefix)
-    build_checkin_crowd(road, layout, "doc_tham_ma", sec["tham_ma"] + 40,
-                        scatter["viewpoints"]["doc_tham_ma"]["center_cm"], tag, prefix)
-    rim_m = road.get_distance_along_road(hg.vec(layout["viewpoints"]["ma_pi_leng"]["road_cm"])) / 100.0
-    build_checkin_crowd(road, layout, "ma_pi_leng", rim_m - 30,
-                        scatter["viewpoints"]["ma_pi_leng"]["center_cm"], tag, prefix)
-    build_cows(road, sec["tham_ma"] + 0.45 * (sec["rim"] - sec["tham_ma"]), 5, tag, prefix)   # link road
-    build_cows(road, rim_m + 450, 4, tag, prefix)                                             # canyon rim
-    build_happy_water(road, length_m, layout, tag, prefix)
+    build_traffic(road, ctx, tag, prefix)
+    for key in ("doc_tham_ma", "ma_pi_leng"):
+        build_checkin_crowd(ctx, key, scatter["viewpoints"][key]["center_cm"], rng, tag, prefix)
+    for at_m, count in placements.living_world_cows(ctx):
+        build_cows(ctx, at_m, count, rng, tag, prefix)
+    build_happy_water(ctx, rng, tag, prefix)

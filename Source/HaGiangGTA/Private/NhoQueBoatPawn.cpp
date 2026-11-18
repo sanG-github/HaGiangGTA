@@ -143,6 +143,30 @@ void ANhoQueBoatPawn::BeginPlay()
 	Super::BeginPlay();
 	HeadingYaw = GetActorRotation().Yaw;
 
+	// Cruise boats are spawned part-way along the route: start from the nearest point, heading the way we
+	// face (CruiseIndex 0 sent every boat back to the start of the route first).
+	if (CruisePoints.Num() >= 2)
+	{
+		float Best = BIG_NUMBER;
+		for (int32 i = 0; i < CruisePoints.Num(); ++i)
+		{
+			const float D = FVector::DistSquared2D(CruisePoints[i], GetActorLocation());
+			if (D < Best)
+			{
+				Best = D;
+				CruiseIndex = i;
+			}
+		}
+		const int32 Next = FMath::Min(CruiseIndex + 1, CruisePoints.Num() - 1);
+		const int32 Prev = FMath::Max(CruiseIndex - 1, 0);
+		const FVector Fwd = GetActorForwardVector();
+		CruiseDir = FVector::DotProduct(CruisePoints[Next] - CruisePoints[Prev], Fwd) >= 0.f ? 1 : -1;
+		if (CruiseIndex + CruiseDir >= 0 && CruiseIndex + CruiseDir < CruisePoints.Num())
+		{
+			CruiseIndex += CruiseDir;
+		}
+	}
+
 	const bool bCano = BoatType == EHGBoatType::Cano;
 	auto Paint = [](UStaticMeshComponent* C, const FLinearColor& Color)
 	{
@@ -203,7 +227,7 @@ void ANhoQueBoatPawn::ComputeCruiseInput(float& OutThrottle, float& OutSteer)
 	CruiseIndex = FMath::Clamp(CruiseIndex, 0, CruisePoints.Num() - 1);
 	const FVector Target = CruisePoints[CruiseIndex];
 	const FVector To = Target - GetActorLocation();
-	if (To.Size2D() < 4000.f)
+	if (To.Size2D() < CruiseAcceptRadius)
 	{
 		if (CruiseIndex + CruiseDir < 0 || CruiseIndex + CruiseDir >= CruisePoints.Num())
 		{

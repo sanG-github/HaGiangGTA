@@ -35,7 +35,10 @@ private:
 
 	void CacheRoad();
 
-	TArray<FVector2D> RoadPoints;
+	/** Main route first, then the QL4C stubs - one polyline per road actor (cm, world XY). */
+	TArray<TArray<FVector2D>> RoadLines;
+	/** World distance (cm) from the player to the minimap edge: zooms out with speed. */
+	float MapRange = 35000.f;
 	TArray<FBlip> Blips;
 	FVector2D PlayerXY = FVector2D::ZeroVector;
 	float ViewYaw = 0.f;
