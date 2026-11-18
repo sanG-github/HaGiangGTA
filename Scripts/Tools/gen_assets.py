@@ -481,6 +481,63 @@ def make_loops(rng, sr=44100):
     _loop_wav(out / "SW_HG_Heli_Loop.wav", heli, sr)
 
 
+def _lowpass(x, cutoff_hz, sr):
+    """One-pole low-pass (run twice for 12 dB/oct)."""
+    a = math.exp(-2.0 * math.pi * cutoff_hz / sr)
+    y = np.empty_like(x)
+    for _ in range(2):
+        acc = 0.0
+        for i in range(len(x)):
+            acc = (1.0 - a) * x[i] + a * acc
+            y[i] = acc
+        x = y.copy()
+    return y
+
+
+def make_ambience(rng, sr=44100):
+    """Round 2 loops: wind (speed / altitude), mountain birds + insects (slow / on foot), tyres on the road."""
+    out = OUT / "Audio"
+    n = int(6.0 * sr)
+    t = np.arange(n) / sr
+    # Wind: low-passed noise with slow gusts (integer cycles per loop -> seamless amplitude).
+    noise = rng.normal(size=n)
+    body = _lowpass(noise, 500.0, sr)
+    hiss = _lowpass(noise, 3000.0, sr) - body
+    gust = 0.6 + 0.25 * np.sin(2 * np.pi * t / 6.0) + 0.15 * np.sin(2 * np.pi * 3 * t / 6.0 + 1.3)
+    wind = (body * 3.0 + 0.4 * hiss) * gust
+    _loop_wav(out / "SW_HG_Wind_Loop.wav", np.tanh(wind / (np.abs(wind).max() + 1e-6) * 1.2) * 0.8, sr)
+
+    # Birds + insects: a soft cicada bed, bulbul-like two-note calls and short trills at random times.
+    birds = 0.03 * _lowpass(rng.normal(size=n), 6000.0, sr) * (0.7 + 0.3 * np.sin(2 * np.pi * 37.0 * t))
+    for _ in range(14):
+        t0 = rng.uniform(0.2, 5.5)
+        f0 = rng.uniform(2200.0, 3800.0)
+        kind = rng.integers(0, 3)
+        notes = [(0.0, f0, 0.09), (0.13, f0 * 1.25, 0.12)] if kind == 0 else \
+                [(k * 0.045, f0 * (1.0 + 0.04 * (k % 2)), 0.03) for k in range(rng.integers(5, 10))] if kind == 1 else \
+                [(0.0, f0 * 0.8, 0.25)]
+        amp = rng.uniform(0.08, 0.2)
+        for dt0, f, dur in notes:
+            i0 = int((t0 + dt0) * sr)
+            m = int(dur * sr)
+            if i0 + m >= n:
+                continue
+            tt = np.arange(m) / sr
+            env = np.sin(np.pi * tt / dur) ** 2
+            sweep = f * (1.0 + 0.15 * np.sin(np.pi * tt / dur)) if kind != 2 else f * (1.0 - 0.3 * tt / dur)
+            birds[i0:i0 + m] += amp * env * np.sin(2 * np.pi * np.cumsum(sweep) / sr)
+    _loop_wav(out / "SW_HG_Birds_Loop.wav", birds / (np.abs(birds).max() + 1e-6) * 0.7, sr)
+
+    # Tyres: rolling road noise (band-passed noise) + a faint periodic thump (slab joints / tread).
+    roll = _lowpass(rng.normal(size=n), 1200.0, sr) - _lowpass(rng.normal(size=n), 150.0, sr) * 0.5
+    thump = np.zeros(n)
+    period = int(sr / 4.0)
+    for i in range(0, n - 800, period):
+        thump[i:i + 800] += np.exp(-np.arange(800) / 120.0) * np.sin(2 * np.pi * 70.0 * np.arange(800) / sr)
+    tyre = roll / (np.abs(roll).max() + 1e-6) + 0.35 * thump
+    _loop_wav(out / "SW_HG_Tyre_Loop.wav", np.tanh(tyre) * 0.7, sr)
+
+
 # ---------------------------------------------------------------------------
 # Trees (reference photos): bombax / kapok (hoa gao, red), broadleaf, pine.
 # Each tree = trunk mesh + crown mesh sharing one transform (two materials, no vertex colours).
@@ -676,6 +733,7 @@ def main():
     make_flute(rng)
     make_sfx(rng)
     make_loops(rng)
+    make_ambience(np.random.default_rng(SEED + 23))
     print(f"audio {time.time() - t0:.1f}s -> {OUT}")
 
 

@@ -63,6 +63,8 @@ void AHGVehicleBase::BeginPlay()
 {
 	Super::BeginPlay();
 	SpawnTransform = GetActorTransform();
+	bDefaultLag = SpringArm->bEnableCameraLag;
+	bDefaultRotLag = SpringArm->bEnableCameraRotationLag;
 	if (USoundBase* Engine = EngineSound.LoadSynchronous())
 	{
 		EngineAudio = HGAudio::CreateLoop(RootComponent, Engine, EngineFalloff);
@@ -77,6 +79,13 @@ void AHGVehicleBase::BeginPlay()
 void AHGVehicleBase::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	// The spring arm ticks after us: with lag off for these frames it jumps straight to the new spot.
+	if (SnapFrames > 0)
+	{
+		--SnapFrames;
+		SpringArm->bEnableCameraLag = SnapFrames > 0 ? false : bDefaultLag;
+		SpringArm->bEnableCameraRotationLag = SnapFrames > 0 ? false : bDefaultRotLag;
+	}
 	if (EngineAudio)
 	{
 		const float SpeedFrac = FMath::Clamp(FMath::Abs(GetSpeedKmh()) / FMath::Max(EngineTopKmh, 1.f), 0.f, 1.2f);
@@ -87,6 +96,58 @@ void AHGVehicleBase::Tick(float DeltaSeconds)
 		EngineAudio->SetPitchMultiplier(EnginePitch);
 		EngineAudio->SetVolumeMultiplier(EngineVolume * (0.55f + 0.45f * FMath::Min(SpeedFrac * 2.f, 1.f)) * (IsPlayerControlled() ? 1.f : 0.7f));
 	}
+}
+
+float AHGVehicleBase::GetEngineVolumeNow() const
+{
+	return EngineAudio ? EngineAudio->VolumeMultiplier : 0.f;
+}
+
+void AHGVehicleBase::SnapCamera()
+{
+	SnapFrames = 3;
+	SpringArm->bEnableCameraLag = false;
+	SpringArm->bEnableCameraRotationLag = false;
+}
+
+void AHGVehicleBase::UpdateOrbitCamera(float DeltaSeconds, float BasePitch, float MinPitch, float MaxPitch)
+{
+	FVector2D Look = FVector2D::ZeroVector;
+	if (const UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
+	{
+		if (LookAction && Controller)
+		{
+			Look = EIC->GetBoundActionValue(LookAction).Get<FVector2D>();
+		}
+	}
+	// One huge delta when the window grabs the cursor (macOS): ignore it, like the on-foot camera does.
+	if (Look.SizeSquared() > 1e-4f && Look.Size() < 40.f)
+	{
+		OrbitYaw = FRotator::NormalizeAxis(OrbitYaw + Look.X * OrbitSensitivity);
+		OrbitPitch += Look.Y * OrbitSensitivity;   // mouse up = look up, as on foot
+		OrbitIdle = 0.f;
+	}
+	else
+	{
+		OrbitIdle += DeltaSeconds;
+		if (OrbitIdle > OrbitReturnDelay)
+		{
+			// Drift back behind the vehicle (shortest way round).
+			OrbitYaw = FMath::FInterpTo(OrbitYaw, 0.f, DeltaSeconds, OrbitReturnSpeed);
+			OrbitPitch = FMath::FInterpTo(OrbitPitch, 0.f, DeltaSeconds, OrbitReturnSpeed);
+		}
+	}
+	OrbitPitch = FMath::Clamp(OrbitPitch, MinPitch - BasePitch, MaxPitch - BasePitch);
+
+	const bool bBack = Controller && ReadButton(LookBackAction);
+	if (bBack != bLookingBack)
+	{
+		bLookingBack = bBack;
+		SnapCamera(); // look-back is a cut, not a slow 180 deg swing
+	}
+	const float Yaw = bLookingBack ? 180.f : OrbitYaw;
+	const float Pitch = FMath::Clamp(BasePitch + (bLookingBack ? 0.f : OrbitPitch), MinPitch, MaxPitch);
+	SpringArm->SetRelativeRotation(FRotator(Pitch, Yaw, 0.f));
 }
 
 // ---------------------------------------------------------------------------
@@ -107,6 +168,8 @@ void AHGVehicleBase::EnsureInputObjects()
 	ResetAction = HGInput::MakeAction(this, TEXT("IA_Reset"), EInputActionValueType::Boolean);
 	InteractAction = HGInput::MakeAction(this, TEXT("IA_VehicleInteract"), EInputActionValueType::Boolean);
 	FlycamAction = HGInput::MakeAction(this, TEXT("IA_VehicleFlycam"), EInputActionValueType::Boolean);
+	LookAction = HGInput::MakeAction(this, TEXT("IA_VehicleLook"), EInputActionValueType::Axis2D);
+	LookBackAction = HGInput::MakeAction(this, TEXT("IA_VehicleLookBack"), EInputActionValueType::Boolean);
 
 	DrivingContext = HGInput::MakeContext(this, TEXT("IMC_Driving"));
 
@@ -137,6 +200,11 @@ void AHGVehicleBase::EnsureInputObjects()
 
 	HGInput::MapKey(DrivingContext, FlycamAction, EKeys::V);
 	HGInput::MapKey(DrivingContext, FlycamAction, EKeys::Gamepad_Special_Right);
+
+	HGInput::MapKey(DrivingContext, LookAction, EKeys::Mouse2D);
+	HGInput::MapKey(DrivingContext, LookAction, EKeys::Gamepad_Right2D);
+	HGInput::MapKey(DrivingContext, LookBackAction, EKeys::C);
+	HGInput::MapKey(DrivingContext, LookBackAction, EKeys::Gamepad_RightThumbstick);
 }
 
 void AHGVehicleBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -156,6 +224,8 @@ void AHGVehicleBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 	EIC->BindActionValue(SteerAction);
 	EIC->BindActionValue(HandbrakeAction);
 	EIC->BindActionValue(BoostAction);
+	EIC->BindActionValue(LookAction);
+	EIC->BindActionValue(LookBackAction);
 
 	EIC->BindAction(ResetAction, ETriggerEvent::Started, this, &AHGVehicleBase::OnReset);
 	EIC->BindAction(InteractAction, ETriggerEvent::Started, this, &AHGVehicleBase::OnInteract);
@@ -246,6 +316,7 @@ void AHGVehicleBase::OnInteract(const FInputActionValue& /*Value*/)
 void AHGVehicleBase::ResetToSpawn()
 {
 	SetActorTransform(SpawnTransform, false, nullptr, ETeleportType::TeleportPhysics);
+	SnapCamera();
 }
 
 // ---------------------------------------------------------------------------

@@ -64,6 +64,8 @@ AHGBikePawn::AHGBikePawn()
 	ConcreteSpeedScale = 0.7f;
 	OffRoadSpeedScale = 0.4f;
 	ChaseCamPitch = -12.f;
+	// Bikes hold their line tighter than trucks (the rim stretch drifted 0.5 m+ towards the cliff edge).
+	LaneKeepGain = 2.2f;
 
 	// The box only has to catch walls, posts, cows and people: its bottom sits BikeBodyClearance above the
 	// ground (the probes carry the bike over the terrain). With the bottom 10 cm up, every bump in the carved

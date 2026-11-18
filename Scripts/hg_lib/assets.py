@@ -184,7 +184,8 @@ def import_sfx(force: bool = False) -> dict:
     return {n: import_sound(n, force) for n in ("SW_HG_AirHorn", "SW_HG_Scream", "SW_HG_Moo")}
 
 
-LOOPS = ("SW_HG_BikeEngine_Loop", "SW_HG_TruckEngine_Loop", "SW_HG_BoatMotor_Loop", "SW_HG_Siren_Loop", "SW_HG_Heli_Loop")
+LOOPS = ("SW_HG_BikeEngine_Loop", "SW_HG_TruckEngine_Loop", "SW_HG_BoatMotor_Loop", "SW_HG_Siren_Loop", "SW_HG_Heli_Loop",
+         "SW_HG_Wind_Loop", "SW_HG_Birds_Loop", "SW_HG_Tyre_Loop")
 
 
 def import_loops(force: bool = False) -> dict:

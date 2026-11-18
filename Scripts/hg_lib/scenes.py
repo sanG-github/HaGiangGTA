@@ -56,6 +56,11 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
     world.build_checkin_rings(layout, mat_ring, tag, f"{prefix}/Viewpoints")
     world.build_vehicles(layout, tag, f"{prefix}/Vehicles")
 
+    # Road furniture (posts, chevrons, guardrails, rim walls) is placed against the UE road spline, not taken
+    # from gen_scatter's older polyline (signs stood on the carriageway, rails missed the hairpin edges).
+    scatter = dict(scatter)
+    scatter.update(placements.road_furniture(placements.ctx_for(layout, world.load_scatter())))
+
     step("Scatter: cliffs, summits, boulders, shrubs, posts")
     world.build_scatter(scatter, meshes, mats, tag, f"{prefix}/Scatter")
 

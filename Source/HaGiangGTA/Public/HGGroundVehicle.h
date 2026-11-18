@@ -85,6 +85,21 @@ public:
 
 	int32 GetAutoDriveDirection() const { return AutoDriveDirection; }
 
+	/** Direction of travel along the road (+1 / -1): the AI's, or the player's (tracked a few times a second). */
+	int32 GetTravelDirection() const { return bAutoDrive ? AutoDriveDirection : PlayerTravelDir; }
+	/** RoadDistance / GetLateralOffset are valid (AI on the road, or a player-ridden vehicle being tracked). */
+	bool HasRoadPosition() const { return bAutoDrive || bPlayerRoadTracked; }
+	/** Signed distance (cm) from the road centre, > 0 = right of the direction of travel. */
+	float GetLateralOffset() const { return LastLateral; }
+	/** AI: distance (cm) from its lane line, last tick. */
+	float GetCrossTrackError() const { return LastCrossTrack; }
+	bool IsOvertaking() const { return OvertakeTarget.IsValid(); }
+	bool IsYielding() const { return bYielding; }
+
+	/** Session counters of AI traffic manoeuvres (playtest log). */
+	struct FTrafficStats { int32 Overtakes = 0; int32 Yields = 0; int32 GoArounds = 0; int32 Unsticks = 0; };
+	static FTrafficStats TrafficStats;
+
 	/** When the AI reaches a road end it teleports here (cm along the spline); <0 = turn around. */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	float LoopRestartDistance = -1.f;
@@ -132,6 +147,9 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "AI") float LaneEdgeMargin = 30.f;
 	UPROPERTY(EditAnywhere, Category = "AI") float AutoDriveRangeMin = -1.f;
 	UPROPERTY(EditAnywhere, Category = "AI") float AutoDriveRangeMax = -1.f;
+
+	/** Traffic awareness (4 Hz): same-direction vehicle ahead in our lane, nearest oncoming vehicle. */
+	void ScanTraffic(AHGGroundVehicle*& OutAhead, float& OutAheadGap, float& OutOncomingGap) const;
 
 	UPROPERTY(Transient) bool bAutoDrive = false;
 	UPROPERTY(Transient) TObjectPtr<AHGRoadSplineActor> AutoDriveRoad;
@@ -208,6 +226,25 @@ private:
 	float StuckTime = 0.f;
 	float SmoothedSteer = 0.f;
 	double LastBlockLogTime = -10.0;
+
+	// ---- Traffic manoeuvres (AI) ----
+	/** Extra lateral offset (cm, signed like the lane: < 0 = towards the centre / left lane) while overtaking,
+	 *  going round a stopped obstacle or hugging the edge to yield. Eased at LaneChangeRate. */
+	float LaneShift = 0.f;
+	float LaneShiftTarget = 0.f;
+	float TrafficScanTimer = 0.f;
+	float OvertakeTime = 0.f;
+	TWeakObjectPtr<AHGGroundVehicle> OvertakeTarget;
+	float BlockedTime = 0.f;
+	float GoAroundTime = 0.f;
+	bool bYielding = false;
+	float CachedAheadGap = BIG_NUMBER;
+	float CachedOncomingGap = BIG_NUMBER;
+	TWeakObjectPtr<AHGGroundVehicle> CachedAhead;
+	int32 PlayerTravelDir = 1;
+	bool bPlayerRoadTracked = false;
+	float LastLateral = 0.f;
+	float LastCrossTrack = 0.f;
 	float ChaseCamPitchCurrent = -10.f;
 
 	EHGSurface Surface = EHGSurface::Asphalt;

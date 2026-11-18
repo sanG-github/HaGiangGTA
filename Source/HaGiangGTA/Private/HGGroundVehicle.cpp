@@ -25,6 +25,8 @@ namespace
 	constexpr float AirSteerFactor = 0.25f;
 }
 
+AHGGroundVehicle::FTrafficStats AHGGroundVehicle::TrafficStats;
+
 AHGGroundVehicle::AHGGroundVehicle()
 {
 }
@@ -371,6 +373,7 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 		if (StuckTime > 2.f)
 		{
 			StuckTime = 0.f;
+			++TrafficStats.Unsticks;
 			StartAutoDrive(AutoDriveRoad, RoadDistance + 400.f * AutoDriveDirection, AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
 		}
 	}
@@ -463,6 +466,11 @@ void AHGGroundVehicle::PlaceOnRoad(AHGRoadSplineActor* Road, float DistanceCm, i
 	VerticalVelocity = 0.f;
 	GroundNormal = FVector::UpVector;
 	StuckTime = 0.f;
+	LaneShift = LaneShiftTarget = 0.f;
+	OvertakeTarget = nullptr;
+	GoAroundTime = BlockedTime = 0.f;
+	bYielding = false;
+	SnapCamera();
 }
 
 AHGRoadSplineActor* AHGGroundVehicle::FindNearestRoad(const FVector& Location, float& OutLateralCm, float& OutDistanceCm) const
@@ -511,6 +519,7 @@ void AHGGroundVehicle::UpdateSurface(float DeltaSeconds)
 	{
 		Surface = EHGSurface::Asphalt;
 		SurfaceScale = 1.f;
+		bPlayerRoadTracked = false;
 		return;
 	}
 	SurfaceTimer -= DeltaSeconds;
@@ -524,6 +533,18 @@ void AHGGroundVehicle::UpdateSurface(float DeltaSeconds)
 		float Lateral = 0.f, Dist = 0.f;
 		const AHGRoadSplineActor* Road = FindNearestRoad(GetActorLocation(), Lateral, Dist);
 		const bool bOnRoad = Road && Lateral <= Road->GetWidthAtDistance(Dist) * 0.5f + 60.f;
+		// Let the AI see the player as traffic: road distance, direction of travel, side of the road.
+		bPlayerRoadTracked = Road && Lateral < 1500.f;
+		if (bPlayerRoadTracked)
+		{
+			const USplineComponent* Sp = Road->GetSpline();
+			const FVector T = Sp->GetDirectionAtDistanceAlongSpline(Dist, ESplineCoordinateSpace::World).GetSafeNormal2D();
+			const FVector Heading = FRotator(0.f, HeadingYaw, 0.f).Vector() * (Speed < 0.f ? -1.f : 1.f);
+			PlayerTravelDir = FVector::DotProduct(Heading, T) >= 0.f ? 1 : -1;
+			const FVector R = FVector::CrossProduct(FVector::UpVector, T * float(PlayerTravelDir)).GetSafeNormal();
+			LastLateral = FVector::DotProduct(GetActorLocation() - Sp->GetLocationAtDistanceAlongSpline(Dist, ESplineCoordinateSpace::World), R);
+			RoadDistance = Dist;
+		}
 		if (bOnRoad)
 		{
 			Surface = (Road->SecondaryFromDistance >= 0.f && Dist >= Road->SecondaryFromDistance) ? EHGSurface::Concrete : EHGSurface::Asphalt;
@@ -545,7 +566,7 @@ void AHGGroundVehicle::UpdateChaseCamera(float DeltaSeconds)
 	}
 	const float Slope = bGrounded ? GetActorRotation().Pitch : 0.f;
 	ChaseCamPitchCurrent = FMath::FInterpTo(ChaseCamPitchCurrent, ChaseCamPitch + ChaseCamSlopeFollow * Slope, DeltaSeconds, 3.f);
-	SpringArm->SetRelativeRotation(FRotator(ChaseCamPitchCurrent, 0.f, 0.f));
+	UpdateOrbitCamera(DeltaSeconds, ChaseCamPitchCurrent, -60.f, 10.f);
 	const float SpeedFrac = FMath::Clamp(FMath::Abs(Speed) / FMath::Max(MaxForwardSpeed, 1.f), 0.f, 1.f);
 	Camera->SetFieldOfView(FMath::FInterpTo(Camera->FieldOfView, FMath::Lerp(ChaseFovRest, ChaseFovFast, SpeedFrac * SpeedFrac), DeltaSeconds, 2.f));
 }
@@ -574,7 +595,7 @@ float AHGGroundVehicle::GetLaneOffsetAt(float DistanceCm) const
 	const float Width = FMath::Min(AutoDriveRoad->GetWidthAtDistance(DistanceCm),
 		AutoDriveRoad->GetWidthAtDistance(DistanceCm + 1500.f * float(AutoDriveDirection)));
 	const float MaxLane = FMath::Max(Width * 0.5f - LaneEdgeMargin - HalfWidth, 0.f);
-	return FMath::Sign(AutoDriveLane) * FMath::Min(FMath::Abs(AutoDriveLane), MaxLane);
+	return FMath::Clamp(AutoDriveLane + LaneShift, -MaxLane, MaxLane);
 }
 
 float AHGGroundVehicle::GetMinRadiusAhead(float LookCm, float StepCm) const
@@ -600,6 +621,40 @@ float AHGGroundVehicle::GetMinRadiusAhead(float LookCm, float StepCm) const
 		Prev = Dir;
 	}
 	return MinRadius;
+}
+
+void AHGGroundVehicle::ScanTraffic(AHGGroundVehicle*& OutAhead, float& OutAheadGap, float& OutOncomingGap) const
+{
+	OutAhead = nullptr;
+	OutAheadGap = BIG_NUMBER;
+	OutOncomingGap = BIG_NUMBER;
+	for (TActorIterator<AHGGroundVehicle> It(GetWorld()); It; ++It)
+	{
+		AHGGroundVehicle* V = *It;
+		if (V == this || !V->HasRoadPosition())
+		{
+			continue;
+		}
+		const float Gap = (V->GetRoadDistance() - RoadDistance) * float(AutoDriveDirection);
+		if (Gap < 0.f || Gap > 15000.f)
+		{
+			continue;
+		}
+		if (V->GetTravelDirection() == AutoDriveDirection)
+		{
+			// Same way: "ahead of us" only if it is in the lane we are in now (an overtaken bike in the right
+			// lane doesn't block us in the left one).
+			if (FMath::Abs(V->GetLateralOffset() - LastLateral) < 170.f && Gap < OutAheadGap)
+			{
+				OutAheadGap = Gap;
+				OutAhead = V;
+			}
+		}
+		else
+		{
+			OutOncomingGap = FMath::Min(OutOncomingGap, Gap);
+		}
+	}
 }
 
 void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrottle, float& OutSteer, bool& OutHandbrake)
@@ -655,6 +710,8 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	const FVector RoadT = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World).GetSafeNormal2D() * Dir;
 	const FVector Right = FVector::CrossProduct(FVector::UpVector, RoadT).GetSafeNormal();
 	const float CrossTrack = FVector::DotProduct(GetActorLocation() - (RoadP + Right * GetLaneOffsetAt(RoadDistance)), Right); // > 0: right of lane
+	LastCrossTrack = CrossTrack;
+	LastLateral = FVector::DotProduct(GetActorLocation() - RoadP, Right);
 	const float PreviewD = FMath::Clamp(RoadDistance + Dir * FMath::Max(FMath::Abs(Speed) * LanePreviewSeconds, 150.f), 0.f, Len);
 	const FVector Ahead = Spline->GetDirectionAtDistanceAlongSpline(PreviewD, ESplineCoordinateSpace::World) * Dir;
 	const float DesiredYaw = Ahead.Rotation().Yaw - FMath::RadiansToDegrees(FMath::Atan2(LaneKeepGain * CrossTrack, FMath::Abs(Speed) + 300.f));
@@ -668,9 +725,78 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	const float Radius = FMath::Max(GetMinRadiusAhead(3600.f, 300.f) - FMath::Abs(GetLaneOffsetAt(RoadDistance)), 150.f);
 	TargetSpeed = FMath::Min(TargetSpeed, FMath::Sqrt(AutoDriveLateralAccel * Radius));
 
+	// ---- Traffic: overtaking, yielding on hairpins, going round stopped things (4 Hz scan) ----
+	TrafficScanTimer -= DeltaSeconds;
+	if (TrafficScanTimer <= 0.f)
+	{
+		TrafficScanTimer = 0.25f;
+		AHGGroundVehicle* AheadV = nullptr;
+		ScanTraffic(AheadV, CachedAheadGap, CachedOncomingGap);
+		CachedAhead = AheadV;
+		const bool bNarrow = AutoDriveRoad->GetWidthAtDistance(RoadDistance) < 500.f;
+
+		// Overtake a slower vehicle in our lane (not our own convoy leader) on a clear, open stretch: the left
+		// lane must be free of oncoming traffic for 150 m and the road ahead no tighter than R 40 m.
+		if (AHGGroundVehicle* Target = OvertakeTarget.Get())
+		{
+			const float G = (Target->GetRoadDistance() - RoadDistance) * Dir;
+			const bool bPassed = G < -1200.f;
+			const bool bAbort = CachedOncomingGap < 7000.f && G > -400.f;
+			if (bPassed || bAbort || OvertakeTime > 15.f)
+			{
+				OvertakeTarget = nullptr;
+				LaneShiftTarget = 0.f;
+			}
+		}
+		else if (AheadV && AheadV != AutoDriveLeader.Get() && !bNarrow && CachedAheadGap < 3500.f
+			&& AheadV->GetSpeed() < AutoDriveCruise - 250.f && CachedOncomingGap > 15000.f
+			&& GetMinRadiusAhead(9000.f, 600.f) > 4000.f && GoAroundTime <= 0.f)
+		{
+			OvertakeTarget = AheadV;
+			OvertakeTime = 0.f;
+			LaneShiftTarget = -2.f * AutoDriveLane;   // mirror into the left lane
+			++TrafficStats.Overtakes;
+		}
+
+		// Hairpin etiquette: with oncoming traffic within 70 m and a hairpin coming, the one going downhill
+		// slows to walking pace and hugs its edge; the one climbing keeps its momentum.
+		const bool bWasYielding = bYielding;
+		bYielding = false;
+		if (CachedOncomingGap < 7000.f && GetMinRadiusAhead(5000.f, 300.f) < 1500.f && !OvertakeTarget.IsValid())
+		{
+			const float ZNow = Spline->GetLocationAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World).Z;
+			const float ZAhead = Spline->GetLocationAtDistanceAlongSpline(FMath::Clamp(RoadDistance + Dir * 2000.f, 0.f, Len), ESplineCoordinateSpace::World).Z;
+			bYielding = ZAhead < ZNow - 50.f;
+		}
+		if (bYielding && !bWasYielding)
+		{
+			++TrafficStats.Yields;
+		}
+		if (!OvertakeTarget.IsValid() && GoAroundTime <= 0.f)
+		{
+			LaneShiftTarget = bYielding ? 80.f : 0.f;
+		}
+	}
+	OvertakeTime += DeltaSeconds;
+	GoAroundTime = FMath::Max(0.f, GoAroundTime - DeltaSeconds);
+	if (GoAroundTime <= 0.f && !OvertakeTarget.IsValid() && !bYielding)
+	{
+		LaneShiftTarget = 0.f;
+	}
+	LaneShift = FMath::FInterpConstantTo(LaneShift, LaneShiftTarget, DeltaSeconds, 140.f);
+
+	if (OvertakeTarget.IsValid())
+	{
+		TargetSpeed = FMath::Max(TargetSpeed, FMath::Min(AutoDriveCruise * 1.2f, FMath::Sqrt(AutoDriveLateralAccel * Radius)));
+	}
+	if (bYielding)
+	{
+		TargetSpeed = FMath::Min(TargetSpeed, 350.f);   // ~12 km/h
+	}
+
 	if (const AHGGroundVehicle* Leader = AutoDriveLeader.Get())
 	{
-		if (Leader->IsAutoDriving() && Leader->GetAutoDriveDirection() == AutoDriveDirection)
+		if (Leader->IsAutoDriving() && Leader->GetAutoDriveDirection() == AutoDriveDirection && !OvertakeTarget.IsValid())
 		{
 			const float Gap = (Leader->GetRoadDistance() - RoadDistance) * AutoDriveDirection;
 			const float Desired = ConvoyGap + FMath::Abs(Speed) * 0.5f;
@@ -682,23 +808,57 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		}
 	}
 
-	// Anything (player, cows, other traffic) right in front: brake.
-	FHitResult Hit;
-	const FVector Fwd = GetActorForwardVector();
-	const FVector Start = GetActorLocation() + Fwd * (Collision->GetScaledBoxExtent().X + 50.f);
+	// Anything (player, cows, people, traffic) on our lane ahead: brake. The probe follows the lane line
+	// (two legs) instead of a straight line from the nose, which on every bend pointed at bikes parked on the
+	// outside shoulder and tourists at the viewpoints and stopped convoys dead there.
 	const float Probe = 600.f + FMath::Abs(Speed) * 0.9f;
-	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGAutoDriveProbe), false, this);
-	if (GetWorld()->SweepSingleByObjectType(Hit, Start, Start + Fwd * Probe, FQuat::Identity,
-		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(90.f), Params))
+	const float ActorAboveRoad = Collision->GetScaledBoxExtent().Z + GroundClearance;
+	auto LanePoint = [&](float AheadCm)
 	{
-		const float Block = FMath::Clamp(Hit.Distance / Probe, 0.f, 1.f);
+		const float At = FMath::Clamp(RoadDistance + Dir * AheadCm, 0.f, Len);
+		const FVector T = Spline->GetDirectionAtDistanceAlongSpline(At, ESplineCoordinateSpace::World).GetSafeNormal2D() * Dir;
+		const FVector R = FVector::CrossProduct(FVector::UpVector, T).GetSafeNormal();
+		return Spline->GetLocationAtDistanceAlongSpline(At, ESplineCoordinateSpace::World) + R * GetLaneOffsetAt(At) + FVector(0.f, 0.f, ActorAboveRoad);
+	};
+	const float NoseCm = Collision->GetScaledBoxExtent().X + 50.f;
+	const FVector P0 = GetActorLocation() + GetActorForwardVector() * NoseCm;
+	const FVector P1 = LanePoint(NoseCm + Probe * 0.5f);
+	const FVector P2 = LanePoint(NoseCm + Probe);
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGAutoDriveProbe), false, this);
+	FHitResult Hit;
+	bool bHit = GetWorld()->SweepSingleByObjectType(Hit, P0, P1, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(70.f), Params);
+	float HitDist = bHit ? Hit.Distance : 0.f;
+	if (!bHit)
+	{
+		bHit = GetWorld()->SweepSingleByObjectType(Hit, P1, P2, FQuat::Identity, FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(70.f), Params);
+		HitDist = FVector::Dist(P0, P1) + (bHit ? Hit.Distance : 0.f);
+	}
+	if (bHit)
+	{
+		const float Block = FMath::Clamp(HitDist / Probe, 0.f, 1.f);
 		TargetSpeed = FMath::Min(TargetSpeed, AutoDriveCruise * Block * Block);
 		OnAutoDriveObstacle(Hit.GetActor());
 		if (IsPlayerControlled() && GetWorld()->GetTimeSeconds() - LastBlockLogTime > 1.0)
 		{
 			LastBlockLogTime = GetWorld()->GetTimeSeconds();
-			UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s auto-drive braking for %s at %.0f m"), *GetName(), *GetNameSafe(Hit.GetActor()), Hit.Distance / 100.f);
+			UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s auto-drive braking for %s at %.0f m"), *GetName(), *GetNameSafe(Hit.GetActor()), HitDist / 100.f);
 		}
+		// Something standing still in our lane (a parked bike, a tourist taking a photo, a stalled vehicle):
+		// after 3 s go round it on the left if nothing is coming, like a rider would.
+		const AActor* Obstacle = Hit.GetActor();
+		const bool bStill = Obstacle && Obstacle->GetVelocity().Size() < 50.f;
+		BlockedTime = (bStill && FMath::Abs(Speed) < 150.f) ? BlockedTime + DeltaSeconds : 0.f;
+		if (BlockedTime > 3.f && CachedOncomingGap > 6000.f && GoAroundTime <= 0.f)
+		{
+			GoAroundTime = 6.f;
+			LaneShiftTarget = -(FMath::Abs(AutoDriveLane) + 150.f);
+			BlockedTime = 0.f;
+			++TrafficStats.GoArounds;
+		}
+	}
+	else
+	{
+		BlockedTime = 0.f;
 	}
 
 	const float SpeedError = TargetSpeed - Speed;

@@ -97,8 +97,10 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		DriverSeat->SetRelativeLocation(FVector(-520.f, 0.f, 135.f));
 		EngineVolume = 0.8f;
 
-		SpringArm->TargetArmLength = 1700.f;
-		SpringArm->SocketOffset = FVector(0.f, 0.f, 320.f);
+		// Camera above the canopy (2.1 m) even when the arm's collision test pulls it in against a pontoon or a
+		// moored hull: with 3.2 m of socket height it ended inside our own roof / hull (black frames).
+		SpringArm->TargetArmLength = 1250.f;
+		SpringArm->SocketOffset = FVector(0.f, 0.f, 450.f);
 	}
 	else
 	{
@@ -128,8 +130,8 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		DriverSeat->SetRelativeLocation(FVector(-20.f, 0.f, 70.f));
 		EngineVolume = 0.f; // paddling: no motor
 
-		SpringArm->TargetArmLength = 600.f;
-		SpringArm->SocketOffset = FVector(0.f, 0.f, 200.f);
+		SpringArm->TargetArmLength = 650.f;
+		SpringArm->SocketOffset = FVector(0.f, 0.f, 240.f);
 	}
 }
 
@@ -196,6 +198,75 @@ void ANhoQueBoatPawn::ResetToSpawn()
 	HeadingYaw = SpawnTransform.Rotator().Yaw;
 	Speed = 0.f;
 	VerticalVelocity = 0.f;
+}
+
+const TArray<FVector>* ANhoQueBoatPawn::FindCruiseLine(const UWorld* World)
+{
+	const TArray<FVector>* Best = nullptr;
+	for (TActorIterator<ANhoQueBoatPawn> It(World); It; ++It)
+	{
+		if (It->bAutoCruise && It->CruisePoints.Num() >= 2 && (!Best || It->CruisePoints.Num() > Best->Num()))
+		{
+			Best = &It->CruisePoints;
+		}
+	}
+	return Best;
+}
+
+void ANhoQueBoatPawn::RecoverToRoute()
+{
+	const TArray<FVector>* Line = FindCruiseLine(GetWorld());
+	if (!Line)
+	{
+		ResetToSpawn();
+		return;
+	}
+	const FVector Loc = GetActorLocation();
+	int32 Best = 0;
+	for (int32 i = 1; i < Line->Num(); ++i)
+	{
+		if (FVector::DistSquared2D((*Line)[i], Loc) < FVector::DistSquared2D((*Line)[Best], Loc))
+		{
+			Best = i;
+		}
+	}
+	const int32 Next = FMath::Min(Best + 1, Line->Num() - 1);
+	const int32 Prev = FMath::Max(Best - 1, 0);
+	FVector Along = ((*Line)[Next] - (*Line)[Prev]).GetSafeNormal2D();
+	if (FVector::DotProduct(Along, FRotator(0.f, HeadingYaw, 0.f).Vector()) < 0.f)
+	{
+		Along = -Along;
+	}
+	FVector P = (*Line)[Best];
+	float SurfaceZ = P.Z;
+	AHGWaterBody::FindSurface(GetWorld(), P, SurfaceZ);
+	P.Z = SurfaceZ - Draft + 20.f;
+	HeadingYaw = Along.Rotation().Yaw;
+	SetActorLocationAndRotation(P, FRotator(0.f, HeadingYaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+	Speed = 0.f;
+	VerticalVelocity = 0.f;
+	SnapCamera();
+}
+
+void ANhoQueBoatPawn::UpdateBoatCamera(float DeltaSeconds)
+{
+	if (!IsPlayerControlled())
+	{
+		return;
+	}
+	// Never look up from below: the arm end must stay above the hull and the water.
+	UpdateOrbitCamera(DeltaSeconds, -14.f, -55.f, -5.f);
+	// Where the arm puts the camera without collision; lift it (TargetOffset is world space) so it stays
+	// at least 1 m above the river surface whatever the orbit.
+	const FRotator ArmRot = SpringArm->GetComponentRotation();
+	const FVector End = SpringArm->GetComponentLocation() + ArmRot.RotateVector(FVector(-SpringArm->TargetArmLength, 0.f, 0.f) + SpringArm->SocketOffset);
+	float SurfaceZ = 0.f;
+	float Lift = 0.f;
+	if (AHGWaterBody::FindSurface(GetWorld(), End, SurfaceZ))
+	{
+		Lift = FMath::Max(0.f, SurfaceZ + 100.f - End.Z);
+	}
+	SpringArm->TargetOffset = FVector(0.f, 0.f, FMath::FInterpTo(SpringArm->TargetOffset.Z, Lift, DeltaSeconds, 6.f));
 }
 
 FVector ANhoQueBoatPawn::GetExitLocation() const
@@ -370,6 +441,7 @@ void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 	VisualRoll = FMath::FInterpTo(VisualRoll, -Steer * TurnRollDeg * FMath::Abs(SpeedAlpha) + Bob * 0.7f, Dt, 3.f);
 	HullRoot->SetRelativeRotation(FRotator(VisualPitch, 0.f, VisualRoll));
 	SetActorRotation(FRotator(0.f, HeadingYaw, 0.f));
+	UpdateBoatCamera(Dt);
 
 	if (bKayak)
 	{
