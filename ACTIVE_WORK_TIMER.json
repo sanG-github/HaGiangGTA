@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 1549,
+  "active_work_seconds": 2088,
   "cooldown_wait_seconds": 0,
-  "state": "stopped",
-  "segment_started_at": null,
-  "current_branch": "main",
+  "state": "running",
+  "segment_started_at": 1794976006,
+  "current_branch": "checkpoint/03-6hr-3viewpoints-photoreal",
   "current_checkpoint": "cp-03-6hr",
-  "last_completed_step": "CP02 merged into main (tag cp-02-1hr)",
-  "next_pending_step": "Compile CP01-02 in UE 5.5, then CP03 photoreal viewpoints",
+  "last_completed_step": "CP03 python",
+  "next_pending_step": "commit CP03",
   "pause_reason": null,
   "history": [
     {
@@ -65,6 +65,33 @@
       "t": 1794975067,
       "event": "stop",
       "active": 1549
+    },
+    {
+      "t": 1794975467,
+      "event": "start",
+      "active": 1549,
+      "checkpoint": "cp-03-6hr"
+    },
+    {
+      "t": 1794975602,
+      "event": "step",
+      "active": 1684,
+      "done": "gen_assets.py",
+      "next": "gen_scatter.py"
+    },
+    {
+      "t": 1794975785,
+      "event": "step",
+      "active": 1867,
+      "done": "CP03 C++ scatter + flycam",
+      "next": "CP03 python materials/assets"
+    },
+    {
+      "t": 1794976006,
+      "event": "step",
+      "active": 2088,
+      "done": "CP03 python",
+      "next": "commit CP03"
     }
   ]
 }

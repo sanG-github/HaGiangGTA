@@ -7,7 +7,7 @@ time spent waiting for a usage-limit reset is excluded (`cooldown_wait_seconds`)
 |---|---|---|---|---|
 | 01 | `checkpoint/01-10min-greybox` | `cp-01-10min` | 10 min | done (~7 min active) |
 | 02 | `checkpoint/02-1hr-heightmap-bike` | `cp-02-1hr` | 1 h | done (~26 min active) |
-| 03 | `checkpoint/03-6hr-3viewpoints-photoreal` | `cp-03-6hr` | 6 h | pending |
+| 03 | `checkpoint/03-6hr-3viewpoints-photoreal` | `cp-03-6hr` | 6 h | done (~35 min active) |
 | 04 | `checkpoint/04-12hr-living-world` | `cp-04-12hr` | 12 h | pending |
 | 05 | `checkpoint/05-24hr-full-gta-5star` | `cp-05-24hr` | 24 h | pending |
 
@@ -72,3 +72,35 @@ authoring environment, so the first compile/run happens on your machine.
 
 **Known limits:** written without a local UE 5.5 build; greybox shapes for bike/boat/character; asphalt and water
 are flat colours until CP03 (materials, Nanite cliffs, Lumen sky).
+
+---
+
+## CP03 — Three photoreal viewpoints (`cp-03-6hr`)
+
+**Rebuild:** `.venv/bin/python Scripts/Tools/gen_heightmap.py && .venv/bin/python Scripts/Tools/gen_assets.py && .venv/bin/python Scripts/Tools/gen_scatter.py`
+(the build script runs any that are missing), compile, then run `Scripts/Checkpoints/build_cp03.py` → `/Game/Maps/L_HaGiang_CP03`.
+
+**Procedural assets (`gen_assets.py`, no Megascans download needed)**
+- Textures: tileable limestone normal (ridges + strata), RGB breakup noise (B = puddle mask), seamless water normal.
+- Nanite meshes (OBJ, cm): 4 karst cliff slabs (fracture-plane cuts, karren flutes, strata ledges, pinnacle crown),
+  3 boulders, 2 shrub clumps, VN road post (UV.V = height for the red band).
+- `SW_HG_SaoMong.wav`: synthesized Hmong-flute-style D-minor pentatonic phrase with grace slides, vibrato and valley echo.
+
+**Materials (`hg_lib/materials.py`, node graphs via MaterialEditingLibrary)**
+- `M_HG_Terrain`: auto-slope grass/scrub ↔ limestone + moss, wet dark banks above the river.
+- `M_HG_WetAsphalt`: aggregate, noise puddles at roughness 0.05 that mirror the low sun.
+- `M_HG_RiverWater`: SingleLayerWater, emerald absorption/scattering, two panning wave normals.
+- `M_HG_KarstRock`: limestone with vertical rain stains and moss on up-facing ledges. `M_HG_Bush`, `M_HG_RoadPost`.
+
+**Scene (`hg_lib/world.py`)**
+- Nanite landscape + `AHGInstancedScatterActor` (HISM): ~12.5k canyon cliffs, ~380 cone summits, ~11k boulders,
+  ~55k shrubs, ~930 posts on the valley edge, rocks under Mỏm Đá Tử Thần. Per-component cull distances
+  (boulders 600 m, shrubs 260 m, posts 220 m) do the job of a CullDistanceVolume.
+- Golden hour: sun 9° above the horizon at 3900 K with light shafts, VolumetricCloud layer at 750–1100 m
+  (sea of clouds below the 1200 m pass road), valley + volumetric fog, filmic PostProcessVolume.
+- `AHGViewpointActor` ×3: `[V]` inside a check-in ring → CineCamera orbit (crane-in), letterbox + name/altitude card,
+  flute theme; `[V]` again or 28 s to return.
+
+**Known limits:** written without a local UE 5.5 build (engine not installed yet). No CullDistanceVolume actor
+(brush volumes can't be sized from Python reliably — HISM cull distances are used instead). Megascans can replace the
+procedural meshes later by swapping the meshes passed to `world.build_scatter`.

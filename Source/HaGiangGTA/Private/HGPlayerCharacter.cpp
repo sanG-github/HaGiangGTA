@@ -14,6 +14,7 @@
 #include "HaGiangGTA.h"
 #include "HGInputFactory.h"
 #include "HGVehicleBase.h"
+#include "HGViewpointActor.h"
 #include "HGWaterBody.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
@@ -101,6 +102,7 @@ void AHGPlayerCharacter::EnsureInputObjects()
 	JumpAction = HGInput::MakeAction(this, TEXT("IA_Jump"), EInputActionValueType::Boolean);
 	SprintAction = HGInput::MakeAction(this, TEXT("IA_Sprint"), EInputActionValueType::Boolean);
 	InteractAction = HGInput::MakeAction(this, TEXT("IA_Interact"), EInputActionValueType::Boolean);
+	FlycamAction = HGInput::MakeAction(this, TEXT("IA_Flycam"), EInputActionValueType::Boolean);
 
 	OnFootContext = HGInput::MakeContext(this, TEXT("IMC_OnFoot"));
 	// Move: X = right, Y = forward.
@@ -119,6 +121,8 @@ void AHGPlayerCharacter::EnsureInputObjects()
 	HGInput::MapKey(OnFootContext, SprintAction, EKeys::Gamepad_LeftThumbstick);
 	HGInput::MapKey(OnFootContext, InteractAction, EKeys::F);
 	HGInput::MapKey(OnFootContext, InteractAction, EKeys::Gamepad_FaceButton_Top);
+	HGInput::MapKey(OnFootContext, FlycamAction, EKeys::V);
+	HGInput::MapKey(OnFootContext, FlycamAction, EKeys::Gamepad_Special_Right);
 }
 
 void AHGPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -139,6 +143,7 @@ void AHGPlayerCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputC
 	EIC->BindAction(SprintAction, ETriggerEvent::Started, this, &AHGPlayerCharacter::SprintOn);
 	EIC->BindAction(SprintAction, ETriggerEvent::Completed, this, &AHGPlayerCharacter::SprintOff);
 	EIC->BindAction(InteractAction, ETriggerEvent::Started, this, &AHGPlayerCharacter::Interact);
+	EIC->BindAction(FlycamAction, ETriggerEvent::Started, this, &AHGPlayerCharacter::ToggleFlycam);
 }
 
 void AHGPlayerCharacter::PawnClientRestart()
@@ -205,6 +210,11 @@ void AHGPlayerCharacter::ApplyMaxSpeed()
 	UCharacterMovementComponent* MoveComp = GetCharacterMovement();
 	MoveComp->MaxWalkSpeed = bSprinting ? SprintSpeed : WalkSpeed;
 	MoveComp->MaxFlySpeed = bSprinting ? SwimSprintSpeed : SwimSpeed;
+}
+
+void AHGPlayerCharacter::ToggleFlycam(const FInputActionValue& /*Value*/)
+{
+	AHGViewpointActor::ToggleFlycam(this);
 }
 
 void AHGPlayerCharacter::Interact(const FInputActionValue& /*Value*/)

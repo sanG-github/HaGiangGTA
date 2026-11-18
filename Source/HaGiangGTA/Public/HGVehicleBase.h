@@ -100,6 +100,7 @@ protected:
 	UPROPERTY(Transient) TObjectPtr<UInputAction> BoostAction;
 	UPROPERTY(Transient) TObjectPtr<UInputAction> ResetAction;
 	UPROPERTY(Transient) TObjectPtr<UInputAction> InteractAction;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> FlycamAction;
 
 	FTransform SpawnTransform;
 
@@ -107,6 +108,7 @@ private:
 	void EnsureInputObjects();
 	void OnInteract(const FInputActionValue& Value);
 	void OnReset(const FInputActionValue& Value);
+	void OnFlycam(const FInputActionValue& Value);
 
 	UPROPERTY(Transient)
 	TObjectPtr<AHGPlayerCharacter> Driver;

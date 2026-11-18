@@ -90,6 +90,7 @@ private:
 	void SprintOn(const FInputActionValue& Value);
 	void SprintOff(const FInputActionValue& Value);
 	void Interact(const FInputActionValue& Value);
+	void ToggleFlycam(const FInputActionValue& Value);
 
 	void UpdateSwimming(float DeltaSeconds);
 	void StartSwimming();
@@ -110,4 +111,5 @@ private:
 	UPROPERTY(Transient) TObjectPtr<UInputAction> JumpAction;
 	UPROPERTY(Transient) TObjectPtr<UInputAction> SprintAction;
 	UPROPERTY(Transient) TObjectPtr<UInputAction> InteractAction;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> FlycamAction;
 };

@@ -9,6 +9,7 @@
 #include "HaGiangGTA.h"
 #include "HGInputFactory.h"
 #include "HGPlayerCharacter.h"
+#include "HGViewpointActor.h"
 #include "InputAction.h"
 #include "InputCoreTypes.h"
 #include "InputMappingContext.h"
@@ -78,6 +79,7 @@ void AHGVehicleBase::EnsureInputObjects()
 	BoostAction = HGInput::MakeAction(this, TEXT("IA_Boost"), EInputActionValueType::Boolean);
 	ResetAction = HGInput::MakeAction(this, TEXT("IA_Reset"), EInputActionValueType::Boolean);
 	InteractAction = HGInput::MakeAction(this, TEXT("IA_VehicleInteract"), EInputActionValueType::Boolean);
+	FlycamAction = HGInput::MakeAction(this, TEXT("IA_VehicleFlycam"), EInputActionValueType::Boolean);
 
 	DrivingContext = HGInput::MakeContext(this, TEXT("IMC_Driving"));
 
@@ -105,6 +107,9 @@ void AHGVehicleBase::EnsureInputObjects()
 
 	HGInput::MapKey(DrivingContext, InteractAction, EKeys::F);
 	HGInput::MapKey(DrivingContext, InteractAction, EKeys::Gamepad_FaceButton_Top);
+
+	HGInput::MapKey(DrivingContext, FlycamAction, EKeys::V);
+	HGInput::MapKey(DrivingContext, FlycamAction, EKeys::Gamepad_Special_Right);
 }
 
 void AHGVehicleBase::SetupPlayerInputComponent(UInputComponent* PlayerInputComponent)
@@ -127,6 +132,7 @@ void AHGVehicleBase::SetupPlayerInputComponent(UInputComponent* PlayerInputCompo
 
 	EIC->BindAction(ResetAction, ETriggerEvent::Started, this, &AHGVehicleBase::OnReset);
 	EIC->BindAction(InteractAction, ETriggerEvent::Started, this, &AHGVehicleBase::OnInteract);
+	EIC->BindAction(FlycamAction, ETriggerEvent::Started, this, &AHGVehicleBase::OnFlycam);
 }
 
 void AHGVehicleBase::PawnClientRestart()
@@ -165,6 +171,11 @@ bool AHGVehicleBase::ReadButton(const UInputAction* Action) const
 void AHGVehicleBase::OnReset(const FInputActionValue& /*Value*/)
 {
 	ResetToSpawn();
+}
+
+void AHGVehicleBase::OnFlycam(const FInputActionValue& /*Value*/)
+{
+	AHGViewpointActor::ToggleFlycam(this);
 }
 
 void AHGVehicleBase::OnInteract(const FInputActionValue& /*Value*/)

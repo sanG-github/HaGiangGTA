@@ -6,6 +6,7 @@
 #include "GameFramework/PlayerController.h"
 #include "HGPlayerCharacter.h"
 #include "HGVehicleBase.h"
+#include "HGViewpointActor.h"
 
 void AHGOpenWorldHUD::DrawHUD()
 {
@@ -21,7 +22,25 @@ void AHGOpenWorldHUD::DrawHUD()
 	const float H = Canvas->ClipY;
 	const float S = FMath::Max(H / 1080.f, 0.5f);
 
-	DrawText(TEXT("HA GIANG GTA  |  CP02"), FLinearColor(1.f, 0.85f, 0.2f), 30.f * S, 24.f * S, LargeFont, 1.2f * S);
+	// Viewpoint flycam: cinematic bars + GTA-style location card.
+	if (const AHGViewpointActor* VP = AHGViewpointActor::GetActive(GetWorld()))
+	{
+		const float T = VP->GetActiveSeconds();
+		const float Fade = FMath::Clamp(T / 1.2f, 0.f, 1.f) * FMath::Clamp((VP->OrbitDuration - T) / 1.2f, 0.f, 1.f);
+		const float Bar = H * 0.11f * FMath::Clamp(T / 0.8f, 0.f, 1.f);
+		DrawRect(FLinearColor::Black, 0.f, 0.f, W, Bar);
+		DrawRect(FLinearColor::Black, 0.f, H - Bar, W, Bar);
+		const FString Name = VP->ViewpointName.ToString();
+		const FString Alt = FString::Printf(TEXT("%d m"), VP->AltitudeM);
+		float NW = 0.f, NH = 0.f;
+		GetTextSize(Name, NW, NH, LargeFont, 2.2f * S);
+		DrawText(Name, FLinearColor(1.f, 1.f, 1.f, Fade), W - NW - 60.f * S, H - Bar - 150.f * S, LargeFont, 2.2f * S);
+		DrawText(Alt, FLinearColor(1.f, 0.82f, 0.25f, Fade), W - NW - 60.f * S, H - Bar - 150.f * S + NH + 6.f * S, LargeFont, 1.6f * S);
+		DrawText(TEXT("[V] quay lai"), FLinearColor(0.85f, 0.85f, 0.85f, 0.7f * Fade), 30.f * S, H - Bar - 40.f * S, SmallFont, 1.2f * S);
+		return;
+	}
+
+	DrawText(TEXT("HA GIANG GTA"), FLinearColor(1.f, 0.85f, 0.2f), 30.f * S, 24.f * S, LargeFont, 1.2f * S);
 
 	APawn* Pawn = GetOwningPawn();
 	if (!Pawn)
@@ -36,13 +55,13 @@ void AHGOpenWorldHUD::DrawHUD()
 	{
 		Mode = Vehicle->GetVehicleDisplayName().ToString();
 		Kmh = FMath::Abs(Vehicle->GetSpeedKmh());
-		Hint = TEXT("W/S ga-phanh  A/D lai  SHIFT tang toc  SPACE phanh tay  R dat lai  F xuong xe");
+		Hint = TEXT("W/S ga-phanh  A/D lai  SHIFT tang toc  SPACE phanh tay  R dat lai  F xuong xe  V flycam");
 	}
 	else if (const AHGPlayerCharacter* Player = Cast<AHGPlayerCharacter>(Pawn))
 	{
 		Mode = Player->GetOnFootState() == EHGOnFootState::Swimming ? TEXT("DANG BOI") : TEXT("DI BO");
 		Kmh = Player->GetSpeedKmh();
-		Hint = TEXT("WASD di chuyen  CHUOT nhin  SHIFT chay  SPACE nhay");
+		Hint = TEXT("WASD di chuyen  CHUOT nhin  SHIFT chay  SPACE nhay  V flycam");
 		if (const AHGVehicleBase* Focus = Player->GetFocusedVehicle())
 		{
 			const FString Prompt = FString::Printf(TEXT("[F]  %s"), *Focus->GetVehicleDisplayName().ToString());
@@ -51,6 +70,12 @@ void AHGOpenWorldHUD::DrawHUD()
 			DrawRect(FLinearColor(0.f, 0.f, 0.f, 0.55f), (W - TW) * 0.5f - 16.f * S, H * 0.72f - 8.f * S, TW + 32.f * S, TH + 16.f * S);
 			DrawText(Prompt, FLinearColor::White, (W - TW) * 0.5f, H * 0.72f, LargeFont, 1.4f * S);
 		}
+	}
+
+	if (const AHGViewpointActor* Near = AHGViewpointActor::FindNearby(GetWorld(), Pawn->GetActorLocation()))
+	{
+		const FString Prompt = FString::Printf(TEXT("[V]  FLYCAM  -  %s"), *Near->ViewpointName.ToString());
+		DrawText(Prompt, FLinearColor(1.f, 0.82f, 0.25f), 30.f * S, 70.f * S, SmallFont, 1.5f * S);
 	}
 
 	// Altitude: world Z (cm) == metres above sea level (see gen_heightmap.py).
