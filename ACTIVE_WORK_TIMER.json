@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 1532,
+  "active_work_seconds": 1549,
   "cooldown_wait_seconds": 0,
-  "state": "running",
-  "segment_started_at": 1794975050,
-  "current_branch": "checkpoint/02-1hr-heightmap-bike",
-  "current_checkpoint": "cp-02-1hr",
-  "last_completed_step": "CP02 review",
-  "next_pending_step": "commit CP02",
+  "state": "stopped",
+  "segment_started_at": null,
+  "current_branch": "main",
+  "current_checkpoint": "cp-03-6hr",
+  "last_completed_step": "CP02 merged into main (tag cp-02-1hr)",
+  "next_pending_step": "Compile CP01-02 in UE 5.5, then CP03 photoreal viewpoints",
   "pause_reason": null,
   "history": [
     {
@@ -60,6 +60,11 @@
       "active": 1532,
       "done": "CP02 review",
       "next": "commit CP02"
+    },
+    {
+      "t": 1794975067,
+      "event": "stop",
+      "active": 1549
     }
   ]
 }
