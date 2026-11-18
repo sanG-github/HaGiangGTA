@@ -1,5 +1,6 @@
 #include "HGTouristNPC.h"
 #include "HGMeshKit.h"
+#include "HGReviewDirector.h"
 
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -29,6 +30,7 @@ AHGTouristNPC::AHGTouristNPC()
 void AHGTouristNPC::BeginPlay()
 {
 	Super::BeginPlay();
+	AHGReviewDirector::EnsureFor(GetWorld());
 	const FString Name = GetName();
 	const int32 Hash = int32(GetTypeHash(Name) & 0x7fffffff);
 	const bool bFlowerSeller = Name.Contains(TEXT("Flower"));

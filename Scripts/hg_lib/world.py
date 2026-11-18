@@ -174,10 +174,15 @@ def build_dock(layout, mat_wood, tag, folder):
 
 
 def build_checkin_rings(layout, mat_ring, tag, folder):
+    # A painted dashed ring on the ground (round 1 was a solid 4 m yellow disc that read as a plastic plate
+    # lying in every check-in photo).
     for key, vp in layout["viewpoints"].items():
         x, y, z = vp["location_cm"]
-        hg.spawn_mesh(f"CheckIn_{key}", hg.CYLINDER, (x, y, z + 3), scale=(4.0, 4.0, 0.03),
-                      material=mat_ring, tag=tag, folder=folder, collision=False)
+        dashes = 14
+        for i in range(dashes):
+            a = 2.0 * math.pi * i / dashes
+            hg.box(f"CheckIn_{key}_{i}", (x + math.cos(a) * 170.0, y + math.sin(a) * 170.0, z + 1.5), (45.0, 11.0, 2.0),
+                   yaw=math.degrees(a) + 90.0, material=mat_ring, tag=tag, folder=folder, collision=False)
 
 
 def build_vehicles(layout, tag, folder):

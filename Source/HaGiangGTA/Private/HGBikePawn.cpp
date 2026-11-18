@@ -196,6 +196,7 @@ void AHGBikePawn::SetNpcRiderVisible(bool bVisible)
 {
 	bRiderVisible = bVisible;
 	RiderRig.SetVisible(bVisible);
+	UpdatePassengerShown();
 }
 
 void AHGBikePawn::ClearVisuals()
@@ -270,7 +271,7 @@ void AHGBikePawn::BuildVisuals()
 
 	const FVector Head = HGBikes::HeadLampLens(BikeModel);
 	HeadLamp = Keep(FHGMeshKit::AddLamp(this, LeanRoot, TEXT("HeadLamp"), Head, HGBikes::HeadLampSize(BikeModel),
-		FLinearColor(1.f, 0.92f, 0.75f), 5.f, BikeModel != EHGBikeModel::Dream), 6000.f);
+		FLinearColor(1.f, 0.92f, 0.75f), 3.f, BikeModel != EHGBikeModel::Dream), 6000.f);
 	TailLamp = Keep(FHGMeshKit::AddLamp(this, LeanRoot, TEXT("TailLamp"), HGBikes::TailLampLens(BikeModel), FVector(1.6f, 9.f, 4.5f),
 		FLinearColor(1.f, 0.03f, 0.01f), 2.f, false), 6000.f);
 	HeadLight->SetRelativeLocation(Head + FVector(3.f, 0.f, 0.f));
@@ -305,6 +306,8 @@ void AHGBikePawn::BuildVisuals()
 	PassengerRig = HGPeople::Spawn(this, PassengerRoot, EHGPersonLook::Backpacker, EHGPersonPose::Passenger,
 		TourGroup >= 0 ? TourGroup : (Seed / 3) % HGPeople::NumVariants, TEXT("Passenger"), FVector::ZeroVector, (Seed & 1) != 0);
 	PassengerRig.bHoldOn = (Seed % 3) != 0;
+	PassengerRig.SetVisible(false);   // shown by UpdatePassengerShown only behind a rider
+	bPassengerShown = false;
 	for (UStaticMeshComponent* C : { PassengerRig.Body, PassengerRig.Head, PassengerRig.Arm[0], PassengerRig.Arm[1], PassengerRig.ScarfTail })
 	{
 		Keep(C, 25000.f);
@@ -399,8 +402,19 @@ void AHGBikePawn::ApplyColors()
 void AHGBikePawn::SetHasPassenger(bool bInHasPassenger)
 {
 	bHasPassenger = bInHasPassenger;
-	// A loaded working bike has no room for one.
-	PassengerRig.SetVisible(bHasPassenger && BikeModel != EHGBikeModel::LocalLoaded);
+	UpdatePassengerShown();
+}
+
+void AHGBikePawn::UpdatePassengerShown()
+{
+	// Only behind someone (the NPC rider or the player): a backpacker alone on a parked bike, hands out to
+	// a missing rider, looked broken. A loaded working bike has no room for one.
+	const bool bShow = bHasPassenger && BikeModel != EHGBikeModel::LocalLoaded && (bRiderVisible || IsPlayerControlled());
+	if (bShow != bPassengerShown || !bVisualsBuilt)
+	{
+		bPassengerShown = bShow;
+		PassengerRig.SetVisible(bShow);
+	}
 }
 
 void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
@@ -409,6 +423,7 @@ void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
 	{
 		BuildVisuals();
 	}
+	UpdatePassengerShown();   // follows the player getting on / off
 	VisualClock += DeltaSeconds;
 	const float CurSpeed = GetSpeed();
 	const float YawRateRad = FMath::DegreesToRadians(GetYawRate());

@@ -49,8 +49,8 @@ AHGHappyWaterPickup::AHGHappyWaterPickup()
 	Glow->MaxDrawDistance = 5000.f;
 	Glow->SetupAttachment(Spinner);
 	Glow->SetIntensityUnits(ELightUnits::Candelas);
-	Glow->SetIntensity(30.f);
-	Glow->SetAttenuationRadius(400.f);
+	Glow->SetIntensity(3.f);   // 30 cd vs the 10 lux sun lit a 4 m yellow pool on the grass; a faint glint is enough
+	Glow->SetAttenuationRadius(180.f);
 	Glow->SetLightColor(FLinearColor(1.f, 0.8f, 0.3f));
 	Glow->SetCastShadows(false);
 }

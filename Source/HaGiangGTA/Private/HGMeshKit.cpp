@@ -9,6 +9,7 @@
 #include "MeshDescription.h"
 #include "StaticMeshAttributes.h"
 #include "UObject/Package.h"
+#include "Misc/CommandLine.h"
 
 namespace
 {
@@ -27,7 +28,11 @@ int32 FHGMeshKit::AddVert(const FVector& P, const FVector& N)
 	FVert V;
 	V.P = FVector3f(P);
 	V.N = FVector3f(N.GetSafeNormal());
-	V.C = FVector4f(Color.R, Color.G, Color.B, 1.f);
+	// The static-mesh build stores vertex colours as sRGB bytes (FLinearColor::ToFColor(true)) but the material's
+	// VertexColor node returns those bytes as-is, so a linear 0.02 black came out as 0.15 grey and every outfit
+	// looked bleached. Pre-decode so the shader sees the linear colour we asked for.
+	auto Decode = [](float c) { c = FMath::Clamp(c, 0.f, 1.f); return c <= 0.04045f ? c / 12.92f : FMath::Pow((c + 0.055f) / 1.055f, 2.4f); };
+	V.C = FVector4f(Decode(Color.R), Decode(Color.G), Decode(Color.B), 1.f);
 	V.UV = FVector2f(Surf, bTint ? 1.f : 0.f);
 	return Verts.Add(V);
 }
@@ -366,7 +371,9 @@ UMaterialInterface* FHGMeshKit::LampMaterial()
 UStaticMeshComponent* FHGMeshKit::AddComponent(AActor* Owner, USceneComponent* Parent, UStaticMesh* Mesh, FName Name,
 	const FVector& Location, const FRotator& Rotation)
 {
-	if (!Owner || !Parent || !Mesh)
+	// -hgnokit: no kit people / bikes at all (A/B perf measurements).
+	static const bool bNoKit = FParse::Param(FCommandLine::Get(), TEXT("hgnokit"));
+	if (!Owner || !Parent || !Mesh || bNoKit)
 	{
 		return nullptr;
 	}

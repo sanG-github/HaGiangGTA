@@ -145,6 +145,8 @@ private:
 	/** Kit body, wheels, lamps, flag, NPC rider and passenger (HGBikeBuilder / HGPeopleBuilder). */
 	void BuildVisuals();
 	void ClearVisuals();
+	void UpdatePassengerShown();
+	bool bPassengerShown = true;
 
 	UPROPERTY(Transient) TArray<TObjectPtr<UStaticMeshComponent>> BodyParts;
 	UPROPERTY(Transient) TArray<TObjectPtr<UStaticMeshComponent>> KitParts;

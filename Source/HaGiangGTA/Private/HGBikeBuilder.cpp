@@ -26,20 +26,25 @@ namespace
 		}
 	}
 
-	void BuildWheel(FHGMeshKit& K, bool bFront)
+	void BuildWheel(FHGMeshKit& K, bool bFront, bool bKnobby)
 	{
 		const FTransform Id = FTransform::Identity;
-		// Tyre (2.50-17 / 2.75-17: ~61 cm outside) with knobby tread blocks.
+		// Tyre (2.50-17 / 2.75-17: ~61 cm outside); the Win runs semi-knobbies, scooters street tyres.
 		K.Paint(Rubber);
-		K.Torus(Id, 25.8f, bFront ? 4.0f : 4.6f, 28, 8);
-		const int32 Knobs = 26;
-		for (int32 i = 0; i < Knobs; ++i)
+		const float Minor = bKnobby ? (bFront ? 4.0f : 4.6f) : 3.6f;
+		K.Torus(Id, bKnobby ? 25.8f : 26.4f, Minor, 28, 8);
+		if (bKnobby)
 		{
-			const float A = 2.f * PI * (i + (i & 1) * 0.25f) / Knobs;
-			const FVector Dir(FMath::Cos(A), 0.f, FMath::Sin(A));
-			const float Y = (i & 1) ? 1.8f : -1.8f;
-			K.Box(Dir * (bFront ? 29.6f : 30.2f) + FVector(0.f, Y, 0.f), FVector(1.6f, 3.4f, 3.6f),
-				FRotator(FMath::RadiansToDegrees(-A), 0.f, 0.f));
+			const int32 Knobs = 30;
+			for (int32 i = 0; i < Knobs; ++i)
+			{
+				// Short blocks standing 1 cm proud of the carcass, staggered left / right.
+				const float A = 2.f * PI * i / Knobs;
+				const FVector Dir(FMath::Cos(A), 0.f, FMath::Sin(A));
+				const float Y = (i & 1) ? 1.7f : -1.7f;
+				K.Box(Dir * (25.8f + Minor + 0.1f) + FVector(0.f, Y, 0.f), FVector(1.8f, 3.2f, 3.4f),
+					FRotator(FMath::RadiansToDegrees(A), 0.f, 0.f));
+			}
 		}
 		// Rim, hub with brake drum, 2 x 9 spokes.
 		K.Paint(Chrome, HGSurf::Chrome);
@@ -269,6 +274,12 @@ namespace
 		K.Box(FVector(18.f, 0.f, 33.f), FVector(32.f, 27.f, 3.f));
 		K.Paint(Black, HGSurf::Satin);
 		K.Tube(FVector(42.f, 0.f, 55.f), FVector(4.f, 0.f, 30.f), 2.4f, 2.4f, 8, true);
+		// Steering-column cover from the shield up to the cowl, and the lower panel closing shield -> floor
+		// (the first version showed a free-standing board with daylight round it).
+		K.Paint(FLC::White, HGSurf::Gloss, true);
+		K.Tube(FVector(45.f, 0.f, 70.f), FVector(46.f, 0.f, 97.f), 7.f, 6.f, 12, true);
+		K.Box(FVector(33.f, 0.f, 40.f), FVector(22.f, 26.f, 14.f), FRotator(-30.f, 0.f, 0.f));
+		K.Ellipsoid(FVector(30.f, 0.f, 38.f), FVector(14.f, 13.5f, 9.f), FRotator(-25.f, 0.f, 0.f), 10, 5);
 		// Handlebar cowl with the headlamp; bars and grips at the Win's grip points.
 		K.Paint(FLC::White, HGSurf::Gloss, true);
 		if (St.bBoxy)
@@ -488,7 +499,7 @@ namespace HGBikes
 	UStaticMesh* Wheel(bool bFront, bool bScooter)
 	{
 		const FName Key = *FString::Printf(TEXT("SM_HGBikeWheel_%d_%d"), bFront ? 1 : 0, bScooter ? 1 : 0);
-		return FHGMeshKit::Cached(Key, [bFront, bScooter](FHGMeshKit& K) { BuildWheel(K, bFront || bScooter); });
+		return FHGMeshKit::Cached(Key, [bFront, bScooter](FHGMeshKit& K) { BuildWheel(K, bFront, !bScooter); });
 	}
 
 	UStaticMesh* Body(EHGBikeModel Model, int32 LoadSeed)

@@ -260,13 +260,13 @@ namespace
 		if (!bSkirt)
 		{
 			K.Paint(O.Lower);
-			K.Tube(Hip, Knee, 7.6f * O.Width, 5.8f, 8, false);
-			K.Ellipsoid(Knee, FVector(5.8f), FRotator::ZeroRotator, 6, 4);
+			K.Tube(Hip, Knee, 8.4f * O.Width, 6.4f, 8, false);
+			K.Ellipsoid(Knee, FVector(6.2f), FRotator::ZeroRotator, 6, 4);
 		}
 		if (O.Legs == ELower::Shorts)
 		{
 			K.Paint(O.Lower);
-			K.Tube(Hip, FMath::Lerp(Hip, Knee, 0.9f), 8.4f * O.Width, 7.f, 8, true);
+			K.Tube(Hip, FMath::Lerp(Hip, Knee, 0.9f), 9.2f * O.Width, 7.6f, 8, true);
 			K.Paint(O.Skin);
 			K.Tube(Knee, Ankle, 5.2f, 3.8f, 8, false);
 			K.Ellipsoid(Knee, FVector(5.4f), FRotator::ZeroRotator, 6, 4);
@@ -276,18 +276,18 @@ namespace
 		else
 		{
 			K.Paint(O.Lower);
-			K.Tube(bSkirt ? FMath::Lerp(Hip, Knee, 0.6f) : Knee, Ankle, 5.5f, 4.2f, 8, false);
+			K.Tube(bSkirt ? FMath::Lerp(Hip, Knee, 0.6f) : Knee, Ankle, 6.f, 4.4f, 8, false);
 			if (bSkirt)
 			{
 				// Hmong leg wraps: pale bands round the indigo.
 				K.Paint(FLC(0.45f, 0.42f, 0.38f));
-				K.Tube(FMath::Lerp(Knee, Ankle, 0.15f), FMath::Lerp(Knee, Ankle, 0.2f), 5.5f, 5.4f, 8, false);
-				K.Tube(FMath::Lerp(Knee, Ankle, 0.85f), FMath::Lerp(Knee, Ankle, 0.9f), 4.6f, 4.5f, 8, false);
+				K.Tube(FMath::Lerp(Knee, Ankle, 0.15f), FMath::Lerp(Knee, Ankle, 0.2f), 6.3f, 6.1f, 8, false);
+				K.Tube(FMath::Lerp(Knee, Ankle, 0.85f), FMath::Lerp(Knee, Ankle, 0.9f), 5.f, 4.9f, 8, false);
 			}
 		}
 		K.Paint(O.Shoes);
-		K.Box(Ankle + FVector(5.f, 0.f, -4.f), FVector(24.f, 10.f, 8.f));
-		K.Ellipsoid(Ankle + FVector(15.f, 0.f, -4.f), FVector(4.f, 5.f, 4.f), FRotator::ZeroRotator, 6, 4);
+		K.Box(Ankle + FVector(4.f, 0.f, -4.5f), FVector(21.f, 9.f, 7.f));                                   // shoe
+		K.Ellipsoid(Ankle + FVector(13.f, 0.f, -4.5f), FVector(3.5f, 4.5f, 3.5f), FRotator::ZeroRotator, 6, 4);
 	}
 
 	/** Head part: origin at the neck base. */
@@ -445,7 +445,21 @@ namespace
 			const FVector Fw = Xf.TransformVectorNoScale(FVector::ForwardVector);
 			K.Tube(C - Fw * 0.4f, C + Fw * 0.4f, 6.f, 6.f, 5, true);
 		}
-		if (O.bBackpack)
+		if (O.bBackpack && !bStanding)
+		{
+			// On the bike the big pack is strapped to the rack: a slim daypack only (the round-1 passenger's
+			// 50 cm pack hid the whole rider in the chase view).
+			K.Paint(O.Pack, HGSurf::Satin);
+			const FVector C = At(-R1.X - 5.f, 0.f, J.TorsoH * 0.55f);
+			K.Box(C, FVector(9.f, 24.f, 28.f), Lean);
+			K.Ellipsoid(C + Xf.TransformVectorNoScale(FVector(0.f, 0.f, 14.f)), FVector(4.5f, 12.f, 4.f), Lean, 10, 4, 0.f);
+			K.Paint(O.Pack * 0.5f, HGSurf::Satin);
+			for (const float Y : { -9.f, 9.f })
+			{
+				K.Box(At(R0.X * 0.6f, Y, J.TorsoH - 6.f), FVector(16.f, 3.f, 1.5f), Lean + FRotator(-30.f, 0.f, 0.f));
+			}
+		}
+		else if (O.bBackpack)
 		{
 			K.Paint(O.Pack, HGSurf::Satin);
 			const FVector C = At(-R1.X - 8.f, 0.f, J.TorsoH * 0.5f);
@@ -480,7 +494,7 @@ namespace
 		if (O.bBag)
 		{
 			// Tho cam bag on the left hip, strap across to the right shoulder.
-			AddThoCamBag(K, At(4.f, -R0.Y - 4.f, 4.f), Lean + FRotator(0.f, 0.f, 6.f), At(0.f, R1.Y - 3.f, J.TorsoH));
+			AddThoCamBag(K, At(5.f, -R0.Y - 2.6f, 2.f), Lean + FRotator(0.f, 0.f, 6.f), At(0.f, R1.Y - 3.f, J.TorsoH));
 		}
 		if (bScarf)
 		{
