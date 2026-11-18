@@ -14,6 +14,7 @@
 #include "Components/StaticMeshComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/Engine.h"
+#include "Engine/GameViewportClient.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerStart.h"
@@ -110,6 +111,7 @@ void AHGGtaGameMode::BeginPlay()
 				PlayRoad = *It;
 			}
 		}
+		AHGVehicleBase::bOrbitInputEnabled = false;   // only the scripted mouse test drives the orbit
 		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] playtest start"));
 		return;
 	}
@@ -304,7 +306,7 @@ void AHGGtaGameMode::PlayTrafficTick(float DeltaSeconds)
 		if (Before < 4.f && Stop >= 4.f)
 		{
 			++PlayStops;
-			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    AI dead stop: %s at road %.0f m, %.0f m from the player"), *V->GetName(), V->GetRoadDistance() / 100.f, Dist / 100.f);
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    AI dead stop: %s at road %.0f m, %.0f m from the player: %s"), *V->GetName(), V->GetRoadDistance() / 100.f, Dist / 100.f, *V->GetSpeedReason());
 		}
 		// Oncoming met / overtook us: longitudinal offset along our heading changes sign close by.
 		const float Long = FVector::DotProduct(D, MyFwd);
@@ -377,9 +379,14 @@ void AHGGtaGameMode::PlayCheck(const TCHAR* Label, bool bShot)
 	{
 		const AHGGroundVehicle* GV = Cast<AHGGroundVehicle>(Pawn);
 		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    %s | %s%s"), *AudioState(),
-			GV && GV->IsAutoDriving() ? *FString::Printf(TEXT("lane: road offset %+.2f m, off its lane line %.2f m"), GV->GetLateralOffset() / 100.f, GV->GetCrossTrackError() / 100.f)
+			GV && GV->IsAutoDriving() ? *FString::Printf(TEXT("lane: road offset %+.2f m, off its lane line %.2f m | AI speed: %s"), GV->GetLateralOffset() / 100.f, GV->GetCrossTrackError() / 100.f, *GV->GetSpeedReason().Left(80))
 			                         : TEXT(""),
 			Veh && (Veh->IsLookingBack() || FMath::Abs(Veh->GetOrbitYaw()) > 1.f) ? *FString::Printf(TEXT(" | orbit yaw %.0f%s"), Veh->GetOrbitYaw(), Veh->IsLookingBack() ? TEXT(" LOOK-BACK") : TEXT("")) : TEXT(""));
+	}
+	FString ProfileAt;
+	if (FParse::Value(FCommandLine::Get(), TEXT("hgprofile="), ProfileAt) && ProfileAt == Label)
+	{
+		GEngine->Exec(GetWorld(), TEXT("ProfileGPU"));   // -hgprofile=<check label>: per-pass GPU timings into the log
 	}
 	if (bShot)
 	{
@@ -542,6 +549,19 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	if (PlayPhase >= 3)
 	{
 		PlayTrafficTick(DeltaSeconds);
+	}
+	// The test window sometimes shrinks (another Unreal instance starting on the same desktop): put it back,
+	// so screenshots and FPS are always measured at the same resolution.
+	PlayResCheck -= DeltaSeconds;
+	if (PlayResCheck <= 0.f && GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport)
+	{
+		PlayResCheck = 2.f;
+		const FIntPoint Size = GEngine->GameViewport->Viewport->GetSizeXY();
+		if (Size.X > 0 && Size.X < 900)
+		{
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    viewport shrank to %dx%d: restoring 1280x720"), Size.X, Size.Y);
+			GEngine->Exec(GetWorld(), TEXT("r.SetRes 1280x720w"));
+		}
 	}
 
 	// Auto-drive stages: (road distance m, label, seconds). Distances come from the route sections.
@@ -715,6 +735,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	if (PlayPhase == 6)                    // 6: keys on the Ta Lang hairpins (+ mouse orbit and [C] look-back)
 	{
 		PlayDriveKeys(DeltaSeconds);
+		AHGVehicleBase::bOrbitInputEnabled = PlayTime > 17.9f && PlayTime < 19.6f;
 		if (PlayTime > 18.f && PlayTime < 19.5f)
 		{
 			// Swing the camera to the right with the mouse (simulated mouse-X deltas through Enhanced Input).
@@ -941,13 +962,17 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 	}
 	PerfAccum += DeltaSeconds;
 	PerfGpuAccum += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles());
+	PerfGameAccum += FPlatformTime::ToMilliseconds(GGameThreadTime);
+	PerfDrawAccum += FPlatformTime::ToMilliseconds(GRenderThreadTime);
 	PerfWorst = FMath::Max(PerfWorst, (double)DeltaSeconds);
 	++PerfFrames;
 	if (PerfTime > 12.f)
 	{
 		const double AvgMs = 1000.0 * PerfAccum / FMath::Max(PerfFrames, 1);
-		UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] %s: avg %.1f ms (%.0f FPS), GPU %.1f ms, worst %.1f ms, %d frames"),
-			*PerfNames[PerfStage], AvgMs, 1000.0 / FMath::Max(AvgMs, 0.001), PerfGpuAccum / FMath::Max(PerfFrames, 1), PerfWorst * 1000.0, PerfFrames);
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] %s: avg %.1f ms (%.0f FPS), game %.1f / draw %.1f / GPU %.1f ms, worst %.1f ms, %d frames"),
+			*PerfNames[PerfStage], AvgMs, 1000.0 / FMath::Max(AvgMs, 0.001), PerfGameAccum / FMath::Max(PerfFrames, 1), PerfDrawAccum / FMath::Max(PerfFrames, 1),
+			PerfGpuAccum / FMath::Max(PerfFrames, 1), PerfWorst * 1000.0, PerfFrames);
+		PerfGameAccum = PerfDrawAccum = 0.0;
 		{
 			const FString File = FPaths::ProjectSavedDir() / TEXT("HG_CI/Perf") / FString::Printf(TEXT("%02d_%s.png"), PerfStage, *PerfNames[PerfStage]);
 			FScreenshotRequest::RequestScreenshot(File, true, false);

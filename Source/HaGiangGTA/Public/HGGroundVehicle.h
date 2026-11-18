@@ -95,6 +95,8 @@ public:
 	float GetCrossTrackError() const { return LastCrossTrack; }
 	bool IsOvertaking() const { return OvertakeTarget.IsValid(); }
 	bool IsYielding() const { return bYielding; }
+	/** AI: what set the target speed last tick ("probe:<actor>", "leader", "curve", "yield", "cruise"). */
+	const FString& GetSpeedReason() const { return SpeedReason; }
 
 	/** Session counters of AI traffic manoeuvres (playtest log). */
 	struct FTrafficStats { int32 Overtakes = 0; int32 Yields = 0; int32 GoArounds = 0; int32 Unsticks = 0; };
@@ -245,6 +247,13 @@ private:
 	bool bPlayerRoadTracked = false;
 	float LastLateral = 0.f;
 	float LastCrossTrack = 0.f;
+	FString SpeedReason;
+	int32 UnstickStreak = 0;
+	TWeakObjectPtr<AActor> LastBlocker;
+	FVector LastBlockPoint = FVector::ZeroVector;
+	bool bFarLOD = false;
+	float FarCheckTimer = 0.f;
+	double LastUnstickTime = -100.0;
 	float ChaseCamPitchCurrent = -10.f;
 
 	EHGSurface Surface = EHGSurface::Asphalt;

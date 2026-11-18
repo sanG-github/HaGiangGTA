@@ -378,7 +378,15 @@ def check_spawns(ctx, g, rep, legacy, river):
         bikes, boats = vs["bikes"], vs["boats"]
     for i, b in enumerate(bikes):
         x, y, z = b["location_cm"]
-        rep.check("spawns", f"bike_{i}", ground_problem(ctx, g, x, y, r=100, spawn_z=z, z_band=(-20, 300)))
+        prob = ground_problem(ctx, g, x, y, r=100, spawn_z=z, z_band=(-20, 300))
+        if prob is None and not legacy:
+            # The whole bike outline (1.9 x 0.76 m) stays off the carriageway.
+            a = math.radians(b["yaw"])
+            cl = min(ctx.road.edge_clearance(x + c * 95 * math.cos(a) - s_ * 38 * math.sin(a), y + c * 95 * math.sin(a) + s_ * 38 * math.cos(a))
+                     for c in (-1, 0, 1) for s_ in (-1, 1))
+            if cl < 30.0:
+                prob = f"parked on the road ({cl / 100:+.2f} m from the edge)"
+        rep.check("spawns", f"bike_{i}", prob)
     for i, b in enumerate(boats):
         x, y, _ = b["location_cm"]
         half = P.CANO_HALF if b["type"] == "Cano" else P.KAYAK_HALF

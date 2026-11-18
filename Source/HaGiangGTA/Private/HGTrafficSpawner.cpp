@@ -51,9 +51,13 @@ void AHGTrafficSpawner::BeginPlay()
 			}
 			Bike->SetHasPassenger(FMath::FRand() < PassengerChance);
 			Bike->SetBodyColor(BikeColors[FMath::RandRange(0, int32(UE_ARRAY_COUNT(BikeColors)) - 1)]);
+			ConfigureBikeVariant(Bike, /*bConvoy*/ true, Convoys.IndexOfByPredicate([&Spec](const FHGConvoySpec& S) { return &S == &Spec; }));
 			// Stagger the column a little inside the lane so it reads as a group of riders.
 			const float Lane = LaneOffset + ((i % 2) ? 60.f : -40.f);
-			Bike->StartAutoDrive(Road, D, Spec.Direction, Spec.CruiseKmh * FMath::FRandRange(0.95f, 1.05f), Lane);
+			// Turn round 150 m before the end of the dock spur: the last metres run into the dock yard (ticket booth,
+			// slipway) where bikes wedged and kept re-placing themselves.
+			Bike->SetAutoDriveRange(-1.f, Length - 15000.f);
+			Bike->StartAutoDrive(Road, FMath::Min(D, Length - 15100.f), Spec.Direction, Spec.CruiseKmh * FMath::FRandRange(0.95f, 1.05f), Lane);
 			Bike->SetAutoDriveLeader(Leader);
 			Leader = Bike;
 			Spawned.Add(Bike);
@@ -97,12 +101,27 @@ void AHGTrafficSpawner::BeginPlay()
 		{
 			Bike->SetHasPassenger(FMath::FRand() < 0.5f);
 			Bike->SetBodyColor(BikeColors[FMath::RandRange(0, int32(UE_ARRAY_COUNT(BikeColors)) - 1)]);
+			ConfigureBikeVariant(Bike, /*bConvoy*/ false, INDEX_NONE);
 		}
 		V->SetActorHiddenInGame(true);
 		V->SetActorTickEnabled(false);   // parked out of the world until placed
 		Ambient.Add(V);
 		AmbientPlaced.Add(false);
 	}
+}
+
+void AHGTrafficSpawner::ConfigureBikeVariant(AHGBikePawn* Bike, bool bConvoy, int32 ConvoyIndex)
+{
+	if (!Bike)
+	{
+		return;
+	}
+	// Variant hook: every traffic bike passes through here with a reproducible seed. Easy Rider convoys share a
+	// tour group (same guide vests / tour bikes); solo traffic picks any local bike.
+	// TODO(merge with agent B's bike builder): Bike->SetBikeModel(HGBikeBuilder::RandomModel(Seed, bConvoy), Seed);
+	//                                        if (bConvoy) { Bike->SetTourGroup(ConvoyIndex); }
+	const int32 Seed = int32(GetTypeHash(Bike->GetFName())) ^ (bConvoy ? (ConvoyIndex + 1) * 7919 : 0);
+	(void)Seed;
 }
 
 bool AHGTrafficSpawner::PlaceAmbient(AHGGroundVehicle* V, bool bTruck, float PlayerDist, int32 PlayerDir)
@@ -114,7 +133,7 @@ bool AHGTrafficSpawner::PlaceAmbient(AHGGroundVehicle* V, bool bTruck, float Pla
 		const float Gap = bTruck ? FMath::FRandRange(65000.f, 80000.f) : bOncoming ? FMath::FRandRange(35000.f, 55000.f) : FMath::FRandRange(25000.f, 35000.f);
 		const float D = bOncoming ? PlayerDist + PlayerDir * Gap : PlayerDist - PlayerDir * Gap;
 		const int32 Dir = bOncoming ? -PlayerDir : PlayerDir;
-		if (D < 2000.f || D > Length - 2000.f)
+		if (D < 2000.f || D > Length - 15500.f)
 		{
 			continue;
 		}
@@ -133,10 +152,7 @@ bool AHGTrafficSpawner::PlaceAmbient(AHGGroundVehicle* V, bool bTruck, float Pla
 		}
 		V->SetActorHiddenInGame(false);
 		V->SetActorTickEnabled(true);
-		if (bTruck)
-		{
-			V->SetAutoDriveRange(TruckMinCm, TruckMaxCm);
-		}
+		V->SetAutoDriveRange(bTruck ? TruckMinCm : -1.f, bTruck ? TruckMaxCm : Length - 15000.f);
 		const float Kmh = bTruck ? 34.f : bOncoming ? FMath::FRandRange(36.f, 46.f) : FMath::FRandRange(50.f, 56.f);
 		V->StartAutoDrive(Road, D, Dir, Kmh, LaneOffset + (bTruck ? 40.f : FMath::FRandRange(-30.f, 30.f)));
 		++AmbientFlip;

@@ -672,16 +672,29 @@ def make_set_dressing(rng):
     seg, rings = 256, 18
     ang = np.linspace(0, 2 * np.pi, seg, endpoint=False)
     radii = np.linspace(520000.0, 1400000.0, rings)
+    # Apron from just outside the 5.9 km landscape (half 2.95 km) to the ranges, 450 m below the mesh pivot
+    # (placed at z 800 m -> 350 m, under the river and every map edge): from the Ma Pi Leng rim the player looked
+    # past the map edge into empty haze; now a low valley floor runs out to the distant ranges.
+    APRON_Z = -45000.0
+    apron = np.array([300000.0, 380000.0, 450000.0, 515000.0])
     # One coherent noise field over (angle, ring) so ridges continue between neighbouring vertices.
     A, J = np.meshgrid(ang, np.arange(rings))
     pts = np.stack([np.cos(A).ravel() * 2.2, np.sin(A).ravel() * 2.2, J.ravel() * 0.35], axis=1)
     ridge = wave_noise(pts, rng, octaves=4, waves=7, base=2.5, ridged=True).reshape(rings, seg)
     envelope = np.sin(np.pi * np.arange(rings) / (rings - 1)) ** 0.6
     verts, faces = [], []
+    # The apron rises from the valley floor into rolling foothills (a flat one read as a lake in the haze).
+    foot = wave_noise(np.stack([np.cos(ang) * 1.7, np.sin(ang) * 1.7, np.zeros_like(ang)], axis=1), rng,
+                      octaves=3, waves=6, base=2.0, ridged=False)
+    for k, r in enumerate(apron):
+        t = k / (len(apron) - 1)
+        for i, a in enumerate(ang):
+            verts.append((np.cos(a) * r, np.sin(a) * r, APRON_Z + t * (25000.0 + 30000.0 * foot[i])))
     for j, r in enumerate(radii):
         for i, a in enumerate(ang):
             h = (60000.0 + 150000.0 * ridge[j, i]) * envelope[j]
             verts.append((np.cos(a) * r, np.sin(a) * r, h))
+    rings += len(apron)
     for j in range(rings - 1):
         for i in range(seg):
             a0, a1 = j * seg + i, j * seg + (i + 1) % seg

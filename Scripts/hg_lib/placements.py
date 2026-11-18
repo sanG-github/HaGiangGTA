@@ -897,10 +897,22 @@ def vehicle_spawns(ctx):
     bikes are dropped onto the terrain (the layout uses the road-profile z, up to 5 m above the landscape
     near the Ma Pi Leng spur), boats are pushed out from the slipway until the whole hull floats."""
     sp = ctx.layout["spawns"]
-    bikes = []
+    # Bikes: the layout spots are on the road centreline (the Tham Ma start bike and the Ma Pi Leng one stood
+    # in the lane and stopped every convoy); park each on the nearest valid shoulder spot instead.
+    bikes, taken = [], []
     for b in sp["bikes"]:
         x, y, _ = b["location_cm"]
-        bikes.append({"location_cm": (x, y, ctx.terrain.z(x, y) + 60.0), "yaw": b["yaw"]})
+        m = ctx.road.closest(x, y)[0]
+        spot = None
+        for cand in parked_bikes(ctx, m, count=4):
+            if all(math.hypot(cand[0] - t[0], cand[1] - t[1]) > 250.0 for t in taken):
+                spot = cand
+                break
+        if spot is None:
+            bikes.append({"location_cm": (x, y, ctx.terrain.z(x, y) + 60.0), "yaw": b["yaw"]})
+            continue
+        taken.append(spot)
+        bikes.append({"location_cm": (spot[0], spot[1], spot[2]), "yaw": spot[3]})
     boats = []
     yaw = sp["dock"]["yaw"] + 90
     obstacles = list(river_traffic(ctx)["obstacles"][1:])  # pontoons + moored boats (not the pier)

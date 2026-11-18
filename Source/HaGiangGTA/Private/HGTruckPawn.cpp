@@ -24,10 +24,12 @@ AHGTruckPawn::AHGTruckPawn()
 	SteerRateDeg = 60.f;
 	HighSpeedSteerScale = 0.6f;
 	BoostMultiplier = 1.15f;
-	GroundClearance = 25.f;
+	// Collision box bottom 50 cm above the probes' ground (was 25): on cambered hairpins the long box started
+	// its sweeps inside the bank. Box and clearance change together, so the body (BodyRoot at -175) stays put.
+	GroundClearance = 50.f;
 	AutoDriveLateralAccel = 260.f;
 
-	Collision->SetBoxExtent(FVector(380.f, 125.f, 150.f));
+	Collision->SetBoxExtent(FVector(380.f, 125.f, 125.f));
 	SpringArm->TargetArmLength = 1300.f;
 	SpringArm->SocketOffset = FVector(0.f, 0.f, 420.f);
 	DriverSeat->SetRelativeLocation(FVector(250.f, -50.f, 60.f));

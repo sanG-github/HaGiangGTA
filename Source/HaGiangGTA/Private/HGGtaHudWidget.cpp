@@ -211,7 +211,14 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	const float WantRange = FMath::GetMappedRangeValueClamped(FVector2D(25.f, 90.f), FVector2D(35000.f, 75000.f), SpeedKmh);
 	MapRange = FMath::FInterpTo(MapRange, WantRange, InDeltaTime, 1.5f);
 
-	// Minimap blips.
+	// Minimap blips: rebuilt 10x a second (walking every actor in the level each frame cost game-thread time
+	// on the busy viewpoints).
+	BlipTimer -= InDeltaTime;
+	if (BlipTimer > 0.f)
+	{
+		return;
+	}
+	BlipTimer = 0.1f;
 	Blips.Reset();
 	const float RangeSq = FMath::Square(MapRange * 1.5f);
 	const bool bBlink = FMath::Fmod(Time, 0.5f) < 0.25f;

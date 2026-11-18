@@ -7,6 +7,8 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "Engine/World.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/PlayerCameraManager.h"
 #include "HaGiangGTA.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGRoadSplineActor.h"
@@ -140,6 +142,8 @@ void AHGGroundVehicle::MoveWithCollision(const FVector& Delta, const FVector& Mo
 	{
 		return;
 	}
+	LastBlocker = Hit.GetActor();
+	LastBlockPoint = Hit.ImpactPoint;
 
 	FVector Remaining = Delta * (1.f - Hit.Time);
 
@@ -231,6 +235,14 @@ void AHGGroundVehicle::SnapToGround(float DeltaSeconds, const FVector& MoveDir)
 		}
 		const FVector AvgNormal = (FrontHit.ImpactNormal + RearHit.ImpactNormal).GetSafeNormal();
 		NewNormal = (2.f * PitchNormal + AvgNormal).GetSafeNormal();
+		// A long vehicle on a hairpin can have one probe out over the cut bank: land / stay on the probe that
+		// is on the road instead of hovering "airborne" over the steep one (trucks wedged and hopped forward).
+		if (NewNormal.Z < WalkableZ && (FrontHit.ImpactNormal.Z >= WalkableZ) != (RearHit.ImpactNormal.Z >= WalkableZ))
+		{
+			const FHitResult& Good = FrontHit.ImpactNormal.Z >= WalkableZ ? FrontHit : RearHit;
+			GroundZ = Good.ImpactPoint.Z;
+			NewNormal = Good.ImpactNormal;
+		}
 	}
 	else
 	{
@@ -305,7 +317,26 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
 
-	const float Dt = FMath::Min(DeltaSeconds, 1.f / 20.f);
+	// AI far from the player (beyond its 300 m draw distance) ticks at 10 Hz: same physics with bigger steps.
+	if (bAutoDrive && !IsPlayerControlled())
+	{
+		FarCheckTimer -= DeltaSeconds;
+		if (FarCheckTimer <= 0.f)
+		{
+			FarCheckTimer = 1.f;
+			// Distance to the camera (not the pawn: flycam, review cameras).
+			const APlayerController* PC = GetWorld()->GetFirstPlayerController();
+			bFarLOD = PC && PC->PlayerCameraManager
+				&& FVector::DistSquared(PC->PlayerCameraManager->GetCameraLocation(), GetActorLocation()) > FMath::Square(45000.f);
+			SetActorTickInterval(bFarLOD ? 0.1f : 0.f);
+		}
+	}
+	else if (bFarLOD)
+	{
+		bFarLOD = false;
+		SetActorTickInterval(0.f);
+	}
+	const float Dt = FMath::Min(DeltaSeconds, bFarLOD ? 0.12f : 1.f / 20.f);
 
 	float Throttle = ReadAxis(ThrottleAction);
 	float Steer = ReadAxis(SteerAction);
@@ -374,7 +405,34 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 		{
 			StuckTime = 0.f;
 			++TrafficStats.Unsticks;
-			StartAutoDrive(AutoDriveRoad, RoadDistance + 400.f * AutoDriveDirection, AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
+			if (TrafficStats.Unsticks <= 40)
+			{
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_VEH] unstick %s at road %.0f m (dir %d, %s, grounded %d, blocked %d by %s at lateral %+.2f m; we are at %+.2f m, lane %+.2f m)"), *GetName(),
+					RoadDistance / 100.f, AutoDriveDirection, *SpeedReason, bGrounded, bMoveBlocked, LastBlocker.IsValid() ? *LastBlocker->GetActorNameOrLabel() : TEXT("-"),
+					[this]()
+					{
+						const USplineComponent* Sp = AutoDriveRoad->GetSpline();
+						const FVector T = Sp->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World).GetSafeNormal2D() * float(AutoDriveDirection);
+						return FVector::DotProduct(LastBlockPoint - Sp->GetLocationAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World),
+							FVector::CrossProduct(FVector::UpVector, T).GetSafeNormal()) / 100.f;
+					}(), LastLateral / 100.f, GetLaneOffsetAt(RoadDistance) / 100.f);
+			}
+			// Third time in a row at the same spot, or at the end of the road (the dock spur ends at the slipway):
+			// turn round instead of hopping forward again.
+			const double Now = GetWorld()->GetTimeSeconds();
+			UnstickStreak = Now - LastUnstickTime < 15.0 ? UnstickStreak + 1 : 1;
+			LastUnstickTime = Now;
+			const float RoadLen = AutoDriveRoad->GetRoadLength();
+			const bool bNearEnd = (AutoDriveDirection > 0 && RoadDistance > RoadLen - 8000.f) || (AutoDriveDirection < 0 && RoadDistance < 8000.f);
+			if (bNearEnd || UnstickStreak >= 3)
+			{
+				UnstickStreak = 0;
+				StartAutoDrive(AutoDriveRoad, RoadDistance, -AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
+			}
+			else
+			{
+				StartAutoDrive(AutoDriveRoad, RoadDistance + 400.f * AutoDriveDirection, AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
+			}
 		}
 	}
 
@@ -724,6 +782,7 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	// 8 m Ta Lang hairpins that 6 m steps under-sample.
 	const float Radius = FMath::Max(GetMinRadiusAhead(3600.f, 300.f) - FMath::Abs(GetLaneOffsetAt(RoadDistance)), 150.f);
 	TargetSpeed = FMath::Min(TargetSpeed, FMath::Sqrt(AutoDriveLateralAccel * Radius));
+	SpeedReason = TargetSpeed < AutoDriveCruise ? TEXT("curve") : TEXT("cruise");
 
 	// ---- Traffic: overtaking, yielding on hairpins, going round stopped things (4 Hz scan) ----
 	TrafficScanTimer -= DeltaSeconds;
@@ -792,6 +851,7 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	if (bYielding)
 	{
 		TargetSpeed = FMath::Min(TargetSpeed, 350.f);   // ~12 km/h
+		SpeedReason = TEXT("yield");
 	}
 
 	if (const AHGGroundVehicle* Leader = AutoDriveLeader.Get())
@@ -804,6 +864,7 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 			{
 				// Close up when far behind, back off when too close.
 				TargetSpeed = FMath::Clamp(Leader->GetSpeed() + (Gap - Desired) * 0.8f, 0.f, AutoDriveCruise * 1.25f);
+				SpeedReason = FString::Printf(TEXT("leader %s gap %.0f m (%s)"), *Leader->GetName(), Gap / 100.f, *Leader->GetSpeedReason().Left(40));
 			}
 		}
 	}
@@ -836,7 +897,11 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	if (bHit)
 	{
 		const float Block = FMath::Clamp(HitDist / Probe, 0.f, 1.f);
-		TargetSpeed = FMath::Min(TargetSpeed, AutoDriveCruise * Block * Block);
+		if (AutoDriveCruise * Block * Block < TargetSpeed)
+		{
+			TargetSpeed = AutoDriveCruise * Block * Block;
+			SpeedReason = FString::Printf(TEXT("probe %s at %.1f m"), Hit.GetActor() ? *Hit.GetActor()->GetActorNameOrLabel() : TEXT("?"), HitDist / 100.f);
+		}
 		OnAutoDriveObstacle(Hit.GetActor());
 		if (IsPlayerControlled() && GetWorld()->GetTimeSeconds() - LastBlockLogTime > 1.0)
 		{

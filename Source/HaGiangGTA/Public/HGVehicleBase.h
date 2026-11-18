@@ -71,6 +71,10 @@ public:
 	float GetEnginePitch() const { return EnginePitch; }
 	float GetEngineVolumeNow() const;
 
+	/** Scripted playtest: off except while it tests the orbit, so stray OS mouse deltas on the test machine don't
+	 *  swing the camera (a +4 deg pitch-up showed in a key-ridden shot). */
+	static bool bOrbitInputEnabled;
+
 	/** Mouse-orbit offsets of the chase camera (deg) and whether [C] look-back is held. */
 	float GetOrbitYaw() const { return OrbitYaw; }
 	bool IsLookingBack() const { return bLookingBack; }

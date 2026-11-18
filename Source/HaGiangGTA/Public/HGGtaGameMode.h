@@ -39,7 +39,7 @@ private:
 	// written by Scripts/hg_lib/shots.py) or, without it, at each viewpoint; written to the log, then quit.
 	TArray<float> PerfFov;
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> PerfCamera;
-	double PerfGpuAccum = 0.0;
+	double PerfGpuAccum = 0.0, PerfGameAccum = 0.0, PerfDrawAccum = 0.0;
 	bool bPerfRun = false;
 	bool bPerfMoved = false;
 	int32 PerfStage = -1;
@@ -65,6 +65,7 @@ private:
 	TArray<FKey> PlayKeysDown;
 	float PlayMaxKmh = 0.f;
 	int32 PlayOrbitShot = 0;
+	float PlayResCheck = 0.f;
 	float PlayOffRoadSecs = 0.f;
 	FVector PlayStageStart = FVector::ZeroVector;
 	FVector PlayCheckpointLoc = FVector::ZeroVector;

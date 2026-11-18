@@ -94,4 +94,6 @@ private:
 	float TruckMinCm = -1.f;
 	float TruckMaxCm = -1.f;
 	bool PlaceAmbient(AHGGroundVehicle* V, bool bTruck, float PlayerDist, int32 PlayerDir);
+	/** Bike model / variant hook (seeded; convoys share a tour group). Wired to the bike builder after merge. */
+	void ConfigureBikeVariant(AHGBikePawn* Bike, bool bConvoy, int32 ConvoyIndex);
 };

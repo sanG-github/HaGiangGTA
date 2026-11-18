@@ -98,6 +98,8 @@ void AHGVehicleBase::Tick(float DeltaSeconds)
 	}
 }
 
+bool AHGVehicleBase::bOrbitInputEnabled = true;
+
 float AHGVehicleBase::GetEngineVolumeNow() const
 {
 	return EngineAudio ? EngineAudio->VolumeMultiplier : 0.f;
@@ -115,7 +117,7 @@ void AHGVehicleBase::UpdateOrbitCamera(float DeltaSeconds, float BasePitch, floa
 	FVector2D Look = FVector2D::ZeroVector;
 	if (const UEnhancedInputComponent* EIC = Cast<UEnhancedInputComponent>(InputComponent))
 	{
-		if (LookAction && Controller)
+		if (LookAction && Controller && bOrbitInputEnabled)
 		{
 			Look = EIC->GetBoundActionValue(LookAction).Get<FVector2D>();
 		}

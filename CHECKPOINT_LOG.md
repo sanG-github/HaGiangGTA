@@ -260,3 +260,64 @@ Playtest (M1 Pro, 1280x720 window, CP05): W 6 s on the straightest stretch 63 m 
 top 61 km/h on asphalt, 48 km/h on the concrete hairpins; 0 s off road on the keys; average 66-70 FPS over
 the whole run (was ~57; every check >= 59).
 Open: the dock cano is moored inside the pontoons; the test bot can't steer out around Pontoon_0 yet.
+
+---
+
+## Round 2 - traffic, boats, camera, audio, road furniture (`improve/gameplay-realism`)
+
+Coordinator findings fixed:
+- **Black boat frames (A)**: the cano camera (3.2 m socket) ended inside our own canopy / hull whenever the arm's
+  collision test pulled it in against a pontoon or moored boat. Socket 4.5 m above the boat (always over the
+  2.1 m canopy), never pitched up from below, lifted to stay >= 1 m over the water; PlayCheck flags
+  `CAMERA BELOW WATER`.
+- **W_straight shot with no bike, 0 km/h (B)**: the playtest teleported the bike to the next stage in the frame
+  the screenshot was requested, and the lagging spring arm swept across the map. Teleports now wait >= 1.5 s
+  after a shot and `AHGVehicleBase::SnapCamera` skips the arm lag for 3 frames on every teleport (also [R]).
+  (Stair-stepped terrain after teleports: landscape mip streaming, fixed by agent B.)
+- **Bike on the rim shoulder (C)**: lane 170 -> 140 cm from the centre, bike lane-keeping gain 2.2; the playtest
+  logs the lane error: mean 0.03-0.05 m on Tham Ma / Ta Lang, larger only during overtakes / go-arounds.
+
+Road furniture (user bugs):
+- **Signs in the road**: gen_scatter placed posts / chevrons / rails from its own 2 m polyline before the
+  hairpins were rounded for the UE spline: 51 chevrons, 5 posts and 1 wall stood on the carriageway.
+  `placements.road_furniture` now places them against the spline and its real width (concrete included):
+  posts 0.6 m, chevrons 0.9 m (1.5 m fallback) outside the edge on the outside of the bend.
+- **Guardrails / rim walls off the bends**: rebuilt as 4 m chords of the offset edge curve (bisected to exactly
+  4 m, smoothed normals so the curve has no jumps at polyline vertices), end to end, drop side and outer side of
+  bends only. validate_layout: 8 furniture checks (clearance, follow-the-edge band, joints) - 119 checks, 0 FAIL.
+- Layout bikes stood on the road (start bike at 38 m, Ma Pi Leng bike in the lane, which stopped convoys): now
+  parked on the nearest valid shoulder spot; validate checks the whole bike outline.
+
+Boats: player cano berthed in a clear lane on the cruise route facing the gorge (`placements.dock_departure`,
+validated); [R] back onto the cruise line; playtest rides dock -> Ma Pi Leng bend (3.7 km): reached in 218 s.
+
+Camera: mouse orbit on every vehicle (drifts back behind after 1.5 s), [C] look-back (a cut, not a swing).
+
+Traffic: lane-line obstacle probe (the straight nose probe saw bikes parked on the outside of bends and stopped
+convoys at viewpoints), overtaking on clear stretches (no oncoming within 150 m, R > 40 m), downhill vehicle
+yields on hairpins, go-around of anything standing in the lane for 3 s, player tracked as traffic; solo bikes
+(oncoming + faster ones catching up) and a QL4C truck kept around the player out of sight; trucks no longer
+wedge on banks (box 50 cm above ground, land on the probe that is on the road); stuck AI turns round instead of
+hopping forward after 3 tries; convoys turn 60 m before the dock yard. Bike variant hook
+`AHGTrafficSpawner::ConfigureBikeVariant` for agent B's bike builder. Playtest counters: near misses, AI dead
+stops (with the reason), oncoming met, overtook us, AI overtakes / yields / go-arounds / unsticks.
+
+Audio: generated wind / birds+insects / tyre loops (gen_assets.make_ambience), driven by speed, altitude and
+surface; engine + ambient levels logged at every check.
+
+Perf: `-hgperf` now benchmarks the 9 review cameras (Generated/Heightmaps/HaGiang_review_cameras.json from
+`shots.py`) with game / draw / GPU ms and a screenshot each (Saved/HG_CI/Perf). AI further than 450 m from the
+camera ticks at 10 Hz, minimap blips rebuilt at 10 Hz (ThamMa drone 56 -> 114 FPS); Lumen: no surface-cache
+feedback, half the adaptive screen probes, off-screen shadows from the global SDF (gorge boat ride 43-50 ->
+64-74 FPS). Distant ranges: foothill apron from the map edge (the rim views looked past the map into empty haze).
+
+Numbers (M1 Pro, 1280x720 window, CP05, perf lock held): `-hgperf` review cameras 62-114 FPS - Spawn 78,
+ThamMa eye 75 / drone 114, MomDa ledge 79, MaPiLeng plaza 82 / drone 111, NhoQue from rim 73, TaLang dock 62,
+TuSan boat 58 (65 in the previous run; agent B's CP05 rebuild overlapped the end of this one), TuSan flycam 81.
+Full playtest average 67.1 FPS (57 before the round's perf work); W 6 s on the straight 63 m / 60 km/h; boat
+dock -> Ma Pi Leng bend in 202 s, top 83 km/h; 4 near misses, 26 oncoming bikes met, 5 AI overtakes, 67 yields.
+
+Known / open: AI still re-places itself ("unstick") at the 47 decimated hairpins left in road.points_cm (e.g.
+2.77 km: the spline turns 128 deg in 5 m, bikes swing onto the rim wall) and where the road profile is off the
+landscape (dock spur, up to 14 m): road data in gen_heightmap, next round. The test window was sometimes shrunk
+to 679 px by another Unreal instance starting; the playtest now restores 1280x720 when that happens.
