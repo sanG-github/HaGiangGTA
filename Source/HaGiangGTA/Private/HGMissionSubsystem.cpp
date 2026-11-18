@@ -19,6 +19,8 @@
 #include "Components/CapsuleComponent.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/CommandLine.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/Paths.h"
 
 namespace
 {
@@ -85,7 +87,13 @@ void UHGMissionSubsystem::SetupMissions()
 	{
 		Viewpoints.Add(V.Value);
 	}
-	// Intro / tutorial card on the first spawn of the session (not over the -hgperf benchmark frames).
+	// Profile (money, tyres, intro seen) before deciding on the intro card. The benchmark never loads or saves.
+	if (!bProfileLoaded && !FParse::Param(FCommandLine::Get(), TEXT("hgperf")))
+	{
+		bProfileLoaded = true;
+		LoadProfile();
+	}
+	// Intro / tutorial card on the first spawn (not once the profile says it was seen; not over -hgperf frames).
 	if (!bIntroShown && !FParse::Param(FCommandLine::Get(), TEXT("hgperf")))
 	{
 		bIntroShown = true;
@@ -388,6 +396,17 @@ void UHGMissionSubsystem::Tick(float DeltaTime)
 		return;
 	}
 	IntroTime = FMath::Max(0.f, IntroTime - DeltaTime);
+	// Save the profile when the wallet changes (checked twice a second).
+	ProfileTimer -= DeltaTime;
+	if (bProfileLoaded && ProfileTimer <= 0.f)
+	{
+		ProfileTimer = 0.5f;
+		const UHGWantedSubsystem* PW = GetWorld()->GetSubsystem<UHGWantedSubsystem>();
+		if (PW && PW->GetMoney() != SavedMoney)
+		{
+			SaveProfile();
+		}
+	}
 	BannerTime = FMath::Max(0.f, BannerTime - DeltaTime);
 	FlashTime += DeltaTime;
 	APawn* Player = UGameplayStatics::GetPlayerPawn(GetWorld(), 0);
@@ -514,6 +533,7 @@ bool UHGMissionSubsystem::BuyGripTyres()
 	}
 	W->AddMoney(-GripTyresPrice);
 	bGripTyres = true;
+	SaveProfile();
 	Banner = FString::Printf(TEXT("Lắp lốp gai: bám đường bê tông & đường đất  %s"), *Vnd(-GripTyresPrice));
 	BannerTime = 3.f;
 	UE_LOG(LogHaGiang, Display, TEXT("[HG_MISSION] upgrade bought: grip tyres %s"), *Vnd(-GripTyresPrice));
@@ -620,7 +640,10 @@ void UHGMissionSubsystem::HandleMenuInput(APlayerController* PC)
 		// Any of the "start" keys - or simply riding / walking off - puts the card away.
 		if (Pressed(EKeys::Enter) || Pressed(EKeys::SpaceBar) || Pressed(EKeys::Escape) || PC->IsInputKeyDown(EKeys::W) || PC->IsInputKeyDown(EKeys::Up))
 		{
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_MENU] intro card closed (%s)"), Pressed(EKeys::Enter) ? TEXT("Enter") : Pressed(EKeys::SpaceBar) ? TEXT("Space")
+				: Pressed(EKeys::Escape) ? TEXT("Esc") : TEXT("riding off"));
 			IntroTime = 0.f;
+			SaveProfile();   // intro seen
 			return;
 		}
 	}
@@ -686,4 +709,69 @@ void UHGMissionSubsystem::HandleMenuInput(APlayerController* PC)
 	{
 		BuyGripTyres();
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Player profile
+// ---------------------------------------------------------------------------
+
+FString UHGMissionSubsystem::ProfilePath() const
+{
+	const bool bTest = FParse::Param(FCommandLine::Get(), TEXT("hgplaytest"));
+	return FPaths::ProjectSavedDir() / (bTest ? TEXT("HGProfile_test.ini") : TEXT("HGProfile.ini"));
+}
+
+bool UHGMissionSubsystem::LoadProfile()
+{
+	const FString Path = ProfilePath();
+	if (FParse::Param(FCommandLine::Get(), TEXT("hgplaytest")) && !FParse::Param(FCommandLine::Get(), TEXT("hgkeepprofile")))
+	{
+		IFileManager::Get().Delete(*Path);   // every scripted run starts from a new profile (and tests the save)
+	}
+	FConfigFile Ini;
+	Ini.Read(Path);
+	int32 Money = -1, Tyres = 0, Intro = 0;
+	const bool bAny = Ini.GetInt(TEXT("Profile"), TEXT("Money"), Money);
+	Ini.GetInt(TEXT("Profile"), TEXT("GripTyres"), Tyres);
+	Ini.GetInt(TEXT("Profile"), TEXT("IntroSeen"), Intro);
+	if (!bAny)
+	{
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_PROFILE] no profile at %s: new game"), *Path);
+		return false;
+	}
+	if (UHGWantedSubsystem* W = GetWorld()->GetSubsystem<UHGWantedSubsystem>())
+	{
+		W->AddMoney(Money - W->GetMoney());
+	}
+	bGripTyres = Tyres != 0;
+	bIntroShown = bIntroShown || Intro != 0;
+	SavedMoney = Money;
+	UE_LOG(LogHaGiang, Display, TEXT("[HG_PROFILE] loaded %s: money %d, grip tyres %d, intro seen %d"), *Path, Money, Tyres, Intro);
+	return true;
+}
+
+void UHGMissionSubsystem::SaveProfile()
+{
+	if (!bProfileLoaded)
+	{
+		return;
+	}
+	const UHGWantedSubsystem* W = GetWorld() ? GetWorld()->GetSubsystem<UHGWantedSubsystem>() : nullptr;
+	if (!W)
+	{
+		return;
+	}
+	FConfigFile Ini;
+	Ini.SetInt64(TEXT("Profile"), TEXT("Money"), W->GetMoney());
+	Ini.SetInt64(TEXT("Profile"), TEXT("GripTyres"), bGripTyres ? 1 : 0);
+	Ini.SetInt64(TEXT("Profile"), TEXT("IntroSeen"), (bIntroShown && IntroTime <= 0.f) ? 1 : 0);
+	Ini.Dirty = true;
+	Ini.Write(ProfilePath());
+	SavedMoney = W->GetMoney();
+}
+
+void UHGMissionSubsystem::Deinitialize()
+{
+	SaveProfile();
+	Super::Deinitialize();
 }

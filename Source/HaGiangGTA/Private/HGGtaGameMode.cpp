@@ -40,6 +40,9 @@
 #include "RenderCore.h"
 #include "RHI.h"
 #include "HAL/IConsoleManager.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Components/InstancedStaticMeshComponent.h"
+#include "UObject/UObjectIterator.h"
 #include "RHIStats.h"
 
 AHGGtaGameMode::AHGGtaGameMode()
@@ -361,6 +364,37 @@ void AHGGtaGameMode::PlayCheck(const TCHAR* Label, bool bShot)
 		UE_LOG(LogHaGiang, Error, TEXT("[HG_PLAY] %s: no pawn / camera"), Label);
 		return;
 	}
+	// What is in the upper part of the view close by (review: "a brown block hangs over the camera" at spawn):
+	// actors whose bounds come within 25 m of the camera, in front of it and above the eye line.
+	if (FCString::Strcmp(Label, TEXT("spawn")) == 0)
+	{
+		const FVector Cam = PC->PlayerCameraManager->GetCameraLocation();
+		const FVector Fwd = PC->PlayerCameraManager->GetCameraRotation().Vector();
+		for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+		{
+			if (*It == Pawn || It->IsA<APawn>())
+			{
+				continue;
+			}
+			FVector O, E;
+			It->GetActorBounds(true, O, E);
+			if (E.Size() < 50.f || E.Size() > 5000.f)
+			{
+				continue;   // nothing / landscape-sized
+			}
+			const FVector D = O - Cam;
+			const float Dist = FMath::Max(D.Size() - E.Size(), 0.f);
+			if (Dist < 2500.f && FVector::DotProduct(D.GetSafeNormal(), Fwd) > 0.2f && O.Z + E.Z > Cam.Z)
+			{
+				float GZ = 0.f;
+				FHitResult GH;
+				FCollisionQueryParams GQ(SCENE_QUERY_STAT(HGNearGround), false, *It);
+				if (GetWorld()->LineTraceSingleByChannel(GH, O + FVector(0, 0, 5000.f), O - FVector(0, 0, 20000.f), ECC_Visibility, GQ)) { GZ = GH.ImpactPoint.Z; }
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    near the spawn view: %s (%s) %.1f m away, bounds z %.1f..%.1f m, ground under centre %.1f m, size %.1f x %.1f x %.1f m"),
+					*It->GetActorNameOrLabel(), *It->GetClass()->GetName(), Dist / 100.f, (O.Z - E.Z) / 100.f, (O.Z + E.Z) / 100.f, GZ / 100.f, E.X / 50.f, E.Y / 50.f, E.Z / 50.f);
+			}
+		}
+	}
 	auto GroundZ = [this](const FVector& P, float& OutZ) -> bool
 	{
 		FHitResult Hit;
@@ -655,6 +689,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			if (FParse::Param(FCommandLine::Get(), TEXT("hgplayboat")))
 			{
 				PlayPhase = 10 + int32(UE_ARRAY_COUNT(Stages));   // -hgplayboat: straight to the boat stage
+				if (UHGMissionSubsystem* MSb = GetWorld()->GetSubsystem<UHGMissionSubsystem>()) { MSb->CloseIntro(); }
 				PlayTime = 0.f;
 				return;
 			}
@@ -671,11 +706,19 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		PlayIntroT += DeltaSeconds;
 		if (PlayIntroT < 0.2f) { PlaySetKey(EKeys::Enter, true); }
 		else { PlaySetKey(EKeys::Enter, false); }
-		if (PlayIntroT > 0.7f)
+		if (PlayIntroT > 0.6f && PlayIntroT < 1.2f && !bPlayIntroLogged)
+		{
+			if (const UHGMissionSubsystem* MSk = GetWorld()->GetSubsystem<UHGMissionSubsystem>())
+			{
+				// Enter did not register in two runs: try Space as well and log which one closed it.
+				if (MSk->IsIntroOpen()) { PlaySetKey(EKeys::SpaceBar, PlayIntroT < 0.9f); }
+			}
+		}
+		if (PlayIntroT > 1.4f)
 		{
 			if (const UHGMissionSubsystem* MSi = GetWorld()->GetSubsystem<UHGMissionSubsystem>())
 			{
-				if (!bPlayIntroLogged) { bPlayIntroLogged = true; UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] intro card closed with Enter: %s"), MSi->IsIntroOpen() ? TEXT("FAIL") : TEXT("PASS")); }
+				if (!bPlayIntroLogged) { bPlayIntroLogged = true; UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] intro card closed (Enter, then Space if still open): %s"), MSi->IsIntroOpen() ? TEXT("FAIL") : TEXT("PASS")); }
 			}
 		}
 		if (Player) { Player->AddMovementInput(Player->GetActorForwardVector(), 1.f); }
@@ -1311,6 +1354,24 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		}
 		return;
 	}
+	if (PlayPhase == 99 && !bPlayProfileChecked)
+	{
+		// Profile round trip: what is on disk must be what the session ends with.
+		bPlayProfileChecked = true;
+		if (UHGMissionSubsystem* MSp = GetWorld()->GetSubsystem<UHGMissionSubsystem>())
+		{
+			MSp->SaveProfile();
+			FConfigFile Ini;
+			Ini.Read(MSp->ProfilePath());
+			int32 Money = -1, Tyres = -1, Intro = -1;
+			Ini.GetInt(TEXT("Profile"), TEXT("Money"), Money);
+			Ini.GetInt(TEXT("Profile"), TEXT("GripTyres"), Tyres);
+			Ini.GetInt(TEXT("Profile"), TEXT("IntroSeen"), Intro);
+			const UHGWantedSubsystem* PW = GetWorld()->GetSubsystem<UHGWantedSubsystem>();
+			const bool bOk = PW && Money == PW->GetMoney() && (Tyres != 0) == MSp->HasGripTyres();
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] profile saved: %s (money %d, grip tyres %d, intro seen %d)"), bOk ? TEXT("PASS") : TEXT("FAIL"), Money, Tyres, Intro);
+		}
+	}
 	if (PlayPhase == 99)
 	{
 		if (FScreenshotRequest::IsScreenshotRequested() || FPlatformTime::Seconds() - LastShotRequestTime < 2.0)
@@ -1477,6 +1538,27 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 			*PerfNames[PerfStage], AvgMs, 1000.0 / FMath::Max(AvgMs, 0.001), PerfGameAccum / FMath::Max(PerfFrames, 1), PerfDrawAccum / FMath::Max(PerfFrames, 1),
 			PerfGpuAccum / FMath::Max(PerfFrames, 1), PerfWorst * 1000.0, PerfFrames);
 		PerfGameAccum = PerfDrawAccum = 0.0;
+		{
+			// Draw census: primitives rendered in the last frames, by owner class (what the draw thread pays for).
+			TMap<FString, int32> ByClass;
+			int32 Total = 0, Instances = 0;
+			for (TObjectIterator<UPrimitiveComponent> It; It; ++It)
+			{
+				UPrimitiveComponent* C = *It;
+				if (!C || C->GetWorld() != GetWorld() || !C->IsRegistered() || !C->WasRecentlyRendered(0.2f))
+				{
+					continue;
+				}
+				++Total;
+				if (const UInstancedStaticMeshComponent* ISM = Cast<UInstancedStaticMeshComponent>(C)) { Instances += ISM->GetInstanceCount(); }
+				ByClass.FindOrAdd(C->GetOwner() ? C->GetOwner()->GetClass()->GetName() : TEXT("-"))++;
+			}
+			ByClass.ValueSort([](int32 A, int32 B) { return A > B; });
+			FString Top;
+			int32 n = 0;
+			for (const TPair<FString, int32>& P : ByClass) { if (n++ < 7) { Top += FString::Printf(TEXT(" %s=%d"), *P.Key, P.Value); } }
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] %s: %d primitives rendered (%d ISM instances) |%s"), *PerfNames[PerfStage], Total, Instances, *Top);
+		}
 		{
 			const FString File = FPaths::ProjectSavedDir() / TEXT("HG_CI/Perf") / FString::Printf(TEXT("%02d_%s.png"), PerfStage, *PerfNames[PerfStage]);
 			FScreenshotRequest::RequestScreenshot(File, true, false);

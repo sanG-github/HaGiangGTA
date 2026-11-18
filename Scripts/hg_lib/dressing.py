@@ -20,6 +20,18 @@ from . import editor_utils as hg
 HOUSE_ROAD_CLEAR_CM = 1100.0     # house centre to road centre line (house 10 x 6 m + plinth)
 FENCE_ROAD_CLEAR_CM = 2200.0     # yard wall reaches ~11 m in front of the house
 PROP_ROAD_CLEAR_CM = 650.0
+HOUSE_HALF_CM = (570.0, 380.0)   # walls 10 x 6.2 m + 0.7 m eaves (HGDressingProp BuildHouse)
+HOUSE_MAX_RELIEF_CM = 250.0      # more than this across the footprint: too steep for a house (round 5, agent A)
+
+
+def _house_ground(terrain, x, y, yaw):
+    """(lowest, highest) terrain z under the house footprint incl. eaves (3 x 3 samples)."""
+    a = math.radians(yaw)
+    ca, sa = math.cos(a), math.sin(a)
+    zs = [terrain.z(x + ca * HOUSE_HALF_CM[0] * u - sa * HOUSE_HALF_CM[1] * v,
+                    y + sa * HOUSE_HALF_CM[0] * u + ca * HOUSE_HALF_CM[1] * v)
+          for u in (-1, 0, 1) for v in (-1, 0, 1)]
+    return min(zs), max(zs)
 
 
 def _road_points(layout):
@@ -62,6 +74,13 @@ def build(layout, scatter, tag, folder):
         return
     K = unreal.HGDressingKind
     pts = _road_points(layout)
+    try:
+        from . import placements
+        terrain = placements.ctx_for(layout).terrain
+    except Exception as exc:  # pragma: no cover - heightmap missing next to the layout
+        hg.warn(f"house ground snap skipped: {exc}")
+        terrain = None
+    skipped = 0
 
     # --- H'Mong houses on the grey-roofed scatter spots ---
     houses = []
@@ -70,6 +89,23 @@ def build(layout, scatter, tag, folder):
         d = _road_dist(pts, x, y)
         if d < HOUSE_ROAD_CLEAR_CM:
             continue
+        if terrain is not None:
+            # Round 5 (agent A, review "brown block over the spawn camera"): the house stood at the scatter point's
+            # height, so on a slope its downhill side hung in the air and from the road below it read as a floating
+            # block. Seat it on the lowest ground under the footprint (the uphill side is dug in, as on the real
+            # hillsides) and skip spots too steep for a house.
+            # Long side along the contour, as hill houses are built: least relief over 12 headings.
+            best = None
+            for k in range(12):
+                cand = yaw + 15.0 * k
+                lo_c, hi_c = _house_ground(terrain, x, y, cand)
+                if best is None or (hi_c - lo_c) < best[0] - 20.0:
+                    best = (hi_c - lo_c, cand, lo_c, hi_c)
+            _, yaw, lo, hi = best
+            if hi - lo > HOUSE_MAX_RELIEF_CM:
+                skipped += 1
+                continue
+            z = lo
         variant = i % 6
         if d < FENCE_ROAD_CLEAR_CM and variant % 3 != 2:
             variant = 2 if variant < 3 else 5            # no yard wall this close to the road
@@ -136,4 +172,4 @@ def build(layout, scatter, tag, folder):
             if clear(loc):
                 _spawn(K.WOOD_SIGN, "TaLang_DockBoard", loc, face, tag, folder, text="SÔNG NHO QUẾ · TU SẢN", sign="TuSan")
                 break
-    hg.log(f"Set dressing: {len(houses)} H'Mong houses, {len(clusters)} corn terraces, Ma Pi Leng flag + name stone, 2 boards")
+    hg.log(f"Set dressing: {len(houses)} H'Mong houses ({skipped} slope spots skipped), {len(clusters)} corn terraces, Ma Pi Leng flag + name stone, 2 boards")

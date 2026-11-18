@@ -80,4 +80,11 @@ protected:
 
 	UPROPERTY()
 	TArray<TObjectPtr<USplineMeshComponent>> Segments;
+
+protected:
+	/** Draw distance (cm) of the road segments at runtime: the gorge views drew 280 separate road segments (each
+	 *  with its own material instance since round 3B) for road that is a few pixels up on the rim. 0 = no limit;
+	 *  -hgroadcull=<m> overrides it (A/B). */
+	UPROPERTY(EditAnywhere, Category = "Road") float RuntimeCullDistance = 90000.f;
+	virtual void BeginPlay() override;
 };

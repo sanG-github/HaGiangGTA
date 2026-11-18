@@ -257,6 +257,27 @@ def spawn_scatter(label, mesh, material, instances, tag, folder, cull=(0.0, 0.0)
     return actor
 
 
+def _seat_houses(terrain, items, max_relief_cm=300.0):
+    """Round 5 (agent A): scatter houses stood at the ground height of their centre, so on a slope the downhill
+    side hung up to 2 m in the air (the blue-roofed house 15 m from the Doc Tham Ma spawn read as a floating brown
+    block over the camera). Seat each on the lowest ground under its footprint (+0.7 m eaves) and drop spots
+    with more than 3 m of relief across it."""
+    out, dropped = [], 0
+    for it in items:
+        x, y, yaw, sx, sy = it[0], it[1], it[3], it[6], it[7]
+        a = math.radians(yaw)
+        ca, sa = math.cos(a), math.sin(a)
+        hx, hy = 450.0 * sx + 70.0, 300.0 * sy + 70.0
+        zs = [terrain.z(x + ca * hx * u - sa * hy * v, y + sa * hx * u + ca * hy * v) for u in (-1, 0, 1) for v in (-1, 0, 1)]
+        if max(zs) - min(zs) > max_relief_cm:
+            dropped += 1
+            continue
+        out.append([x, y, min(zs)] + list(it[3:]))
+    if dropped:
+        hg.log(f"scatter houses: {dropped} on slopes too steep dropped, {len(out)} seated on their lowest ground")
+    return out
+
+
 def build_scatter(scatter, meshes, mats, tag, folder):
     """Instanced scatter. On the M1 profile (no Nanite) the meshes carry LOD chains; far cliffs are
     culled at 2.2 km (fog hides the pop), shrubs don't cast shadows and are thinned by a third."""
@@ -656,9 +677,16 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
                   cull=(20000.0, 30000.0), collision=True, extra_tags=("RoadPosts",))
     spawn_scatter("Scatter_poles", meshes["SM_HG_UtilityPole"], mats["pole"], scatter.get("poles", []), tag, folder,
                   cull=(50000.0, 70000.0), collision=True)
+    try:
+        terrain = placements.ctx_for(layout_for_dressing()).terrain
+    except Exception as exc:  # heightmap not next to the layout
+        hg.warn(f"house ground seat skipped: {exc}")
+        terrain = None
     for colour, items in scatter.get("houses", {}).items():
         if colour == "grey":
             items = dressing.remaining_grey_houses(layout_for_dressing(), items)   # the rest are kit H'Mong houses
+        if terrain is not None:
+            items = _seat_houses(terrain, items)
         spawn_scatter(f"Scatter_houses_{colour}_walls", meshes["SM_HG_HouseWalls"], mats["house_wall"], items, tag, folder,
                       cull=(0.0, 0.0), collision=True)
         spawn_scatter(f"Scatter_houses_{colour}_roofs", meshes["SM_HG_HouseRoof"], mats[f"roof_{colour}"], items, tag, folder,

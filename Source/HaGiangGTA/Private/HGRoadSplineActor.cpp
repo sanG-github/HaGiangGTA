@@ -1,4 +1,5 @@
 #include "HGRoadSplineActor.h"
+#include "Misc/CommandLine.h"
 
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
@@ -127,4 +128,22 @@ void AHGRoadSplineActor::RebuildRoadMeshes()
 		Segments.Add(Seg);
 	}
 	UE_LOG(LogHaGiang, Log, TEXT("Road meshes rebuilt: %d segments"), Count);
+}
+
+void AHGRoadSplineActor::BeginPlay()
+{
+	Super::BeginPlay();
+	float Cull = RuntimeCullDistance;
+	float Meters = -1.f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("hgroadcull="), Meters))
+	{
+		Cull = Meters * 100.f;
+	}
+	for (USplineMeshComponent* Seg : Segments)
+	{
+		if (Seg)
+		{
+			Seg->SetCullDistance(Cull);
+		}
+	}
 }

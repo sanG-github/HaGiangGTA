@@ -12,6 +12,7 @@
 #include "HaGiangGTA.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGMissionSubsystem.h"
+#include "HGCowActor.h"
 #include "HGRoadSplineActor.h"
 #include "HGWantedSubsystem.h"
 #include "HGWaterBody.h"
@@ -351,6 +352,13 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 	if (TurnState == EHGTurnState::Turning)
 	{
 		TickTurnaround(Dt);
+		return;
+	}
+	// Far from the camera (> 450 m): ride the lane line kinematically. Nobody sees it, and simulated physics at
+	// 10 Hz sent bikes 15-24 m off the Ta Lang descent (re-placed); this is also cheaper on the game thread.
+	if (bFarLOD && bAutoDrive && AutoDriveRoad && !IsPlayerControlled())
+	{
+		TickFarLOD(Dt);
 		return;
 	}
 
@@ -829,9 +837,16 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	const float CrossTrack = FVector::DotProduct(GetActorLocation() - (RoadP + Right * GetLaneOffsetAt(RoadDistance)), Right); // > 0: right of lane
 	LastCrossTrack = CrossTrack;
 	LastLateral = FVector::DotProduct(GetActorLocation() - RoadP, Right);
-	const float PreviewD = FMath::Clamp(RoadDistance + Dir * FMath::Max(FMath::Abs(Speed) * LanePreviewSeconds, 150.f), 0.f, Len);
+	// Curvature-aware preview: on the 9 m hairpins a full-length preview turned the bars in a whole bike length
+	// early and the rider cut onto the inside kerb (chevron boards, 267 m / 661 m - re-placed). Shorter preview
+	// in tight bends, and a much stiffer pull back once the body is within 30 cm of the road edge.
+	const float NearRadius = GetMinRadiusAhead(1500.f, 300.f);
+	const float PreviewScale = FMath::Clamp(NearRadius / 2500.f, 0.35f, 1.f);
+	const float PreviewD = FMath::Clamp(RoadDistance + Dir * FMath::Max(FMath::Abs(Speed) * LanePreviewSeconds * PreviewScale, 120.f), 0.f, Len);
 	const FVector Ahead = Spline->GetDirectionAtDistanceAlongSpline(PreviewD, ESplineCoordinateSpace::World) * Dir;
-	const float DesiredYaw = Ahead.Rotation().Yaw - FMath::RadiansToDegrees(FMath::Atan2(LaneKeepGain * CrossTrack, FMath::Abs(Speed) + 300.f));
+	const float EdgeRoom = AutoDriveRoad->GetWidthAtDistance(RoadDistance) * 0.5f - Collision->GetScaledBoxExtent().Y - FMath::Abs(LastLateral);
+	const float Gain = EdgeRoom < 30.f ? LaneKeepGain * 3.f : LaneKeepGain;
+	const float DesiredYaw = Ahead.Rotation().Yaw - FMath::RadiansToDegrees(FMath::Atan2(Gain * CrossTrack, FMath::Abs(Speed) + 300.f));
 	const float YawError = FRotator::NormalizeAxis(DesiredYaw - HeadingYaw);
 	OutSteer = FMath::Clamp(YawError / 22.f, -1.f, 1.f);
 
@@ -975,6 +990,18 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 			SpeedReason = FString::Printf(TEXT("probe %s at %.1f m"), Hit.GetActor() ? *Hit.GetActor()->GetActorNameOrLabel() : TEXT("?"), HitDist / 100.f);
 		}
 		OnAutoDriveObstacle(Hit.GetActor());
+		// A cow standing in the lane: after 2 s it is shooed off to its own side of the road (it used to stand there
+		// while a truck or a whole convoy waited - 2 "dead stops" at the 3.24 km herd).
+		if (AHGCowActor* Cow = Cast<AHGCowActor>(Hit.GetActor()))
+		{
+			CowWaitTime = FMath::Abs(Speed) < 150.f ? CowWaitTime + DeltaSeconds : 0.f;
+			if (CowWaitTime > 2.f)
+			{
+				const float CowLat = FVector::DotProduct(Cow->GetActorLocation() - RoadP, Right);
+				Cow->ShooOff(Right * (CowLat >= 0.f ? 1.f : -1.f), FMath::Max(2.f, (AutoDriveRoad->GetWidthAtDistance(RoadDistance) * 0.5f - FMath::Abs(CowLat)) / 100.f + 2.5f));
+				CowWaitTime = 0.f;
+			}
+		}
 		if (IsPlayerControlled() && GetWorld()->GetTimeSeconds() - LastBlockLogTime > 1.0)
 		{
 			LastBlockLogTime = GetWorld()->GetTimeSeconds();
@@ -1239,4 +1266,49 @@ void AHGGroundVehicle::TickTurnaround(float DeltaSeconds)
 		bYielding = false;
 		++TrafficStats.UTurns;
 	}
+}
+
+void AHGGroundVehicle::TickFarLOD(float DeltaSeconds)
+{
+	USplineComponent* Spline = AutoDriveRoad->GetSpline();
+	const float Len = Spline->GetSplineLength();
+	if (!bTurnPointsValid)
+	{
+		float Unused0, Unused1;
+		ComputeAutoDriveInput(0.f, Unused0, Unused1, bFarHandbrakeScratch);   // sets up the turn points
+	}
+	// Speed: cruise, curves, the convoy leader.
+	float Target = FMath::Min(AutoDriveCruise, FMath::Sqrt(AutoDriveLateralAccel * FMath::Max(GetMinRadiusAhead(2400.f, 600.f), 150.f)));
+	if (const AHGGroundVehicle* Leader = AutoDriveLeader.Get())
+	{
+		const float Gap = (Leader->GetRoadDistance() - RoadDistance) * float(AutoDriveDirection);
+		if (Leader->GetAutoDriveDirection() == AutoDriveDirection && Gap > 0.f && Gap < ConvoyGap * 2.f)
+		{
+			Target = FMath::Min(Target, FMath::Max(Leader->GetSpeed() + (Gap - ConvoyGap) * 0.8f, 0.f));
+		}
+	}
+	Speed = FMath::FInterpConstantTo(Speed, Target, DeltaSeconds, 400.f);
+	RoadDistance = FMath::Clamp(RoadDistance + Speed * DeltaSeconds * float(AutoDriveDirection), 0.f, Len);
+	// End of the stretch out of sight: turn round on the spot (no one is there to see the arc).
+	const float TurnAt = AutoDriveDirection > 0 ? TurnPointHi : TurnPointLo;
+	if (LoopRestartDistance < 0.f && (TurnAt - RoadDistance) * float(AutoDriveDirection) < 0.f)
+	{
+		AutoDriveDirection = -AutoDriveDirection;
+		++TrafficStats.UTurns;
+	}
+	const FVector T = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World) * float(AutoDriveDirection);
+	const FVector R = FVector::CrossProduct(FVector::UpVector, T.GetSafeNormal2D()).GetSafeNormal();
+	LaneShift = LaneShiftTarget = 0.f;
+	const FVector P = Spline->GetLocationAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World) + R * GetLaneOffsetAt(RoadDistance)
+		+ FVector(0.f, 0.f, Collision->GetScaledBoxExtent().Z + GroundClearance + 15.f);   // spline = road surface (validated <= 0.3 m)
+	HeadingYaw = T.Rotation().Yaw;
+	SetActorLocationAndRotation(P, FRotator(T.Rotation().Pitch, HeadingYaw, 0.f), false, nullptr, ETeleportType::TeleportPhysics);
+	LastLateral = GetLaneOffsetAt(RoadDistance);
+	LastCrossTrack = 0.f;
+	bGrounded = true;
+	VerticalVelocity = 0.f;
+	StuckTime = 0.f;
+	BlockedTime = 0.f;
+	TurnState = EHGTurnState::None;
+	bQueuedForTurn = false;
 }

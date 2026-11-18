@@ -109,7 +109,7 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		// against a pontoon the canopy is hidden (UpdateBoatCamera) instead of filling the view.
 		// Round 4: 12 m behind, 3 m up - at 19 m the cano read as just its roof.
 		SpringArm->TargetArmLength = 1200.f;
-		SpringArm->SocketOffset = FVector(0.f, 0.f, 300.f);
+		SpringArm->SocketOffset = FVector(0.f, 0.f, 240.f);
 	}
 	else
 	{
@@ -272,7 +272,9 @@ void ANhoQueBoatPawn::UpdateBoatCamera(float DeltaSeconds)
 		return;
 	}
 	// Never look up from below: the arm end must stay above the hull and the water.
-	UpdateOrbitCamera(DeltaSeconds, -7.f, -55.f, -3.f);
+	// Round 5: 3.5 deg flatter (was -7) and the socket at 2.4 m: the eye is level with the roof edge, so the tour
+	// guests on the benches show under it instead of a red roof filling the frame.
+	UpdateOrbitCamera(DeltaSeconds, -3.5f, -55.f, -1.f);
 	// Arm pulled in close (pontoon, cliff): hide the roof slab so it doesn't fill the lower third of the frame.
 	const bool bClose = Camera && FVector::Dist(Camera->GetComponentLocation(), GetActorLocation()) < 900.f;
 	if (Canopy && Canopy->IsVisible() == bClose && BoatType == EHGBoatType::Cano)
