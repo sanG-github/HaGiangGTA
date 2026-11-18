@@ -96,6 +96,29 @@ def inst(x, y, z, yaw, pitch, roll, sx, sy, sz):
             round(float(sx), 3), round(float(sy), 3), round(float(sz), 3)]
 
 
+def mesh_dims(name):
+    """(width_x, depth_y, height_z) in metres of a generated OBJ (pivot at the base)."""
+    v = np.array([[float(t) for t in l.split()[1:4]]
+                  for l in (ROOT / "Generated/Assets/Meshes" / f"{name}.obj").read_text().splitlines() if l.startswith("v ")])
+    return np.ptp(v, axis=0) / 100.0
+
+
+def rotator_from_axes(X, Z):
+    """UE FRotator (pitch, yaw, roll in degrees) for a basis with forward X and up Z (like FRotationMatrix::MakeFromXZ)."""
+    X = X / np.linalg.norm(X)
+    Y = np.cross(Z, X); Y /= np.linalg.norm(Y)
+    Z = np.cross(X, Y)
+    pitch = math.degrees(math.atan2(X[2], math.hypot(X[0], X[1])))
+    yaw = math.degrees(math.atan2(X[1], X[0]))
+    # Y axis of FRotator(pitch, yaw, 0) for the roll term.
+    cp, sp = math.cos(math.radians(pitch)), math.sin(math.radians(pitch))
+    cy, sy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+    sy_axis = np.array([-sy, cy, 0.0])
+    sz_axis = np.array([-sp * cy, -sp * sy, cp])
+    roll = math.degrees(math.atan2(np.dot(Z, sy_axis), np.dot(Z, sz_axis)))
+    return pitch, yaw, roll
+
+
 def main():
     t0 = time.time()
     rng = np.random.default_rng(SEED)
@@ -113,23 +136,42 @@ def main():
 
     out = {}
 
-    # ---- cliffs on steep faces ----
-    x, y = jitter_grid(22.0, T.half - 5, rng)
+    # ---- cliffs: rock slabs laid ONTO steep faces ----
+    # The slab's thin axis (local Y) follows the terrain normal and its height axis (local Z) runs
+    # up the slope, so it reads as exposed bedrock hugging the wall - not as a blade sticking out.
+    # Only ~35 % of the slab thickness protrudes from the terrain.
+    dims = mesh_dims("SM_HG_KarstCliff_01")          # ~ (10, 5-7, 15-23) m
+    vp_pts = [np.array(v["location_cm"][:2]) / 100.0 for v in layout["viewpoints"].values()]
+    x, y = jitter_grid(28.0, T.half - 5, rng)
     r, c = T.idx(x, y)
     slope = T.slope[r, c]
     z = T.height(x, y)
-    keep = (slope > 52) & (road_dist(x, y) > 14) & (z > T.water + 3)
+    near_vp = np.zeros(x.size, bool)
+    for vp in vp_pts:
+        near_vp |= np.hypot(x - vp[0], y - vp[1]) < 45.0
+    # Exposed cliff only where the photos show it: the Tu San narrows (y ~ -800..800 m) and very
+    # steep faces elsewhere; vegetated slopes are left to the terrain material + trees.
+    gorge = (y > -800) & (y < 800)
+    keep = (((slope > 55) & gorge) | (slope > 66)) & (road_dist(x, y) > 16) & (z > T.water + 5) & ~near_vp
     cliffs = []
     for xi, yi, zi, ri, ci in zip(x[keep], y[keep], z[keep], r[keep], c[keep]):
-        gx, gy = T.gx[ri, ci], T.gy[ri, ci]
-        downhill = math.degrees(math.atan2(-gy, -gx))
-        yaw = downhill + 90.0 + rng.uniform(-12, 12)   # mesh thin axis (local Y) faces downhill
-        relief = float(np.ptp(alt[max(ri - 15, 0):ri + 16, max(ci - 15, 0):ci + 16]))
-        sx = rng.uniform(1.6, 3.2)
-        sz = np.clip(relief / 18.0, 1.0, 3.5) * rng.uniform(0.8, 1.2)
-        sy = rng.uniform(1.0, 1.6)
-        sink = 0.25 * sz * 18.0
-        cliffs.append(inst(xi, yi, zi - sink, yaw, rng.uniform(-6, 6), rng.uniform(-5, 5), sx, sy, sz))
+        gx, gy = float(T.gx[ri, ci]), float(T.gy[ri, ci])
+        n = np.array([-gx, -gy, 1.0]); n /= np.linalg.norm(n)               # outward terrain normal
+        up_slope = np.array([gx, gy, gx * gx + gy * gy]); up_slope /= np.linalg.norm(up_slope)
+        along = np.cross(n, up_slope); along /= np.linalg.norm(along)        # contour direction
+        # Small random twist inside the face plane.
+        tw = math.radians(rng.uniform(-25, 25))
+        X = along * math.cos(tw) + up_slope * math.sin(tw)
+        Zax = -along * math.sin(tw) + up_slope * math.cos(tw)
+        pitch, yaw, roll = rotator_from_axes(X, Zax)
+        sx = rng.uniform(1.4, 2.8)
+        sz = rng.uniform(1.0, 1.8)
+        sy = rng.uniform(0.8, 1.3)
+        thick = dims[1] * sy
+        height = dims[2] * sz
+        center = np.array([xi, yi, zi]) - n * (0.15 * thick)
+        base = center - Zax * (0.5 * height)                                    # mesh pivot is at its base
+        cliffs.append(inst(base[0], base[1], base[2], yaw, pitch, roll, sx, sy, sz))
     out["cliffs"] = cliffs
 
     # ---- summits: local maxima of the karst cones ----
@@ -146,8 +188,10 @@ def main():
         if road_dist(xi, yi) < 40:
             continue
         zi = float(T.height(xi, yi))
-        summits.append(inst(xi, yi, zi - 10.0, rng.uniform(0, 360), rng.uniform(-4, 4), rng.uniform(-4, 4),
-                            rng.uniform(1.2, 2.2), rng.uniform(1.0, 1.5), rng.uniform(1.4, 2.4)))
+        # Pinnacle crowning the cone: mostly buried, only the fluted top sticks out (~8-15 m).
+        sz = rng.uniform(0.7, 1.1)
+        summits.append(inst(xi, yi, zi - dims[2] * sz * 0.55, rng.uniform(0, 360), rng.uniform(-6, 6), rng.uniform(-6, 6),
+                            rng.uniform(1.0, 1.6), rng.uniform(0.9, 1.3), sz))
     out["summits"] = summits
 
     # ---- boulders ----
@@ -168,26 +212,66 @@ def main():
     out["bushes"] = [inst(xi, yi, zi - 0.1, rng.uniform(0, 360), 0, 0, *([rng.uniform(0.6, 1.5)] * 3))
                      for xi, yi, zi in zip(x[keep], y[keep], z[keep])]
 
+    # ---- trees: lush broadleaf + pines on the west (Tham Ma), sparse trees and red kapok in the canyon ----
+    x, y = jitter_grid(16.0, T.half - 5, rng)
+    r, c = T.idx(x, y)
+    z = T.height(x, y)
+    sl = T.slope[r, c]
+    lush = np.clip((-200.0 - x) / 900.0, 0, 1) * 0.75 + 0.18          # tree density by region
+    ok = (sl < 42) & (road_dist(x, y) > 7) & (z > T.water + 6)
+    near_vp = np.zeros(x.size, bool)
+    for vp in vp_pts:
+        near_vp |= np.hypot(x - vp[0], y - vp[1]) < 25.0
+    pick = ok & ~near_vp & (rng.random(x.size) < lush * 0.55)
+    kinds = rng.random(x.size)
+    canyon = x > -200
+    trees = {"kapok": [], "broadleaf": [], "pine": []}
+    for xi, yi, zi, kv, cz in zip(x[pick], y[pick], z[pick], kinds[pick], canyon[pick]):
+        s_ = rng.uniform(0.7, 1.25)
+        t = inst(xi, yi, zi - 0.3, rng.uniform(0, 360), rng.uniform(-4, 4), rng.uniform(-4, 4), s_, s_, s_ * rng.uniform(0.9, 1.15))
+        if cz and kv < 0.3:
+            trees["kapok"].append(t)
+        elif kv < 0.45:
+            trees["pine"].append(t)
+        else:
+            trees["broadleaf"].append(t)
+    out["trees"] = trees
+
     # ---- road posts on the valley side ----
     half_w = layout["road"]["half_width_cm"] / 100.0
     s_road = np.concatenate([[0], np.cumsum(np.linalg.norm(np.diff(road_xy, axis=0), axis=1))])
-    targets = np.arange(4.0, s_road[-1] - 4.0, 8.0)
+    # Every 4 m: W-beam guardrails on the Doc Tham Ma hairpins (as in the photos), concrete
+    # red/white posts (coc tieu) every 8 m elsewhere. Only on the valley (drop-off) side.
+    tham_end = layout["road"]["sections_m"]["tham_ma"] + 300.0
+    targets = np.arange(2.0, s_road[-1] - 6.0, 4.0)
     px = np.interp(targets, s_road, road[:, 0]); py = np.interp(targets, s_road, road[:, 1])
     pz = np.interp(targets, s_road, road[:, 2])
+    pz4 = np.interp(targets + 4.0, s_road, road[:, 2])
     tx = np.interp(targets + 1.0, s_road, road[:, 0]) - np.interp(targets - 1.0, s_road, road[:, 0])
     ty = np.interp(targets + 1.0, s_road, road[:, 1]) - np.interp(targets - 1.0, s_road, road[:, 1])
     norm = np.hypot(tx, ty) + 1e-9
     nx, ny = -ty / norm, tx / norm
-    posts = []
+    posts, rails = [], []
     for i in range(len(targets)):
         yaw = math.degrees(math.atan2(ty[i], tx[i]))
+        guard = targets[i] < tham_end
+        if not guard and i % 2:
+            continue
         for side in (1, -1):
-            off = half_w + 0.45
+            off = half_w + (0.6 if guard else 0.45)
             sx_, sy_ = px[i] + nx[i] * off * side, py[i] + ny[i] * off * side
             beyond = T.height(px[i] + nx[i] * (off + 6) * side, py[i] + ny[i] * (off + 6) * side)
-            if beyond < pz[i] - 1.5:   # drop-off on this side -> valley edge
+            if beyond >= pz[i] - 1.5:   # no drop-off on this side
+                continue
+            if guard:
+                pitch = math.degrees(math.atan2(pz4[i] - pz[i], 4.0))
+                # Rail faces the road: local +Y points away from the road on the left side, mirror on the right.
+                ry = yaw if side > 0 else yaw + 180.0
+                rails.append(inst(sx_, sy_, pz[i] - 0.15, ry, pitch if side > 0 else -pitch, 0, 1, 1, 1))
+            else:
                 posts.append(inst(sx_, sy_, pz[i] - 0.12, yaw, 0, 0, 1, 1, 1))
     out["posts"] = posts
+    out["guardrails"] = rails
 
     # ---- Mom Da Tu Than ----
     vp2 = layout["viewpoints"]["ma_pi_leng"]
@@ -231,6 +315,7 @@ def main():
 
     (HM_DIR / "HaGiang_scatter.json").write_text(json.dumps(out, separators=(",", ":")))
     counts = {k: len(v) for k, v in out.items() if isinstance(v, list)}
+    counts.update({f"tree_{k}": len(v) for k, v in out["trees"].items()})
     print(f"scatter {counts} in {time.time() - t0:.1f}s")
 
 

@@ -481,12 +481,137 @@ def make_loops(rng, sr=44100):
     _loop_wav(out / "SW_HG_Heli_Loop.wav", heli, sr)
 
 
+# ---------------------------------------------------------------------------
+# Trees (reference photos): bombax / kapok (hoa gao, red), broadleaf, pine.
+# Each tree = trunk mesh + crown mesh sharing one transform (two materials, no vertex colours).
+# ---------------------------------------------------------------------------
+
+def _merge(parts):
+    vs, fs, off = [], [], 0
+    for v, f in parts:
+        vs.append(v); fs.append(f + off); off += len(v)
+    return np.vstack(vs), np.vstack(fs)
+
+
+def _tube(p0, p1, r0, r1, sides=7):
+    """Tapered open cylinder from p0 to p1 (cm)."""
+    p0, p1 = np.asarray(p0, float), np.asarray(p1, float)
+    axis = p1 - p0
+    L = np.linalg.norm(axis)
+    a = axis / L
+    t = np.cross(a, [0, 0, 1.0]) if abs(a[2]) < 0.99 else np.cross(a, [1.0, 0, 0])
+    t /= np.linalg.norm(t)
+    b = np.cross(a, t)
+    ang = np.linspace(0, 2 * np.pi, sides, endpoint=False)
+    ring0 = p0 + r0 * (np.cos(ang)[:, None] * t + np.sin(ang)[:, None] * b)
+    ring1 = p1 + r1 * (np.cos(ang)[:, None] * t + np.sin(ang)[:, None] * b)
+    v = np.vstack([ring0, ring1])
+    f = []
+    for i in range(sides):
+        j = (i + 1) % sides
+        f += [(i, j, sides + j), (i, sides + j, sides + i)]
+    return v, np.array(f)
+
+
+def _blob(center, radius, rng, level=2, squash=(1, 1, 0.8), noise=0.35):
+    v, f = icosphere(level)
+    r = 1.0 + noise * (wave_noise(v, rng, octaves=2, waves=5, base=2.5) - 0.4)
+    return center + v * r[:, None] * radius * np.array(squash), f
+
+
+def make_trees(rng):
+    out = OUT / "Meshes"
+    # Kapok / bombax: tall pale trunk, few up-swept branches, sparse red flower clusters, no leaves.
+    trunk, bloom = [], []
+    h = 1100.0
+    trunk.append(_tube((0, 0, -30), (0, 0, h), 28, 10, 8))
+    for k in range(7):
+        z0 = h * rng.uniform(0.45, 0.9)
+        ang = rng.uniform(0, 2 * np.pi)
+        L = rng.uniform(250, 420)
+        tip = np.array([np.cos(ang) * L * 0.75, np.sin(ang) * L * 0.75, z0 + L * 0.6])
+        trunk.append(_tube((0, 0, z0), tip, 8, 3, 5))
+        for _ in range(4):
+            c = tip + rng.normal(0, 55, 3) + np.array([0, 0, 30])
+            bloom.append(_blob(c, rng.uniform(35, 65), rng, 1, (1, 1, 0.8), 0.5))
+    v, f = _merge(trunk); write_obj(out / "SM_HG_Kapok_Trunk.obj", v, f)
+    v, f = _merge(bloom); write_obj(out / "SM_HG_Kapok_Bloom.obj", v, f)
+
+    # Broadleaf tree: short trunk, lumpy crown.
+    v, f = _tube((0, 0, -30), (0, 0, 420), 22, 12, 7); write_obj(out / "SM_HG_Tree_Trunk.obj", v, f)
+    crown = [_blob(np.array([rng.uniform(-90, 90), rng.uniform(-90, 90), rng.uniform(420, 620)]),
+                   rng.uniform(140, 220), rng, 2, (1, 1, 0.75), 0.4) for _ in range(6)]
+    v, f = _merge(crown); write_obj(out / "SM_HG_Tree_Crown.obj", v, f)
+
+    # Pine (Pinus kesiya on the Nho Que slopes): straight trunk, stacked drooping cones.
+    v, f = _tube((0, 0, -30), (0, 0, 1300), 20, 6, 7); write_obj(out / "SM_HG_Pine_Trunk.obj", v, f)
+    cones = []
+    for i in range(7):
+        zc = 450 + i * 130
+        rad = 260 - i * 30
+        cv, cf = icosphere(2)
+        cv = cv * np.array([rad, rad, 90]) + np.array([0, 0, zc])
+        cv[:, 2] -= np.clip(np.hypot(cv[:, 0], cv[:, 1]) / rad, 0, 1) * 70     # droop at the edge
+        r = 1.0 + 0.25 * (wave_noise(cv / 100.0, rng, octaves=2, waves=4, base=1.5) - 0.4)
+        cv[:, :2] *= r[:, None]
+        cones.append((cv, cf))
+    v, f = _merge(cones); write_obj(out / "SM_HG_Pine_Crown.obj", v, f)
+
+
+# ---------------------------------------------------------------------------
+# Road furniture (reference: Doc Tham Ma photos)
+# ---------------------------------------------------------------------------
+
+def make_road_furniture():
+    out = OUT / "Meshes"
+    # Road strip for spline meshes: X = length (100 cm, 10 cuts so it bends), Y = width (100 cm),
+    # top at z = 0. UV: U across the road (0..1), V along the segment (0..1) -> lane paint in the material.
+    nx = 10
+    xs = np.linspace(-50, 50, nx + 1)
+    v, uv, f, nrm = [], [], [], []
+    for i, x in enumerate(xs):
+        for y in (-50.0, 50.0):
+            v.append((x, y, 0.0)); uv.append(((y + 50) / 100.0, i / nx)); nrm.append((0, 0, 1))
+    for i in range(nx):
+        a, b, c, d = 2 * i, 2 * i + 1, 2 * i + 2, 2 * i + 3
+        f += [(a, c, d), (a, d, b)]
+    # Skirts down the sides so the edge never shows a gap against the terrain.
+    base = len(v)
+    for i, x in enumerate(xs):
+        for y in (-50.0, 50.0):
+            v.append((x, y, -12.0)); uv.append(((y + 50) / 100.0, i / nx)); nrm.append((0, np.sign(y), 0))
+    for i in range(nx):
+        for side in (0, 1):
+            t0, t1 = 2 * i + side, 2 * (i + 1) + side
+            b0, b1 = base + t0, base + t1
+            f += [(t0, b0, b1), (t0, b1, t1)] if side == 1 else [(t0, b1, b0), (t0, t1, b1)]
+    write_obj(out / "SM_HG_RoadStrip.obj", np.array(v), np.array(f), np.array(nrm, float), np.array(uv))
+
+    # W-beam guardrail, 4 m long, with one post: pivot at the base of the post, rail along +X.
+    parts = []
+    def box(cx, cy, cz, sx, sy, sz):
+        x0, x1, y0, y1, z0, z1 = cx - sx / 2, cx + sx / 2, cy - sy / 2, cy + sy / 2, cz - sz / 2, cz + sz / 2
+        bv = np.array([(x0, y0, z0), (x1, y0, z0), (x1, y1, z0), (x0, y1, z0), (x0, y0, z1), (x1, y0, z1), (x1, y1, z1), (x0, y1, z1)])
+        bf = np.array([(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)])
+        return bv, bf
+    parts.append(box(0, 0, 35, 12, 12, 110))                    # post (buried 20 cm)
+    parts.append(box(200, 9, 62, 400, 4, 14))                   # upper rib of the W
+    parts.append(box(200, 11, 52, 400, 3, 8))                   # valley of the W
+    parts.append(box(200, 9, 42, 400, 4, 14))                   # lower rib
+    vs, fs, off = [], [], 0
+    for bv, bf in parts:
+        vs.append(bv); fs.append(bf + off); off += len(bv)
+    write_obj(out / "SM_HG_Guardrail.obj", np.vstack(vs), np.vstack(fs))
+
+
 def main():
     t0 = time.time()
     rng = np.random.default_rng(SEED)
     make_textures(rng)
     print(f"textures {time.time() - t0:.1f}s")
     make_meshes(rng)
+    make_trees(np.random.default_rng(SEED + 7))
+    make_road_furniture()
     print(f"meshes {time.time() - t0:.1f}s")
     make_flute(rng)
     make_sfx(rng)

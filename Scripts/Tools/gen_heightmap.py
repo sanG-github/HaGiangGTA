@@ -47,8 +47,8 @@ M_PER_UNIT = Z_SCALE / 128.0 / 100.0   # 0.02 m
 MAX_ASL_M = BASE_ASL_M + 65535 * M_PER_UNIT
 
 WATER_ASL_M = 700.0
-RIVER_BED_ASL_M = 692.0
-RIVER_HALF_WIDTH_M = 25.0
+RIVER_BED_ASL_M = 684.0
+RIVER_HALF_WIDTH_M = 42.0   # Nho Que is a reservoir here: ~80-100 m wide
 ROAD_HALF_WIDTH_M = 3.5
 ROAD_SHOULDER_M = 1.0
 SEED = 20261118
@@ -333,8 +333,10 @@ def canyon_params(y):
         t = 0.5 - 0.5 * np.cos(np.pi * t)
         return values[i] + (values[i + 1] - values[i]) * t
 
-    W = smooth_interp([350, 330, 300, 300, 425, 425])
-    k = smooth_interp([0.55, 0.5, 0.42, 0.42, 0.65, 0.65])
+    # Tu San narrows (the 1.7 km gorge under Ma Pi Leng, y ~ -600..600) have near-vertical walls;
+    # elsewhere the canyon is a steep V of vegetated slopes (~35-45 deg), as in the photos.
+    W = smooth_interp([420, 380, 300, 300, 440, 440])
+    k = smooth_interp([0.95, 0.85, 0.45, 0.45, 0.8, 0.8])
     rim = smooth_interp([1250, 1245, 1235, 1235, 1260, 1260])
     return W.astype(np.float32), k.astype(np.float32), rim.astype(np.float32)
 
@@ -573,7 +575,10 @@ def generate():
     # Limestone strata: ledges + near-vertical risers, levels warped so they are not perfectly flat.
     wall_mask = np.clip(t * 6.0, 0, 1) * (rd >= RIVER_HALF_WIDTH_M)
     level_warp = (value_noise(N, 14, rng) - 0.5) * 0.6
-    strata_amt = 0.35 + 0.35 * value_noise(N, 6, rng)          # strata stronger in some stretches
+    _, Yg2 = grid_coords(N)
+    gorge = (smoothstep(-900, -550, Yg2) * (1 - smoothstep(550, 900, Yg2))).astype(np.float32)
+    del Yg2
+    strata_amt = (0.15 + 0.4 * value_noise(N, 6, rng)) * gorge   # strata only in the Tu San narrows
     tz = terrace(cutter, WATER_ASL_M, 55.0, level_warp) * 0.6 + terrace(cutter, WATER_ASL_M, 17.0, level_warp * 1.7) * 0.4
     cutter = (cutter * (1 - strata_amt * wall_mask) + tz * (strata_amt * wall_mask)).astype(np.float32)
     del tz, strata_amt

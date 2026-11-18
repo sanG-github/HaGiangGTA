@@ -12,6 +12,12 @@ from typing import Iterable, Optional, Sequence
 import unreal
 
 GENERATED_ROOT = "/Game/HaGiang/Generated"
+
+# Hardware profile: "m1" (Apple M1 family: Metal SM5, no Nanite -> classic LODs, lighter scatter)
+# or "sm6" (DX12 SM6 / Apple M2+: Nanite everywhere). Override with HG_PROFILE=sm6.
+import os as _os
+PROFILE = _os.environ.get("HG_PROFILE", "m1").lower()
+USE_NANITE = PROFILE == "sm6"
 CUBE = "/Engine/BasicShapes/Cube.Cube"
 CYLINDER = "/Engine/BasicShapes/Cylinder.Cylinder"
 SPHERE = "/Engine/BasicShapes/Sphere.Sphere"

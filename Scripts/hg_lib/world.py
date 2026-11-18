@@ -58,12 +58,18 @@ def build_water(layout, material, tag, folder):
     return actor
 
 
-def build_road(layout, material, tag, folder):
+def build_road(layout, material, tag, folder, strip_mesh=None):
+    """strip_mesh: SM_HG_RoadStrip (top at z=0, lane-paint UVs). Without it the engine cube is used."""
     road = layout["road"]
     actor = hg.spawn_actor(unreal.HGRoadSplineActor, "Road_MaPiLeng", (0, 0, 0), (0, 0, 0), tag, folder)
     actor.set_editor_property("road_material", material)
     actor.set_editor_property("road_width", road["half_width_cm"] * 2.0)
-    pts = [unreal.Vector(p[0], p[1], p[2] + ROAD_MESH_OFFSET_CM) for p in road["points_cm"]]
+    offset = ROAD_MESH_OFFSET_CM
+    if strip_mesh is not None:
+        actor.set_editor_property("road_mesh", strip_mesh)
+        actor.set_editor_property("road_thickness", 100.0)   # Z scale 1; the actor lowers by half -> add it back
+        offset += 50.0
+    pts = [unreal.Vector(p[0], p[1], p[2] + offset) for p in road["points_cm"]]
     actor.set_road_points(pts)
     actor.rebuild_road_meshes()
     hg.log(f"Road: {len(pts)} points, {road['length_m'] / 1000:.2f} km")
@@ -94,7 +100,7 @@ def build_dock(layout, mat_wood, tag, folder):
 def build_checkin_rings(layout, mat_ring, tag, folder):
     for key, vp in layout["viewpoints"].items():
         x, y, z = vp["location_cm"]
-        hg.spawn_mesh(f"CheckIn_{key}", hg.CYLINDER, (x, y, z + 5), scale=(10.0, 10.0, 0.04),
+        hg.spawn_mesh(f"CheckIn_{key}", hg.CYLINDER, (x, y, z + 3), scale=(4.0, 4.0, 0.03),
                       material=mat_ring, tag=tag, folder=folder, collision=False)
 
 
@@ -145,8 +151,12 @@ def spawn_scatter(label, mesh, material, instances, tag, folder, cull=(0.0, 0.0)
 
 
 def build_scatter(scatter, meshes, mats, tag, folder):
+    """Instanced scatter. On the M1 profile (no Nanite) the meshes carry LOD chains; far cliffs are
+    culled at 2.2 km (fog hides the pop), shrubs don't cast shadows and are thinned by a third."""
+    m1 = not hg.USE_NANITE
+    cliff_cull = (180000.0, 220000.0) if m1 else (0.0, 0.0)
     cliff_meshes = [meshes[f"SM_HG_KarstCliff_0{i}"] for i in range(1, 5)]
-    for name, cull in (("cliffs", (0.0, 0.0)), ("summits", (0.0, 0.0))):
+    for name, cull in (("cliffs", cliff_cull), ("summits", (0.0, 0.0))):
         items = scatter[name]
         for v, mesh in enumerate(cliff_meshes):
             spawn_scatter(f"Scatter_{name}_{v + 1}", mesh, mats["rock"], items[v::4], tag, folder, cull)
@@ -156,11 +166,27 @@ def build_scatter(scatter, meshes, mats, tag, folder):
         spawn_scatter(f"Scatter_boulders_{v + 1}", mesh, mats["rock"], scatter["boulders"][v::3], tag, folder,
                       cull=(45000.0, 60000.0))
     bushes = [meshes["SM_HG_Bush_01"], meshes["SM_HG_Bush_02"]]
+    bush_items = [b for i, b in enumerate(scatter["bushes"]) if not m1 or i % 3 != 2]
     for v, mesh in enumerate(bushes):
-        spawn_scatter(f"Scatter_bushes_{v + 1}", mesh, mats["bush"], scatter["bushes"][v::2], tag, folder,
-                      cull=(18000.0, 26000.0), collision=False, shadows=True)
+        spawn_scatter(f"Scatter_bushes_{v + 1}", mesh, mats["bush"], bush_items[v::2], tag, folder,
+                      cull=(14000.0, 20000.0) if m1 else (18000.0, 26000.0), collision=False, shadows=not m1)
+    # Trees: trunk + crown HISMs sharing the same instance transforms.
+    tree_parts = {
+        "kapok": (("SM_HG_Kapok_Trunk", "kapok_bark"), ("SM_HG_Kapok_Bloom", "kapok_bloom")),
+        "broadleaf": (("SM_HG_Tree_Trunk", "bark"), ("SM_HG_Tree_Crown", "leaf")),
+        "pine": (("SM_HG_Pine_Trunk", "bark"), ("SM_HG_Pine_Crown", "pine")),
+    }
+    for kind, parts in tree_parts.items():
+        items = scatter.get("trees", {}).get(kind, [])
+        for mesh_name, mat_name in parts:
+            spawn_scatter(f"Scatter_tree_{kind}_{mesh_name[6:]}", meshes[mesh_name], mats[mat_name], items, tag, folder,
+                          cull=(60000.0, 90000.0) if m1 else (0.0, 0.0), collision=("Trunk" in mesh_name),
+                          shadows=True)
     spawn_scatter("Scatter_road_posts", meshes["SM_HG_RoadPost"], mats["post"], scatter["posts"], tag, folder,
                   cull=(15000.0, 22000.0), collision=True, shadows=True, extra_tags=("RoadPosts",))
+    if scatter.get("guardrails") and "SM_HG_Guardrail" in meshes:
+        spawn_scatter("Scatter_guardrails", meshes["SM_HG_Guardrail"], mats["guardrail"], scatter["guardrails"], tag,
+                      folder, cull=(18000.0, 26000.0), collision=True, shadows=True, extra_tags=("RoadPosts",))
     counts = {k: len(v) for k, v in scatter.items() if isinstance(v, list)}
     hg.log(f"Scatter instances: {counts}")
 
@@ -171,13 +197,17 @@ def build_golden_hour(tag, folder):
     south-facing Tham Ma hairpins. Valley mist (height fog) pools below ~950 m - the 'sea of
     clouds' seen from the pass - while the VolumetricCloud layer sits above the peaks.
     (Composition checked with Scripts/Tools/render_viewpoints.py.)"""
-    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun_GoldenHour", (0, 0, 200000), (-13.0, 120.0, 0), tag, folder)
+    # Bright dry-season afternoon like the reference photos: sun 38 deg up from the south-east.
+    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun", (0, 0, 200000), (-38.0, 120.0, 0), tag, folder)
     sc = sun.get_component_by_class(unreal.DirectionalLightComponent)
     sc.set_mobility(unreal.ComponentMobility.MOVABLE)
-    for k, v in (("intensity", 8.0), ("use_temperature", True), ("temperature", 4100.0),
+    for k, v in (("intensity", 10.0), ("use_temperature", True), ("temperature", 5600.0),
                  ("atmosphere_sun_light", True), ("cast_cloud_shadows", True),
                  ("enable_light_shaft_bloom", True), ("enable_light_shaft_occlusion", True),
-                 ("bloom_scale", 0.25), ("volumetric_scattering_intensity", 1.6)):
+                 ("bloom_scale", 0.25), ("volumetric_scattering_intensity", 1.6),
+                 # Cheap shadows for M1: 3 cascades to 120 m, distance-field shadows beyond (to 3 km).
+                 ("dynamic_shadow_cascades", 3), ("dynamic_shadow_distance_movable_light", 12000.0),
+                 ("use_ray_traced_distance_field_shadows", True), ("distance_field_shadow_distance", 300000.0)):
         try:
             sc.set_editor_property(k, v)
         except Exception as exc:  # property names differ slightly between engine versions
@@ -202,17 +232,17 @@ def build_golden_hour(tag, folder):
         cc.set_editor_property("material", cloud_mat)
     else:
         hg.warn("Engine volumetric cloud material not found; using component default.")
-    cc.set_editor_property("layer_bottom_altitude", 1.9)    # km above sea level (world Z 0): above the peaks
-    cc.set_editor_property("layer_height", 2.5)
+    cc.set_editor_property("layer_bottom_altitude", 1.65)   # km above sea level: clouds hugging the summits
+    cc.set_editor_property("layer_height", 2.0)
 
     # Fog actor at 820 m with a steep falloff: dense mist in the valleys and the gorge,
     # clear air at the 1200 m road -> looking down from the pass reads as a sea of clouds.
     fog = hg.spawn_actor(unreal.ExponentialHeightFog, "ValleyMist", (0, 0, 82000), (0, 0, 0), tag, folder)
     fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
     # UE falloff is per 1000 uu: 0.08 -> density e-folds every ~125 m above the fog actor.
-    for k, v in (("fog_density", 0.05), ("fog_height_falloff", 0.08),
-                 ("fog_inscattering_luminance", unreal.LinearColor(0.45, 0.42, 0.40, 1.0)),
-                 ("directional_inscattering_luminance", unreal.LinearColor(1.0, 0.62, 0.32, 1.0)),
+    for k, v in (("fog_density", 0.008), ("fog_height_falloff", 0.06),
+                 ("fog_inscattering_luminance", unreal.LinearColor(0.32, 0.38, 0.45, 1.0)),
+                 ("directional_inscattering_luminance", unreal.LinearColor(0.9, 0.6, 0.35, 1.0)),
                  ("directional_inscattering_exponent", 6.0),
                  ("enable_volumetric_fog", True), ("volumetric_fog_scattering_distribution", 0.65),
                  ("volumetric_fog_extinction_scale", 1.2), ("volumetric_fog_distance", 25000.0),
@@ -227,10 +257,10 @@ def build_golden_hour(tag, folder):
     s = ppv.get_editor_property("settings")
     for k, v in (("bloom_intensity", 0.55), ("vignette_intensity", 0.32), ("film_grain_intensity", 0.12),
                  ("auto_exposure_min_brightness", 0.6), ("auto_exposure_max_brightness", 2.5),
-                 ("white_temp", 6100.0), ("color_saturation", unreal.Vector4(1.06, 1.04, 1.0, 1.0)),
-                 ("color_contrast", unreal.Vector4(1.05, 1.05, 1.05, 1.0)),
-                 ("color_gain_shadows", unreal.Vector4(0.92, 0.98, 1.06, 1.0)),
-                 ("color_gain_highlights", unreal.Vector4(1.06, 1.0, 0.92, 1.0)),
+                 ("white_temp", 6600.0), ("color_saturation", unreal.Vector4(1.04, 1.06, 1.04, 1.0)),
+                 ("color_contrast", unreal.Vector4(1.08, 1.08, 1.08, 1.0)),
+                 ("color_gain_shadows", unreal.Vector4(0.94, 1.0, 1.08, 1.0)),
+                 ("color_gain_highlights", unreal.Vector4(1.03, 1.0, 0.96, 1.0)),
                  ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0)):
         try:
             s.set_editor_property(k, v)
@@ -254,3 +284,80 @@ def build_viewpoints(scatter, flute, tag, folder, names=None):
         if flute is not None:
             actor.set_editor_property("flute_sound", flute)
         hg.log(f"Viewpoint {vp['name']} ({vp['altitude_m']} m)")
+
+
+
+# ---------------------------------------------------------------------------
+# Reference-photo props: Tham Ma stone parapet + flower sellers, Ta Lang floating dock + boat traffic
+# ---------------------------------------------------------------------------
+
+def build_viewpoint_props(layout, scatter, meshes, mats, tag, folder):
+    """Doc Tham Ma overlook: low stone parapet on the valley edge, red buckets of white/yellow
+    wildflowers and a Hmong flower-seller girl, like the classic check-in photo."""
+    vp = layout["viewpoints"]["doc_tham_ma"]["location_cm"]
+    centre = scatter["viewpoints"]["doc_tham_ma"]["center_cm"]
+    dx, dy = centre[0] - vp[0], centre[1] - vp[1]
+    d = math.hypot(dx, dy) or 1.0
+    ox, oy = dx / d, dy / d                       # outward (towards the hairpins)
+    px, py = -oy, ox                              # along the parapet
+    yaw = math.degrees(math.atan2(py, px))
+    stone = mats.get("stone")
+    for i in range(-2, 3):
+        cx, cy = vp[0] + ox * 900 + px * i * 420, vp[1] + oy * 900 + py * i * 420
+        hg.box(f"Parapet_{i + 2}", (cx, cy, vp[2] + 40), (400, 55, 95), yaw=yaw, material=stone, tag=tag, folder=folder)
+    red = hg.color_material("MI_GB_BucketRed", (0.6, 0.03, 0.03))
+    for i, (along, flower) in enumerate(((-700, "flowers_white"), (-250, "flowers_yellow"), (450, "flowers_white"))):
+        bx, by = vp[0] + ox * 820 + px * along, vp[1] + oy * 820 + py * along
+        hg.spawn_mesh(f"FlowerBucket_{i}", hg.CYLINDER, (bx, by, vp[2] + 30), scale=(0.55, 0.55, 0.6),
+                      material=red, tag=tag, folder=folder)
+        bush = hg.spawn_mesh(f"FlowerBunch_{i}", "/Game/HaGiang/Generated/Meshes/SM_HG_Bush_01.SM_HG_Bush_01",
+                             (bx, by, vp[2] + 60), scale=(0.45, 0.45, 0.55), material=mats[flower], tag=tag,
+                             folder=folder, collision=False)
+    girl = hg.spawn_actor(unreal.HGTouristNPC, "FlowerSeller", (vp[0] + ox * 760 + px * -480, vp[1] + oy * 760 + py * -480, vp[2] + 100),
+                          (0, 0, 0), tag, folder)
+    girl.set_editor_property("style", unreal.HGTouristStyle.LOCAL)
+    girl.set_editor_property("look_at_point", hg.vec(centre))
+
+
+def build_river_traffic(layout, tag, folder):
+    """Ta Lang: green-roofed floating pontoons, moored tourist boats, and boats cruising the gorge."""
+    dock = layout["spawns"]["dock"]
+    dx, dy, _ = dock["location_cm"]
+    yaw = dock["yaw"]
+    fx, fy = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+    sx, sy = -fy, fx                                    # along the bank
+    water_z = layout["water"]["surface_z_cm"]
+    deck = hg.color_material("MI_GB_PontoonDeck", (0.18, 0.16, 0.14))
+    roof_green = hg.color_material("MI_GB_RoofGreen", (0.05, 0.25, 0.12))
+    for i in range(3):
+        along = (i - 1) * 2600.0
+        cx, cy = dx + fx * 3000 + sx * along, dy + fy * 3000 + sy * along
+        ryaw = yaw + 90
+        hg.box(f"Pontoon_{i}", (cx, cy, water_z + 30), (1800, 900, 60), yaw=ryaw, material=deck, tag=tag, folder=folder)
+        hg.box(f"PontoonRoof_{i}", (cx, cy, water_z + 380), (1600, 800, 20), yaw=ryaw, material=roof_green, tag=tag,
+               folder=folder, collision=False)
+        for k, (ox_, oy_) in enumerate(((-700, -350), (700, -350), (-700, 350), (700, 350))):
+            r = math.radians(ryaw)
+            px_ = cx + ox_ * math.cos(r) - oy_ * math.sin(r)
+            py_ = cy + ox_ * math.sin(r) + oy_ * math.cos(r)
+            hg.spawn_mesh(f"PontoonPost_{i}_{k}", hg.CYLINDER, (px_, py_, water_z + 205), scale=(0.15, 0.15, 3.5),
+                          material=deck, tag=tag, folder=folder, collision=False)
+    # Moored boats, side by side off the pontoons.
+    for i in range(6):
+        along = (i - 2.5) * 420.0
+        bx, by = dx + fx * 4800 + sx * along, dy + fy * 4800 + sy * along
+        boat = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_Moored_{i}", (bx, by, water_z), (0, yaw, 0), tag, folder)
+        boat.set_editor_property("boat_type", unreal.HGBoatType.CANO)
+        rerun(boat)
+    # Cruising boats ping-pong along the river through the gorge.
+    river = layout["water"]["river_cm"]
+    pts = [unreal.Vector(p[0], p[1], water_z) for p in river[::8]]
+    n = len(pts)
+    for i, start in enumerate((int(n * 0.25), int(n * 0.45), int(n * 0.62))):
+        p0 = pts[start]
+        boat = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_Cruise_{i}", (p0.x, p0.y, water_z), (0, 90, 0), tag, folder)
+        boat.set_editor_property("boat_type", unreal.HGBoatType.CANO)
+        boat.set_editor_property("cruise_points", pts)
+        boat.set_editor_property("auto_cruise", True)
+        boat.set_editor_property("cruise_throttle", 0.45 + 0.1 * i)
+        rerun(boat)

@@ -31,6 +31,8 @@ ANhoQueBoatPawn::ANhoQueBoatPawn()
 	CanopyPostR = AddPart(TEXT("CanopyPostR"), CylMesh.Object);
 	Motor = AddPart(TEXT("Motor"), CubeMesh.Object);
 	Paddle = AddPart(TEXT("Paddle"), CylMesh.Object);
+	RoofStar = AddPart(TEXT("RoofStar"), CylMesh.Object);
+	Windows = AddPart(TEXT("Windows"), CubeMesh.Object);
 
 	DriverSeat->SetupAttachment(HullRoot);
 
@@ -68,7 +70,7 @@ void ANhoQueBoatPawn::ApplyBoatType()
 	if (BoatType == EHGBoatType::Cano)
 	{
 		DisplayName = NSLOCTEXT("HaGiang", "Cano", "Cano Song Nho Que");
-		Collision->SetBoxExtent(FVector(320.f, 110.f, 50.f));
+		Collision->SetBoxExtent(FVector(640.f, 140.f, 50.f));
 		MaxForwardSpeed = 1700.f;  // ~61 km/h
 		MaxReverseSpeed = 350.f;
 		Acceleration = 520.f;
@@ -80,18 +82,20 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		BowLiftDeg = 7.f;
 		TurnRollDeg = 9.f;
 
-		SetPart(Hull, true, FVector(-20.f, 0.f, -10.f), FRotator::ZeroRotator, FVector(560.f, 210.f, 80.f));
-		SetPart(Bow, true, FVector(300.f, 0.f, -10.f), FRotator(-90.f, 0.f, 0.f), FVector(210.f, 80.f, 120.f));
-		SetPart(Deck, true, FVector(-40.f, 0.f, 32.f), FRotator::ZeroRotator, FVector(480.f, 190.f, 6.f));
-		SetPart(Canopy, true, FVector(-60.f, 0.f, 210.f), FRotator::ZeroRotator, FVector(360.f, 220.f, 8.f));
-		SetPart(CanopyPostL, true, FVector(-60.f, -100.f, 120.f), FRotator::ZeroRotator, FVector(8.f, 8.f, 180.f));
-		SetPart(CanopyPostR, true, FVector(-60.f, 100.f, 120.f), FRotator::ZeroRotator, FVector(8.f, 8.f, 180.f));
-		SetPart(Motor, true, FVector(-315.f, 0.f, 20.f), FRotator::ZeroRotator, FVector(40.f, 40.f, 90.f));
+		SetPart(Hull, true, FVector(-30.f, 0.f, -5.f), FRotator::ZeroRotator, FVector(1180.f, 270.f, 90.f));
+		SetPart(Bow, true, FVector(575.f, 0.f, -5.f), FRotator(-90.f, 0.f, 0.f), FVector(270.f, 90.f, 140.f));
+		SetPart(Deck, true, FVector(-60.f, 0.f, 40.f), FRotator::ZeroRotator, FVector(1100.f, 250.f, 6.f));
+		SetPart(Windows, true, FVector(-60.f, 0.f, 120.f), FRotator::ZeroRotator, FVector(1040.f, 262.f, 70.f));
+		SetPart(Canopy, true, FVector(-60.f, 0.f, 205.f), FRotator::ZeroRotator, FVector(1120.f, 290.f, 10.f));
+		SetPart(RoofStar, true, FVector(-60.f, 0.f, 212.f), FRotator::ZeroRotator, FVector(170.f, 170.f, 2.f));
+		SetPart(CanopyPostL, true, FVector(-60.f, -125.f, 120.f), FRotator::ZeroRotator, FVector(8.f, 8.f, 170.f));
+		SetPart(CanopyPostR, true, FVector(-60.f, 125.f, 120.f), FRotator::ZeroRotator, FVector(8.f, 8.f, 170.f));
+		SetPart(Motor, true, FVector(-630.f, 0.f, 20.f), FRotator::ZeroRotator, FVector(50.f, 50.f, 90.f));
 		SetPart(Paddle, false);
-		DriverSeat->SetRelativeLocation(FVector(-220.f, 0.f, 130.f));
+		DriverSeat->SetRelativeLocation(FVector(-520.f, 0.f, 135.f));
 		EngineVolume = 0.8f;
 
-		SpringArm->TargetArmLength = 1000.f;
+		SpringArm->TargetArmLength = 1700.f;
 		SpringArm->SocketOffset = FVector(0.f, 0.f, 320.f);
 	}
 	else
@@ -113,6 +117,8 @@ void ANhoQueBoatPawn::ApplyBoatType()
 		SetPart(Bow, true, FVector(205.f, 0.f, 0.f), FRotator(-90.f, 0.f, 0.f), FVector(64.f, 30.f, 80.f));
 		SetPart(Deck, true, FVector(-20.f, 0.f, 18.f), FRotator::ZeroRotator, FVector(90.f, 50.f, 4.f));
 		SetPart(Canopy, false);
+		SetPart(RoofStar, false);
+		SetPart(Windows, false);
 		SetPart(CanopyPostL, false);
 		SetPart(CanopyPostR, false);
 		SetPart(Motor, false);
@@ -145,11 +151,13 @@ void ANhoQueBoatPawn::BeginPlay()
 			MID->SetVectorParameterValue(TEXT("Color"), Color);
 		}
 	};
-	const FLinearColor HullColor = bCano ? FLinearColor(0.9f, 0.9f, 0.88f) : FLinearColor(1.f, 0.45f, 0.02f);
+	const FLinearColor HullColor = bCano ? FLinearColor(0.04f, 0.22f, 0.6f) : FLinearColor(1.f, 0.45f, 0.02f);
 	Paint(Hull, HullColor);
 	Paint(Bow, HullColor);
 	Paint(Deck, bCano ? FLinearColor(0.35f, 0.2f, 0.1f) : FLinearColor(0.05f, 0.05f, 0.05f));
-	Paint(Canopy, FLinearColor(0.05f, 0.35f, 0.75f));
+	Paint(Canopy, FLinearColor(0.62f, 0.03f, 0.02f));   // co do sao vang roof
+	Paint(RoofStar, FLinearColor(1.f, 0.78f, 0.f));
+	Paint(Windows, FLinearColor(0.75f, 0.78f, 0.8f));
 	Paint(CanopyPostL, FLinearColor(0.7f, 0.7f, 0.7f));
 	Paint(CanopyPostR, FLinearColor(0.7f, 0.7f, 0.7f));
 	Paint(Motor, FLinearColor(0.08f, 0.08f, 0.1f));
@@ -186,6 +194,28 @@ FVector ANhoQueBoatPawn::GetExitLocation() const
 	return GetActorLocation() - Side * (Extent.Y + 90.f) + FVector(0.f, 0.f, 40.f);
 }
 
+void ANhoQueBoatPawn::ComputeCruiseInput(float& OutThrottle, float& OutSteer)
+{
+	if (CruisePoints.Num() < 2)
+	{
+		return;
+	}
+	CruiseIndex = FMath::Clamp(CruiseIndex, 0, CruisePoints.Num() - 1);
+	const FVector Target = CruisePoints[CruiseIndex];
+	const FVector To = Target - GetActorLocation();
+	if (To.Size2D() < 4000.f)
+	{
+		if (CruiseIndex + CruiseDir < 0 || CruiseIndex + CruiseDir >= CruisePoints.Num())
+		{
+			CruiseDir = -CruiseDir; // turn around at the ends of the route
+		}
+		CruiseIndex += CruiseDir;
+	}
+	const float YawError = FRotator::NormalizeAxis(To.Rotation().Yaw - HeadingYaw);
+	OutSteer = FMath::Clamp(YawError / 25.f, -1.f, 1.f);
+	OutThrottle = CruiseThrottle * (FMath::Abs(YawError) > 60.f ? 0.4f : 1.f);
+}
+
 bool ANhoQueBoatPawn::HasWaterDepthAt(const FVector& Location, float SurfaceZ) const
 {
 	FHitResult Hit;
@@ -205,10 +235,14 @@ void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 	const float Dt = FMath::Min(DeltaSeconds, 1.f / 20.f);
 	const float Time = GetWorld()->GetTimeSeconds();
 
-	const float Throttle = ReadAxis(ThrottleAction);
-	const float Steer = ReadAxis(SteerAction);
+	float Throttle = ReadAxis(ThrottleAction);
+	float Steer = ReadAxis(SteerAction);
 	const bool bBoost = ReadButton(BoostAction);
 	const bool bKayak = BoatType == EHGBoatType::Kayak;
+	if (!Controller && bAutoCruise)
+	{
+		ComputeCruiseInput(Throttle, Steer);
+	}
 
 	FVector Loc = GetActorLocation();
 	float SurfaceZ = 0.f;
@@ -264,10 +298,10 @@ void ANhoQueBoatPawn::Tick(float DeltaSeconds)
 	if (bOverWater)
 	{
 		float Wave = 0.f;
-		for (TActorIterator<AHGWaterBody> It(GetWorld()); It; ++It)
+		TActorIterator<AHGWaterBody> It(GetWorld());
+		if (It)
 		{
 			Wave = It->GetWaveOffset(Loc, Time);
-			break;
 		}
 		const float TargetZ = SurfaceZ - Draft + Wave;
 		if (Loc.Z > TargetZ + 30.f)

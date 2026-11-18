@@ -19,12 +19,12 @@ class Graph:
 
     def __init__(self, name: str):
         path = f"{FOLDER}/{name}"
+        # Recreate from scratch: delete_all_material_expressions() leaves custom outputs such as the
+        # SingleLayerWater node behind, and a second one breaks compilation.
         if unreal.EditorAssetLibrary.does_asset_exist(path):
-            self.mat = unreal.EditorAssetLibrary.load_asset(path)
-            MEL.delete_all_material_expressions(self.mat)
-        else:
-            self.mat = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
-                name, FOLDER, unreal.Material, unreal.MaterialFactoryNew())
+            unreal.EditorAssetLibrary.delete_asset(path)
+        self.mat = unreal.AssetToolsHelpers.get_asset_tools().create_asset(
+            name, FOLDER, unreal.Material, unreal.MaterialFactoryNew())
         self.x = -1600
         self.y = 0
 
@@ -53,9 +53,10 @@ class Graph:
         return self.node(unreal.MaterialExpressionConstant3Vector, constant=unreal.LinearColor(rgb[0], rgb[1], rgb[2], 1.0))
 
     def texture(self, tex, uv, normal=False, out=""):
-        s = self.node(unreal.MaterialExpressionTextureSample, texture=tex,
-                      sampler_type=(unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL if normal
-                                    else unreal.MaterialSamplerType.SAMPLERTYPE_LINEAR_COLOR))
+        # Normal maps -> Normal sampler; the noise texture is TC_Masks (linear) -> Masks sampler.
+        sampler = (unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL if normal
+                   else unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
+        s = self.node(unreal.MaterialExpressionTextureSample, texture=tex, sampler_type=sampler)
         self.link(uv, s, "UVs")
         return s
 
@@ -149,39 +150,57 @@ def remap_mask(g: Graph, value, center, sharpness, invert=False):
 # ---------------------------------------------------------------------------
 
 def terrain(tex) -> unreal.Material:
-    """Auto-slope landscape: grass/scrub on gentle ground, karst limestone + moss on steep faces,
-    dark wet banks near the river. World-aligned, no layer painting needed."""
+    """Landscape matched to reference photos of Ma Pi Leng / Nho Que / Tham Ma (dry season):
+    * canyon slopes: dry mauve-khaki grass with patches of green shrubs and bare terraced corn fields;
+    * west (Doc Tham Ma side): lush green hillside;
+    * steep faces (> ~57 deg): grey limestone with orange-rust and dark rain streaks;
+    * a bare ochre band 0-4.5 m above the reservoir level (the "bathtub ring" of the Nho Que lake)."""
     g = Graph("M_HG_Terrain")
     wp = g.world_pos()
-    n_far = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 2600.0))
-    n_mid = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 420.0))
-    rock_n = g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 380.0), normal=True)
-
-    up = g.up_facing()
-    # Rock only on genuinely steep ground (>~50 deg) plus noisy outcrops: Ha Giang hills are mostly
-    # green with grey limestone breaking through, not bare white cones.
-    threshold = g.add(g.scalar("RockSlopeThreshold", 0.64), g.mul(g.sub((n_far, "R"), 0.5), 0.3))
-    outcrop = g.saturate(g.mul(g.sub((n_mid, "B"), 0.55), 3.0))
-    rock = g.saturate(g.add(remap_mask(g, up, threshold, 6.0, invert=True), g.mul(outcrop, 0.6)))
-
-    # Green scrub with dry-grass / maize-field patches (autumn on the Dong Van plateau).
-    dry = g.saturate(g.mul(g.sub((n_far, "G"), 0.55), 4.0))
-    grass_tint = g.lerp(g.color("GrassDark", (0.04, 0.07, 0.022)), g.color("GrassLight", (0.075, 0.1, 0.03)), (n_mid, "G"))
-    grass = g.lerp(grass_tint, g.color("GrassDry", (0.14, 0.12, 0.055)), dry)
-    lime = g.lerp(g.color("Limestone", (0.44, 0.43, 0.40)), g.color("LimestoneDark", (0.16, 0.16, 0.15)), (n_mid, "R"))
-    moss_amt = g.mul(g.saturate(g.sub(g.mul((n_far, "R"), 1.6), 0.45)), g.scalar("MossOnRock", 0.55))
-    rock_col = g.lerp(lime, g.color("Moss", (0.05, 0.09, 0.035)), moss_amt)
-    base = g.lerp(grass, rock_col, rock)
-
-    # Wet, darker banks within ~15 m above the river surface (700 m).
+    x = g.mask(wp, r=True)
     z = g.mask(wp, b=True)
-    wet = g.saturate(g.mul(g.sub(g.scalar("WetAboveZ", 71500.0), z), 1.0 / 1500.0))
-    base = g.mul(base, g.lerp(1.0, 0.5, wet))
-    rough = g.lerp(g.lerp(0.9, 0.74, rock), 0.32, wet)
+    n_far = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 3200.0))
+    n_mid = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 700.0))
+    n_fine = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 110.0))
+    rock_n = g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 420.0), normal=True)
+    up = g.up_facing()
 
-    flat = g.const3((0.0, 0.0, 1.0))
-    normal = g.normalize(g.lerp(flat, rock_n, g.add(g.mul(rock, 0.7), 0.3)))
+    # 1 = lush west (Tham Ma), ~0.3 = dry canyon east.
+    lush = g.lerp(g.scalar("CanyonGreenness", 0.3), 1.0,
+                  g.saturate(g.mul(g.sub(g.scalar("LushWestX", -20000.0), x), 1.0 / 90000.0)))
 
+    dry = g.lerp(g.color("DryGrass", (0.19, 0.13, 0.105)), g.color("DryKhaki", (0.23, 0.18, 0.11)), (n_mid, "G"))
+    green = g.lerp(g.color("Shrub", (0.03, 0.065, 0.022)), g.color("ShrubLight", (0.07, 0.11, 0.035)), (n_fine, "G"))
+    green_amt = g.saturate(g.add(g.add(g.sub(g.mul(lush, 1.5), 0.62), g.mul(g.sub((n_far, "R"), 0.5), 1.3)),
+                                 g.mul(g.sub((n_fine, "R"), 0.5), 0.7)))
+    veg = g.lerp(dry, green, green_amt)
+
+    # Bare terraced corn plots on gentler ground (striped by contour lines).
+    flat = remap_mask(g, up, 0.82, 8.0)
+    plots = g.mul(g.mul(g.saturate(g.mul(g.sub((n_far, "B"), 0.6), 6.0)), flat), g.sub(1.0, g.mul(lush, 0.8)))
+    stripe = g.node(unreal.MaterialExpressionFrac)
+    g.link(g.mul(z, 1.0 / 260.0), stripe)
+    soil = g.mul(g.color("Soil", (0.27, 0.16, 0.095)), g.lerp(0.75, 1.1, stripe))
+    ground = g.lerp(veg, soil, plots)
+
+    # Limestone cliffs with rust and dark streaks running down the face.
+    xy = g.add(g.mask(wp, r=True), g.mask(wp, g=True))
+    streak = g.texture(tex["T_HG_Noise"], g.append(g.mul(xy, 1.0 / 900.0), g.mul(z, 1.0 / 5000.0)))
+    lime = g.mul(g.color("Limestone", (0.43, 0.42, 0.39)), g.add(0.7, g.mul((n_fine, "R"), 0.45)))
+    rust = g.saturate(g.mul(g.sub((streak, "G"), 0.62), 5.0))
+    dark = g.saturate(g.mul(g.sub((streak, "R"), 0.6), 4.0))
+    rock_col = g.lerp(g.lerp(lime, g.color("Rust", (0.46, 0.2, 0.08)), rust), g.color("Stain", (0.09, 0.085, 0.075)), g.mul(dark, 0.7))
+    threshold = g.add(g.scalar("RockSlopeThreshold", 0.55), g.mul(g.sub((n_mid, "R"), 0.5), 0.2))
+    rock = remap_mask(g, up, threshold, 6.0, invert=True)
+    base = g.lerp(ground, rock_col, rock)
+
+    # Reservoir draw-down band: bare ochre rock/soil from the water line up ~4.5 m.
+    band = g.mul(g.saturate(g.mul(g.sub(g.scalar("BandTopZ", 70450.0), z), 1.0 / 150.0)),
+                 g.saturate(g.mul(g.sub(z, 69950.0), 1.0 / 60.0)))
+    base = g.lerp(base, g.mul(g.color("WaterlineOchre", (0.42, 0.27, 0.13)), g.add(0.8, g.mul((n_fine, "G"), 0.4))), band)
+
+    rough = g.lerp(g.lerp(0.92, 0.95, plots), 0.78, rock)
+    normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rock, 0.6), 0.4)))
     g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(rough, unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(normal, unreal.MaterialProperty.MP_NORMAL)
@@ -203,6 +222,23 @@ def wet_asphalt(tex) -> unreal.Material:
     flat = g.const3((0.0, 0.0, 1.0))
     normal = g.normalize(g.lerp(agg_n, flat, g.add(g.mul(puddle, 0.6), 0.35)))
 
+    # Lane paint from the road-strip UVs (U across, V along each 8 m segment):
+    # yellow dashed centre line (3.4 m dash / 4.6 m gap) + solid white edge lines.
+    tc = g.node(unreal.MaterialExpressionTextureCoordinate)
+    u = g.mask(tc, r=True)
+    v = g.mask(tc, g=True)
+    du = g.node(unreal.MaterialExpressionAbs)
+    g.link(g.sub(u, 0.5), du)
+    centre = g.saturate(g.mul(g.sub(0.013, du), 400.0))
+    dash = g.saturate(g.mul(g.sub(0.42, v), 200.0))
+    yellow = g.mul(centre, dash)
+    de = g.node(unreal.MaterialExpressionAbs)
+    g.link(g.sub(du, 0.455), de)
+    edge = g.saturate(g.mul(g.sub(0.012, de), 400.0))
+    paint_wear = g.saturate(g.add(0.55, (fine, "B")))
+    base = g.lerp(base, g.color("LaneYellow", (0.62, 0.42, 0.03)), g.mul(yellow, paint_wear))
+    base = g.lerp(base, g.color("LaneWhite", (0.62, 0.62, 0.6)), g.mul(edge, paint_wear))
+    rough = g.lerp(rough, 0.55, g.saturate(g.add(yellow, edge)))
     g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(rough, unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(g.const(0.5), unreal.MaterialProperty.MP_SPECULAR)
@@ -211,10 +247,9 @@ def wet_asphalt(tex) -> unreal.Material:
 
 
 def river_water(tex) -> unreal.Material:
-    """SingleLayerWater, emerald Nho Que: low red scattering, strong red absorption."""
+    """Nho Que reservoir water: opaque milky turquoise with calm ripples (matches the photos, and is
+    cheaper than SingleLayerWater on the M1's SM5 path). Lumen reflections give the sky/cliff mirror."""
     g = Graph("M_HG_RiverWater")
-    g.mat.set_editor_property("shading_model", unreal.MaterialShadingModel.MSM_SINGLE_LAYER_WATER)
-    g.mat.set_editor_property("blend_mode", unreal.BlendMode.BLEND_OPAQUE)
     wp = g.world_pos()
     time = g.node(unreal.MaterialExpressionTime)
 
@@ -224,43 +259,37 @@ def river_water(tex) -> unreal.Material:
         g.link(time, p, "Time")
         return g.texture(tex["T_HG_WaterNormal"], p, normal=True)
 
-    n1 = panned(1800.0, 0.006, 0.011)
-    n2 = panned(650.0, -0.013, 0.004)
-    flat = g.const3((0.0, 0.0, 1.0))
-    normal = g.normalize(g.lerp(flat, g.add(n1, n2), g.scalar("WaveStrength", 0.45)))
-
-    g.out(g.const3((0.0, 0.0, 0.0)), unreal.MaterialProperty.MP_BASE_COLOR)
-    g.out(g.scalar("Roughness", 0.035), unreal.MaterialProperty.MP_ROUGHNESS)
+    n1 = panned(2200.0, 0.004, 0.009)
+    n2 = panned(700.0, -0.011, 0.003)
+    normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), g.add(n1, n2), g.scalar("WaveStrength", 0.22)))
+    tint = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 6000.0))
+    col = g.lerp(g.color("Turquoise", (0.025, 0.21, 0.2)), g.color("TurquoiseLight", (0.04, 0.28, 0.25)), (tint, "R"))
+    g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.scalar("Roughness", 0.06), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.const(0.4), unreal.MaterialProperty.MP_SPECULAR)
     g.out(normal, unreal.MaterialProperty.MP_NORMAL)
-
-    water_out = g.node(unreal.MaterialExpressionSingleLayerWaterMaterialOutput)
-    g.link(g.color("ScatteringCoefficients", (0.015, 0.11, 0.075)), water_out, "ScatteringCoefficients")
-    g.link(g.color("AbsorptionCoefficients", (0.42, 0.055, 0.10)), water_out, "AbsorptionCoefficients")
-    g.link(g.scalar("PhaseG", 0.2), water_out, "PhaseG")
     return g.finish()
 
 
 def karst_rock(tex) -> unreal.Material:
-    """Limestone for the Nanite cliffs: grey with vertical rain-streak staining and moss on ledges."""
+    """Gorge cliff faces: grey limestone, orange-rust and dark streaks, shrubs on ledges."""
     g = Graph("M_HG_KarstRock")
     wp = g.world_pos()
+    z = g.mask(wp, b=True)
     uv = g.mul(g.node(unreal.MaterialExpressionTextureCoordinate), g.node(unreal.MaterialExpressionConstant2Vector, r=6.0, g=3.0))
     rock_n = g.texture(tex["T_HG_RockNormal"], uv, normal=True)
-    # Streak UV: horizontal = world X+Y (fast), vertical = world Z (slow) -> long vertical stains.
     xy = g.add(g.mask(wp, r=True), g.mask(wp, g=True))
-    streak_uv = g.append(g.mul(xy, 1.0 / 700.0), g.mul(g.mask(wp, b=True), 1.0 / 4000.0))
-    streak = g.texture(tex["T_HG_Noise"], streak_uv)
+    streak = g.texture(tex["T_HG_Noise"], g.append(g.mul(xy, 1.0 / 800.0), g.mul(z, 1.0 / 4500.0)))
     blotch = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 900.0))
-
-    lime = g.lerp(g.color("Limestone", (0.50, 0.49, 0.46)), g.color("Stain", (0.12, 0.115, 0.10)),
-                  g.saturate(g.sub(g.mul((streak, "G"), 1.8), 0.55)))
+    lime = g.mul(g.color("Limestone", (0.45, 0.44, 0.41)), g.add(0.75, g.mul((blotch, "G"), 0.4)))
+    rust = g.saturate(g.mul(g.sub((streak, "G"), 0.6), 5.0))
+    dark = g.saturate(g.mul(g.sub((streak, "R"), 0.58), 4.0))
+    col = g.lerp(g.lerp(lime, g.color("Rust", (0.48, 0.21, 0.08)), rust), g.color("Stain", (0.08, 0.075, 0.065)), g.mul(dark, 0.75))
     up = g.up_facing()
-    moss = g.mul(remap_mask(g, up, 0.55, 4.0), g.saturate(g.mul((blotch, "R"), 1.4)))
-    base = g.lerp(lime, g.color("Moss", (0.05, 0.09, 0.03)), moss)
-    rough = g.lerp(g.scalar("RockRoughness", 0.78), 0.92, moss)
-
-    g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
-    g.out(rough, unreal.MaterialProperty.MP_ROUGHNESS)
+    shrub = g.mul(remap_mask(g, up, 0.6, 4.0), g.saturate(g.mul((blotch, "R"), 1.5)))
+    col = g.lerp(col, g.color("Shrub", (0.035, 0.07, 0.025)), shrub)
+    g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.lerp(0.8, 0.92, shrub), unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(rock_n, unreal.MaterialProperty.MP_NORMAL)
     return g.finish()
 
@@ -291,6 +320,47 @@ def road_post() -> unreal.Material:
     return g.finish()
 
 
+def foliage(tex, name, dark, light, rough=0.85):
+    """Leaf / flower clumps: colour varies per instance and with world noise, light normal detail."""
+    g = Graph(name)
+    wp = g.world_pos()
+    n = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 120.0))
+    rnd = g.node(unreal.MaterialExpressionPerInstanceRandom)
+    col = g.lerp(g.color("Dark", dark), g.color("Light", light), g.saturate(g.add(g.mul(rnd, 0.6), g.mul((n, "G"), 0.6))))
+    g.out(col, unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.const(rough), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 50.0), normal=True), unreal.MaterialProperty.MP_NORMAL)
+    return g.finish()
+
+
+def bark(tex, name, color):
+    g = Graph(name)
+    wp = g.world_pos()
+    n = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 40.0))
+    g.out(g.mul(g.color("Bark", color), g.add(0.75, g.mul((n, "R"), 0.5))), unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.const(0.9), unreal.MaterialProperty.MP_ROUGHNESS)
+    return g.finish()
+
+
+def metal(name, color, roughness):
+    g = Graph(name)
+    g.out(g.color("Color", color), unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.const(1.0), unreal.MaterialProperty.MP_METALLIC)
+    g.out(g.const(roughness), unreal.MaterialProperty.MP_ROUGHNESS)
+    return g.finish()
+
+
+def stone(tex):
+    g = Graph("M_HG_StoneWall")
+    wp = g.world_pos()
+    n = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 60.0))
+    col = g.lerp(g.color("Stone", (0.2, 0.2, 0.19)), g.color("Moss", (0.06, 0.08, 0.04)), g.saturate(g.mul(g.sub((n, "R"), 0.55), 3.0)))
+    g.out(g.mul(col, g.add(0.75, g.mul((n, "G"), 0.5))), unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.const(0.88), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 80.0), normal=True), unreal.MaterialProperty.MP_NORMAL)
+    return g.finish()
+
+
 def build_all(tex) -> dict:
     return {
         "terrain": terrain(tex),
@@ -299,4 +369,13 @@ def build_all(tex) -> dict:
         "rock": karst_rock(tex),
         "bush": bush(tex),
         "post": road_post(),
+        "kapok_bark": bark(tex, "M_HG_KapokBark", (0.42, 0.4, 0.37)),
+        "bark": bark(tex, "M_HG_Bark", (0.12, 0.09, 0.07)),
+        "kapok_bloom": foliage(tex, "M_HG_KapokBloom", (0.38, 0.025, 0.02), (0.6, 0.06, 0.04), 0.7),
+        "leaf": foliage(tex, "M_HG_Leaf", (0.03, 0.06, 0.02), (0.08, 0.12, 0.035)),
+        "pine": foliage(tex, "M_HG_PineNeedles", (0.018, 0.04, 0.02), (0.04, 0.075, 0.03)),
+        "guardrail": metal("M_HG_Guardrail", (0.55, 0.56, 0.57), 0.38),
+        "stone": stone(tex),
+        "flowers_yellow": foliage(tex, "M_HG_FlowersYellow", (0.55, 0.42, 0.02), (0.75, 0.62, 0.08), 0.7),
+        "flowers_white": foliage(tex, "M_HG_FlowersWhite", (0.6, 0.62, 0.55), (0.8, 0.8, 0.75), 0.7),
     }

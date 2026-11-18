@@ -59,7 +59,9 @@ def cameras():
 
     b = layout["spawns"]["boats"][0]["location_cm"]; k = nearest(b)
     ahead = river[max(k - 45, 0)]
-    shots.append(("VP3_TuSan_boat", v(b[0], b[1], water_z + 200), v(ahead[0], ahead[1], water_z + 14000), 70))
+    # Just behind and above the cano (not inside its hull), looking up-canyon.
+    bx, by = norm2(ahead[0] - b[0], ahead[1] - b[1])
+    shots.append(("VP3_TuSan_boat", v(b[0] - bx * 1700, b[1] - by * 1700, water_z + 650), v(ahead[0], ahead[1], water_z + 14000), 70))
     shots.append(("VP3_TuSan_flycam", v(river[k][0] - 22000, river[k][1] + 12000, water_z + 42000),
                   v(river[max(k - 25, 0)][0], river[max(k - 25, 0)][1], water_z), 55))
     return shots
@@ -72,14 +74,24 @@ class Shooter:
         self.wait = 0
         self.cam = None
         self.state = "load"
+        self.busy = False
+        self.done = False
+        # -ExecutePythonScript quits the editor as soon as the script returns unless told otherwise.
+        unreal.EditorPythonScripting.set_keep_python_script_alive(True)
         self.handle = unreal.register_slate_post_tick_callback(self.tick)
 
     def tick(self, dt):
+        # Loading/flush calls pump Slate, which re-enters this callback: ignore nested ticks.
+        if self.busy or self.done:
+            return
+        self.busy = True
         try:
             self.step()
         except Exception as exc:  # never leave the editor hanging
             unreal.log_error(f"[HG_SHOTS] {exc}")
             self.finish()
+        finally:
+            self.busy = False
 
     def step(self):
         if self.state == "load":
@@ -109,15 +121,18 @@ class Shooter:
             self.cam.set_actor_location_and_rotation(loc, rot, False, False)
             self.cam.get_cine_camera_component().set_editor_property("field_of_view", float(fov))
             unreal.get_editor_subsystem(unreal.UnrealEditorSubsystem).set_level_viewport_camera_info(loc, rot)
-            unreal.AutomationLibrary.finish_loading_before_screenshot()
+            self.i += 1
             unreal.AutomationLibrary.take_high_res_screenshot(RES[0], RES[1], os.path.join(OUT, f"{name}.png"), self.cam)
             unreal.log(f"[HG_SHOTS] {name}")
-            self.i += 1
-            self.wait = 90   # let the screenshot + streaming settle before moving the camera
+            self.wait = 150   # let the screenshot + streaming settle before moving the camera
 
     def finish(self):
+        if self.done:
+            return
+        self.done = True
         unreal.unregister_slate_post_tick_callback(self.handle)
         unreal.log(f"[HG_SHOTS] done -> {OUT}")
+        unreal.EditorPythonScripting.set_keep_python_script_alive(False)
         unreal.SystemLibrary.quit_editor()
 
 

@@ -44,13 +44,14 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
 
     step("Importing Nanite landscape (slow)")
     landscape = world.build_landscape(layout, tag, f"{prefix}/Landscape", mats["terrain"])
-    try:
-        landscape.set_editor_property("enable_nanite", True)
-    except Exception as exc:
-        hg.warn(f"Nanite landscape: {exc} (enable it in the Landscape details panel)")
+    if hg.USE_NANITE:
+        try:
+            landscape.set_editor_property("enable_nanite", True)
+        except Exception as exc:
+            hg.warn(f"Nanite landscape: {exc} (enable it in the Landscape details panel)")
 
     step("Road, river, dock, vehicles")
-    road = world.build_road(layout, mats["asphalt"], tag, f"{prefix}/Road")
+    road = world.build_road(layout, mats["asphalt"], tag, f"{prefix}/Road", meshes.get("SM_HG_RoadStrip"))
     world.build_water(layout, mats["water"], tag, f"{prefix}/Water")
     world.build_dock(layout, mat_wood, tag, f"{prefix}/Dock")
     world.build_checkin_rings(layout, mat_ring, tag, f"{prefix}/Viewpoints")
@@ -64,6 +65,8 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
 
     step("Viewpoints + PlayerStart")
     world.build_viewpoints(scatter, flute, tag, f"{prefix}/Viewpoints", viewpoint_names)
+    world.build_viewpoint_props(layout, scatter, meshes, mats, tag, f"{prefix}/Viewpoints")
+    world.build_river_traffic(layout, tag, f"{prefix}/River")
     world.build_player_start(layout, tag, f"{prefix}/Gameplay")
 
     return {"layout": layout, "scatter": scatter, "road": road, "meshes": meshes, "mats": mats}
