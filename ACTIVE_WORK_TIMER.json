@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 2991,
+  "active_work_seconds": 3561,
   "cooldown_wait_seconds": 0,
-  "state": "stopped",
-  "segment_started_at": null,
-  "current_branch": "main",
-  "current_checkpoint": "compile-fix",
-  "last_completed_step": "CP05 merged (tag cp-05-24hr)",
-  "next_pending_step": "UE 5.8 installed -> compile + fix CP01-05",
+  "state": "running",
+  "segment_started_at": 1794978207,
+  "current_branch": "improve/photoreal-viewpoints",
+  "current_checkpoint": "photoreal-pass",
+  "last_completed_step": "photoreal pass: terrain v2, lighting, materials, preview renderer",
+  "next_pending_step": "commit",
   "pause_reason": null,
   "history": [
     {
@@ -168,6 +168,19 @@
       "t": 1794977271,
       "event": "stop",
       "active": 2991
+    },
+    {
+      "t": 1794977637,
+      "event": "start",
+      "active": 2991,
+      "checkpoint": "photoreal-pass"
+    },
+    {
+      "t": 1794978207,
+      "event": "step",
+      "active": 3561,
+      "done": "photoreal pass: terrain v2, lighting, materials, preview renderer",
+      "next": "commit"
     }
   ]
 }

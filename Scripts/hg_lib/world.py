@@ -166,12 +166,15 @@ def build_scatter(scatter, meshes, mats, tag, folder):
 
 
 def build_golden_hour(tag, folder):
-    """Low warm sun with light shafts, sea of clouds at 750-1100 m (below the pass road),
-    valley fog + volumetric fog, realtime sky light and a filmic post-process volume."""
-    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun_GoldenHour", (0, 0, 200000), (-9.0, -25.0, 0), tag, folder)
+    """Late-afternoon sun from the south-east (13 deg), raking along the N-S Tu San canyon so the
+    light shafts run down the gorge, lighting the east-facing Ma Pi Leng rim, the spur and the
+    south-facing Tham Ma hairpins. Valley mist (height fog) pools below ~950 m - the 'sea of
+    clouds' seen from the pass - while the VolumetricCloud layer sits above the peaks.
+    (Composition checked with Scripts/Tools/render_viewpoints.py.)"""
+    sun = hg.spawn_actor(unreal.DirectionalLight, "Sun_GoldenHour", (0, 0, 200000), (-13.0, 120.0, 0), tag, folder)
     sc = sun.get_component_by_class(unreal.DirectionalLightComponent)
     sc.set_mobility(unreal.ComponentMobility.MOVABLE)
-    for k, v in (("intensity", 7.0), ("use_temperature", True), ("temperature", 3900.0),
+    for k, v in (("intensity", 8.0), ("use_temperature", True), ("temperature", 4100.0),
                  ("atmosphere_sun_light", True), ("cast_cloud_shadows", True),
                  ("enable_light_shaft_bloom", True), ("enable_light_shaft_occlusion", True),
                  ("bloom_scale", 0.25), ("volumetric_scattering_intensity", 1.6)):
@@ -199,17 +202,21 @@ def build_golden_hour(tag, folder):
         cc.set_editor_property("material", cloud_mat)
     else:
         hg.warn("Engine volumetric cloud material not found; using component default.")
-    cc.set_editor_property("layer_bottom_altitude", 0.75)   # km above the planet top (world Z 0 = sea level)
-    cc.set_editor_property("layer_height", 0.35)
+    cc.set_editor_property("layer_bottom_altitude", 1.9)    # km above sea level (world Z 0): above the peaks
+    cc.set_editor_property("layer_height", 2.5)
 
-    fog = hg.spawn_actor(unreal.ExponentialHeightFog, "ValleyFog", (0, 0, 80000), (0, 0, 0), tag, folder)
+    # Fog actor at 820 m with a steep falloff: dense mist in the valleys and the gorge,
+    # clear air at the 1200 m road -> looking down from the pass reads as a sea of clouds.
+    fog = hg.spawn_actor(unreal.ExponentialHeightFog, "ValleyMist", (0, 0, 82000), (0, 0, 0), tag, folder)
     fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
-    for k, v in (("fog_density", 0.035), ("fog_height_falloff", 0.35),
+    # UE falloff is per 1000 uu: 0.08 -> density e-folds every ~125 m above the fog actor.
+    for k, v in (("fog_density", 0.05), ("fog_height_falloff", 0.08),
                  ("fog_inscattering_luminance", unreal.LinearColor(0.45, 0.42, 0.40, 1.0)),
                  ("directional_inscattering_luminance", unreal.LinearColor(1.0, 0.62, 0.32, 1.0)),
                  ("directional_inscattering_exponent", 6.0),
                  ("volumetric_fog", True), ("volumetric_fog_scattering_distribution", 0.65),
-                 ("volumetric_fog_extinction_scale", 1.2)):
+                 ("volumetric_fog_extinction_scale", 1.2), ("volumetric_fog_distance", 25000.0),
+                 ("fog_max_opacity", 0.92), ("start_distance", 300.0)):
         try:
             fc.set_editor_property(k, v)
         except Exception as exc:
