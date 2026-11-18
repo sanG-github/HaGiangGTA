@@ -57,6 +57,15 @@ struct HAGIANGGTA_API FHGMeshKit
 	/** Ring in the local XZ plane of Xf (axis = local Y): tyres, rims. */
 	void Torus(const FTransform& Xf, float MajorR, float MinorR, int32 Seg = 16, int32 Sides = 6);
 
+	/**
+	 * Flat-shaded surface between two point rows of equal length (hull sections...). Faces point away from the
+	 * line AxisA -> AxisB; with InsideColor the inner side is added too (open shells seen from above).
+	 */
+	void Loft(const TArray<FVector>& A, const TArray<FVector>& B, const FVector& AxisA, const FVector& AxisB,
+		const FLinearColor* InsideColor = nullptr);
+	/** Fan from Center over a point row (caps, transoms), facing N. */
+	void Fan(const TArray<FVector>& Ring, const FVector& Center, const FVector& N);
+
 	int32 NumTriangles() const { return Indices.Num() / 3; }
 
 	/** One static mesh (one material slot) from everything added so far. */

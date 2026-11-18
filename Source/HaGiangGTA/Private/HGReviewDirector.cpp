@@ -7,6 +7,8 @@
 #include "GameFramework/PlayerController.h"
 #include "HGBikePawn.h"
 #include "HGTouristNPC.h"
+#include "HGDressingProp.h"
+#include "HGViewpointActor.h"
 #include "HGCowActor.h"
 #include "HGTruckPawn.h"
 #include "NhoQueBoatPawn.h"
@@ -108,10 +110,75 @@ void AHGReviewDirector::BuildShots()
 		AddActorShot(Truck ? *Truck : nullptr, TEXT("truck_rear"), FVector(-900.f, -400.f, 150.f), FVector(0.f, 0.f, 0.f));
 		for (TActorIterator<ANhoQueBoatPawn> It(World); It; ++It)
 		{
+			if (!It->bAutoCruise && It->BoatType == EHGBoatType::Cano)
+			{
+				// The player's hire cano at the dock, from the boat camera's distance (~19 m back, 3.3 m up).
+				AddActorShot(*It, TEXT("player_cano_chase"), FVector(-1900.f, 0.f, 330.f), FVector(0.f, 0.f, 80.f));
+				AddActorShot(*It, TEXT("player_cano_side"), FVector(200.f, 1100.f, 250.f), FVector(0.f, 0.f, 80.f));
+				break;
+			}
+		}
+		for (TActorIterator<ANhoQueBoatPawn> It(World); It; ++It)
+		{
 			if (It->bAutoCruise)
 			{
 				AddActorShot(*It, TEXT("boat_side"), FVector(150.f, 1100.f, 160.f), FVector(0.f, 0.f, 60.f));
 				AddActorShot(*It, TEXT("boat_quarter"), FVector(-700.f, 450.f, 260.f), FVector(-100.f, 0.f, 80.f));
+				break;
+			}
+		}
+	}
+	// Vistas (Round 3B): from each viewpoint towards its subject and out to the horizon (distant ranges, haze).
+	{
+		int32 V = 0;
+		for (TActorIterator<AHGViewpointActor> It(World); It; ++It, ++V)
+		{
+			const FVector Eye = It->GetActorLocation() + FVector(0.f, 0.f, 1500.f);   // above the bushes / props
+			FVector ToSubject = (It->OrbitCenter - Eye).GetSafeNormal2D();
+			const FVector Outward = It->GetActorLocation().GetSafeNormal2D();   // from the map centre: towards the ranges
+			if (ToSubject.IsNearlyZero())
+			{
+				ToSubject = Outward;
+			}
+			FShot A;
+			A.Label = FString::Printf(TEXT("vista_%d_subject"), V);
+			A.Loc = Eye;
+			A.LookAt = (It->OrbitCenter - Eye).Size2D() > 2000.f ? It->OrbitCenter : Eye + ToSubject * 10000.f + FVector(0.f, 0.f, -1500.f);
+			Shots.Add(A);
+			FShot B;
+			B.Label = FString::Printf(TEXT("vista_%d_horizon"), V);
+			B.Loc = Eye;
+			B.LookAt = Eye + Outward.RotateAngleAxis(V * 40.f - 40.f, FVector::UpVector) * 100000.f + FVector(0.f, 0.f, -3000.f);
+			Shots.Add(B);
+		}
+	}
+	// Set dressing (Round 3B): two houses, every sign / flag, one corn terrace from above.
+	{
+		int32 HouseShots = 0;
+		bool bCorn = false;
+		for (TActorIterator<AHGDressingProp> It(World); It; ++It)
+		{
+			switch (It->Kind)
+			{
+			case EHGDressingKind::HmongHouse:
+				if (HouseShots++ < 2)
+				{
+					AddActorShot(*It, HouseShots == 1 ? TEXT("house_front") : TEXT("house_quarter"),
+						HouseShots == 1 ? FVector(300.f, 1900.f, 350.f) : FVector(-1500.f, 1300.f, 600.f), FVector(0.f, 0.f, 200.f));
+				}
+				break;
+			case EHGDressingKind::CornField:
+				if (!bCorn)
+				{
+					bCorn = true;
+					AddActorShot(*It, TEXT("corn_terraces"), FVector(-3000.f, -3000.f, 2500.f), FVector(0.f, 0.f, 0.f));
+				}
+				break;
+			case EHGDressingKind::FlagPole:
+				AddActorShot(*It, TEXT("flag_pole"), FVector(-900.f, 1400.f, 400.f), FVector(0.f, 0.f, 700.f));
+				break;
+			default:
+				AddActorShot(*It, *(TEXT("sign_") + It->GetName()), FVector(0.f, 650.f, 180.f), FVector(0.f, 0.f, 110.f));
 				break;
 			}
 		}

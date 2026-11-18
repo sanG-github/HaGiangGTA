@@ -219,6 +219,28 @@ def blur_coarse(a, k, iters):
     return np.asarray(Image.fromarray(c, mode="F").resize((N, N), Image.BICUBIC), dtype=np.float32)
 
 
+def ring_distance(mask, max_cells):
+    """Approximate distance in cells from the True cells of mask (octagonal dilation), capped at max_cells + 1.
+    Pure numpy (no scipy): max_cells shifted ORs of a boolean grid."""
+    dist = np.full(mask.shape, float(max_cells + 1), np.float32)
+    cur = mask.copy()
+    dist[cur] = 0.0
+    for i in range(1, max_cells + 1):
+        nxt = cur.copy()
+        nxt[1:, :] |= cur[:-1, :]
+        nxt[:-1, :] |= cur[1:, :]
+        nxt[:, 1:] |= cur[:, :-1]
+        nxt[:, :-1] |= cur[:, 1:]
+        if i % 2 == 0:
+            nxt[1:, 1:] |= cur[:-1, :-1]
+            nxt[:-1, :-1] |= cur[1:, 1:]
+            nxt[1:, :-1] |= cur[:-1, 1:]
+            nxt[:-1, 1:] |= cur[1:, :-1]
+        dist[nxt & ~cur] = float(i)
+        cur = nxt
+    return dist
+
+
 def bilinear(h, xy):
     f = np.clip(to_px(xy), 0, N - 1.001)
     c0, r0 = f[..., 0].astype(int), f[..., 1].astype(int)
@@ -554,28 +576,68 @@ def generate():
     res = latlon(ways[RESERVOIR_WAY])
     dr.polygon([tuple(to_px(to_xy(*p))) for p in res], fill=255)
     dr.line([tuple(p) for p in to_px(river_xy)], fill=255, width=int(2 * RIVER_HALF_WIDTH_M / CELL_M))
-    water = np.asarray(img, np.float32) / 255.0 > 0.5
+    water0 = np.asarray(img, np.float32) / 255.0 > 0.5
     del img, dr
     # The DSM's river surface is wider than the mapped line: low flat ground within ~70 m is water too
     # (otherwise it shows as a sandy beach - the Tu San walls drop straight into the water).
-    near = blur_coarse(water.astype(np.float32), 4, 12) > 0.01
-    low = height < float(np.median(height[water][::50])) + 2.5
-    water = water | (near & low)
-    del near, low
+    low = height < float(np.median(height[water0][::50])) + 2.5
     gx_, gy_ = np.meshgrid(xs, ys)
     downstream = ((gx_ - dam_c[0]) * flow[0] + (gy_ - dam_c[1]) * flow[1]) > 0
-    del gx_, gy_
-    up_mask = water & ~downstream
+    # Ta Lang dock (low end of the OSM Ta Lang road): placements.py tunes the pontoons, moored boats and the
+    # departure on the round-2 shore there, so the dock keeps the round-2 terrain (weight 1 within 150 m,
+    # feathered to 0 at 220 m).
+    tl_end = np.array([to_xy(*p) for p in latlon(ways[TA_LANG_WAY])])
+    road_end = min((tl_end[0], tl_end[-1]),
+                   key=lambda q: dem_point(dem, LAT0 - q[1] / M_PER_DEG_LAT, LON0 + q[0] / m_per_deg_lon(LAT0)))
+    dock_guess = river_xy[nearest_index(river_xy, road_end)]        # ~20 m from the dock the route builds later
+    dock_w = (1.0 - proc.smoothstep(150.0, 220.0, np.hypot(gx_ - dock_guess[0], gy_ - dock_guess[1]))).astype(np.float32)
+    del gx_, gy_, tl_end
+
+    # --- round-2 carve (water level, dock area) ---
+    water_r2 = water0 | ((blur_coarse(water0.astype(np.float32), 4, 12) > 0.01) & low)
+    up_mask = water_r2 & ~downstream
     WATER_ASL_M = round(float(np.median(height[up_mask][::50])) - 2.0, 1)  # DSM water is noisy: a bit below
     DOWN_ASL_M = WATER_ASL_M - DOWNSTREAM_DROP_M
     surf = np.where(downstream, DOWN_ASL_M, WATER_ASL_M).astype(np.float32)
-    depth = blur_coarse(water.astype(np.float32), 4, 8)                     # 0.5 at the shore, 1 inside
+    del downstream          # up_mask (round-2 upstream water) is used again for the water bodies below
+    depth_r2 = blur_coarse(water_r2.astype(np.float32), 4, 8)               # 0.5 at the shore, 1 inside
+    bed_r2 = surf - 1.5 - 32.0 * np.clip((depth_r2 - 0.5) * 2.0, 0, 1)
+    h_r2 = np.where(water_r2, np.minimum(height, bed_r2), height)
+    bank = (depth_r2 > 0.02) & ~water_r2
+    h_r2 = np.where(bank, np.maximum(h_r2, surf + 0.6 + np.clip(0.5 - depth_r2, 0, 0.5) * 10.0), h_r2).astype(np.float32)
+    del depth_r2, bed_r2, bank, water_r2
+
+    # --- Round 3B carve: drawdown banks ---
+    # Round 2 dropped the bed straight to -1.5 m at the shore and lifted the first ~12 m of land to +0.6..+5 m,
+    # on a shoreline built from 5.8 m blocks (blur_coarse), so every bank was a 2-7 m vertical stair-stepped
+    # "curtain". Now: a real distance ring for the near-river water, DEM specks of land inside the river folded
+    # into the water, a short shelf under the water (-0.6 m at the edge, 45 deg down over ~4 m; boats float to
+    # the edge), and within ~25 m of the shore, on ground up to ~30 m above the water, a sloped irregular rocky
+    # drawdown bank (~35-55 deg). Cliffs taller than that (the Tu San walls) still drop straight in.
+    water = water0 | ((ring_distance(water0, 62) <= 62) & low)
+    core_land = ring_distance(water, 4) > 4
+    water = ~(ring_distance(core_land, 4) <= 4)
+    del core_land, low
+    depth = blur_coarse(water.astype(np.float32), 4, 8)
     bed = surf - 1.5 - 32.0 * np.clip((depth - 0.5) * 2.0, 0, 1)
-    height = np.where(water, np.minimum(height, bed), height)
-    bank = (depth > 0.02) & ~water
-    # Steep banks: +0.6 m at the waterline rising ~15 m across the ~12 m shore ring.
-    height = np.where(bank, np.maximum(height, surf + 0.6 + np.clip(0.5 - depth, 0, 0.5) * 10.0), height).astype(np.float32)
-    del depth, bed, bank, surf
+    d_in = ring_distance(~water, 6).astype(np.float32) * CELL_M           # metres from the shore, inside water
+    d_out = ring_distance(water, 24).astype(np.float32) * CELL_M          # metres from the shore, on land
+    for _ in range(2):
+        d_in, d_out = proc.blur3(d_in), proc.blur3(d_out)
+    shelf = np.where(d_in < 4.0, surf - 0.6 - 1.0 * np.maximum(d_in - CELL_M, 0.0), bed)
+    bed = np.maximum(bed, shelf)
+    h_new = np.where(water, np.minimum(height, bed), height)
+    # ~18 m irregularity; own generator so the road / landmark steps after this keep their random sequence.
+    wobble = (proc.value_noise(N, int(2 * HALF_M / 18.0), np.random.default_rng(SEED + 4)) - 0.5).astype(np.float32)
+    slope = 0.95 + 0.6 * wobble
+    target = surf + 0.3 + np.maximum(d_out - CELL_M, 0.0) * slope + 0.4 * wobble * np.clip(d_out / 6.0, 0, 1)
+    band = 1.0 - proc.smoothstep(20.0, 32.0, d_out)
+    lowland = 1.0 - proc.smoothstep(surf + 18.0, surf + 32.0, h_new)
+    w = (band * lowland * ~water).astype(np.float32)
+    h_new = np.where(water, h_new, h_new + (np.minimum(h_new, target) - h_new) * w)
+    h_new = np.where(~water & (d_out < 3.0), np.maximum(h_new, surf + 0.25 + 0.15 * d_out), h_new)
+    height = (h_new * (1.0 - dock_w) + h_r2 * dock_w).astype(np.float32)
+    del depth, bed, shelf, d_in, d_out, wobble, slope, target, band, lowland, w, surf, h_new, h_r2, dock_w, water0
     print(f"water {WATER_ASL_M} m / below dam {DOWN_ASL_M} m  {time.time() - t0:.1f}s")
 
     # --- 5. route: Tham Ma (patch) -> link -> QL4C north past Ma Pi Leng -> Ta Lang road -> dock ---

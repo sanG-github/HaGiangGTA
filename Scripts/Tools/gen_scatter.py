@@ -380,7 +380,7 @@ def main():
     peach = []
     for hx_, hy_, *_ in [h for v in houses.values() for h in v]:
         for _ in range(2):
-            a_ = rng.uniform(0, 2 * math.pi); r0 = rng.uniform(9, 16)
+            a_ = rng.uniform(0, 2 * math.pi); r0 = rng.uniform(14, 21)   # 3B: clear of the kit H'Mong house + yard
             tx_, ty_ = hx_ / 100.0 + math.cos(a_) * r0, hy_ / 100.0 + math.sin(a_) * r0
             r_, c_ = T.idx(tx_, ty_)
             if T.slope[r_, c_] > 35 or road_dist(tx_, ty_) < 6 or T.height(tx_, ty_) < T.water + 6:
@@ -423,6 +423,43 @@ def main():
     from PIL import Image
     (ROOT / "Generated/Assets/Textures").mkdir(parents=True, exist_ok=True)
     Image.fromarray((np.clip(mask, 0, 1) * 255).astype(np.uint8)).save(ROOT / "Generated/Assets/Textures/T_HG_PathMask.png")
+
+    # Round 3B - road shoulder mask (1 m / px, same map frame as the path mask): gravel / dust verges in the
+    # ~0-2.5 m beside the carriageway edge, where the terrain material lays loose stones and debris.
+    sres = int(2 * T.half / 1.0)
+    road_px = np.zeros((sres, sres), bool)
+    rd = layout["road"]
+    pts = np.array(rd["points_cm"], np.float64)[:, :2] / 100.0
+    seg = np.diff(pts, axis=0)
+    seglen = np.hypot(seg[:, 0], seg[:, 1])
+    along = np.concatenate([[0.0], np.cumsum(seglen)])
+    dense_n = int(along[-1] / 0.5) + 1
+    da = np.linspace(0.0, along[-1], dense_n)
+    dxs = np.interp(da, along, pts[:, 0])
+    dys = np.interp(da, along, pts[:, 1])
+    conc_from = float(rd.get("concrete_from_m", 1e9))
+    half = np.where(da * float(rd["length_m"]) / max(along[-1], 1.0) >= conc_from,
+                    float(rd.get("concrete_half_width_cm", 300.0)), float(rd["half_width_cm"])) / 100.0
+    for ox in np.arange(-3.0, 3.01, 0.5):
+        for oy in np.arange(-3.0, 3.01, 0.5):
+            inside = ox * ox + oy * oy <= half * half
+            cc = ((dxs[inside] + ox + T.half) / 1.0).astype(int)
+            rr = ((dys[inside] + oy + T.half) / 1.0).astype(int)
+            ok = (cc >= 0) & (cc < sres) & (rr >= 0) & (rr < sres)
+            road_px[rr[ok], cc[ok]] = True
+    shoulder = np.zeros((sres, sres), np.float32)
+    cur = road_px.copy()
+    for ring, val in ((1, 1.0), (2, 0.55), (3, 0.15)):            # ~2 m verge, ragged edge
+        nxt = cur.copy()
+        nxt[1:, :] |= cur[:-1, :]
+        nxt[:-1, :] |= cur[1:, :]
+        nxt[:, 1:] |= cur[:, :-1]
+        nxt[:, :-1] |= cur[:, 1:]
+        shoulder[nxt & ~cur] = val
+        cur = nxt
+    # 4096^2 (power of two: mips + streaming; ~1.44 m / px) - same map frame, UV = (xy + half) / (2 half).
+    Image.fromarray((shoulder * 255).astype(np.uint8)).resize((4096, 4096), Image.BILINEAR).save(
+        ROOT / "Generated/Assets/Textures/T_HG_ShoulderMask.png")
 
     # ---- Mom Da Tu Than ----
     vp2 = layout["viewpoints"]["ma_pi_leng"]

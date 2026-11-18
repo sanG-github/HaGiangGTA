@@ -2,6 +2,7 @@
 
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
+#include "Materials/MaterialInstanceDynamic.h"
 #include "Engine/StaticMesh.h"
 #include "HaGiangGTA.h"
 #include "Materials/MaterialInterface.h"
@@ -105,7 +106,12 @@ void AHGRoadSplineActor::RebuildRoadMeshes()
 		UMaterialInterface* Mat = (bSecondary && SecondaryMaterial) ? SecondaryMaterial.Get() : RoadMaterial.Get();
 		if (Mat)
 		{
-			Seg->SetMaterial(0, Mat);
+			// Round 3B: road distance for the materials (dashes and concrete pours per real metre) as MID
+			// parameters - custom primitive data did not reach the spline-mesh shaders on this platform.
+			UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Mat, Seg);
+			MID->SetScalarParameterValue(TEXT("RoadSegStartM"), D0 / 100.f);
+			MID->SetScalarParameterValue(TEXT("RoadSegLenM"), Step / 100.f);
+			Seg->SetMaterial(0, MID);
 		}
 		Seg->SetForwardAxis(ESplineMeshAxis::X, false);
 		Seg->SetSplineUpDir(FVector::UpVector, false);

@@ -12,7 +12,7 @@ import os
 import unreal
 
 from . import editor_utils as hg
-from . import placements
+from . import dressing, placements
 
 ROAD_MESH_OFFSET_CM = -11.0   # landscape is carved 15 cm under the road profile; asphalt top 4 cm above it
 
@@ -370,17 +370,34 @@ def build_golden_hour(tag, folder):
             fc.set_editor_property(k, v)
         except Exception as exc:
             hg.warn(f"Fog.{k}: {exc}")
+    # Round 3B - valley haze: a second, low-lying fog layer that settles in the gorges and valley floors (e-folds
+    # every ~200 m above the river) so the distant ranges stand out layer by layer above it, and the shaded
+    # gorge gets some in-scattered light instead of going black.
+    try:
+        second = unreal.ExponentialHeightFogData()
+        second.set_editor_property("fog_density", 0.0018)
+        second.set_editor_property("fog_height_falloff", 0.05)
+        second.set_editor_property("fog_height_offset", 3000.0)
+        fc.set_editor_property("second_fog_data", second)
+    except Exception as exc:
+        hg.warn(f"Fog second layer: {exc}")
 
     ppv = hg.spawn_actor(unreal.PostProcessVolume, "PP_GoldenHour", (0, 0, 100000), (0, 0, 0), tag, folder)
     ppv.set_editor_property("unbound", True)
     s = ppv.get_editor_property("settings")
     for k, v in (("bloom_intensity", 0.55), ("vignette_intensity", 0.32), ("film_grain_intensity", 0.12),
-                 ("auto_exposure_min_brightness", 0.6), ("auto_exposure_max_brightness", 2.5),
+                 ("auto_exposure_min_brightness", -1.2), ("auto_exposure_max_brightness", 2.5),   # 3B: -1.2 (was 0.6) lets the eye adapt in the sky-lit-only Tu San narrows
                  ("white_temp", 6600.0), ("color_saturation", unreal.Vector4(1.04, 1.06, 1.04, 1.0)),
                  ("color_contrast", unreal.Vector4(1.08, 1.08, 1.08, 1.0)),
                  ("color_gain_shadows", unreal.Vector4(0.94, 1.0, 1.08, 1.0)),
                  ("color_gain_highlights", unreal.Vector4(1.03, 1.0, 0.96, 1.0)),
-                 ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0)):
+                 ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0),
+                 # Round 3B - deep gorge shade (Tu San narrows went near-black): sky light leaks a little into
+                 # sky-occluded places (a bounce fill that only matters where Lumen sees no sky), and local
+                 # exposure lifts the shadows without flattening the sunlit walls.
+                 ("lumen_skylight_leaking", 0.16),
+                 ("local_exposure_shadow_contrast_scale", 1.0), ("local_exposure_highlight_contrast_scale", 1.0),
+                 ("local_exposure_detail_strength", 1.0)):
         try:
             s.set_editor_property(k, v)
             s.set_editor_property("override_" + k, True)
@@ -500,8 +517,10 @@ def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
         if "youth_monument" not in marks:
             hg.spawn_mesh("MPL_Monument", mesh_path(meshes["SM_HG_Monument"]), at(6, 2, -0.1), (0, yaw, 0), (1, 1, 1),
                           mats["monument"], tag, folder)
-        # Name stone: a big upright limestone block by the road edge.
-        hg.spawn_mesh("MPL_NameStone", mesh_path(meshes["SM_HG_Boulder_01"]), at(-6, -4, -0.3), (0, yaw + 90, 0),
+        # Name stone: a big upright limestone block by the road edge (the carved kit stone of dressing.py
+        # replaces it when the C++ prop is compiled).
+        if not hasattr(unreal, "HGDressingProp"):
+          hg.spawn_mesh("MPL_NameStone", mesh_path(meshes["SM_HG_Boulder_01"]), at(-6, -4, -0.3), (0, yaw + 90, 0),
                       (1.1, 0.45, 1.0), mats["monument"], tag, folder)
         building("MPL_PanoramaCafe", at(*placements.MPL_CAFE_AT, -0.1), yaw, (1.25, 1.0, 1.05), mats["cafe_wall"], mats["roof_green"])
         # On the pad now; any corner still over the edge stands on concrete piers like the real cliff-edge cafes.
@@ -583,10 +602,26 @@ def build_river_traffic(layout, tag, folder):
         rerun(boat)
 
 
+def layout_for_dressing():
+    return hg.ensure_generated_heightmap()
+
+
 def build_set_dressing(scatter, meshes, mats, tag, folder):
     """Reference-photo dressing: distant blue ranges, chevrons on the bends, utility poles, hamlets."""
+    # Round 3B: four layered ridge rings (gen_ranges.py, absolute altitude) instead of the single flat band.
+    for i in range(4):
+        path = f"/Game/HaGiang/Generated/Meshes/SM_HG_RangeLayer_{i}.SM_HG_RangeLayer_{i}"
+        if unreal.EditorAssetLibrary.does_asset_exist(path.split(".")[0]) and f"range_{i}" in mats:
+            layer = hg.spawn_mesh(f"RangeLayer_{i}", path, (0, 0, 0), material=mats[f"range_{i}"], tag=tag,
+                                  folder=folder, collision=False)
+            layer.static_mesh_component.set_editor_property("cast_shadow", False)
+            try:
+                unreal.EditorStaticMeshLibrary.remove_collisions(layer.static_mesh_component.static_mesh)
+            except Exception as exc:
+                hg.warn(f"RangeLayer_{i} collision: {exc}")
     ranges = hg.spawn_mesh("DistantRanges", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantRanges.SM_HG_DistantRanges",
                            (0, 0, 80000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
+    ranges.set_actor_hidden_in_game(any(f"range_{i}" in mats for i in range(4)))   # kept only as a fallback
     ranges.static_mesh_component.set_editor_property("cast_shadow", False)
     # Scenery only: its auto-generated collision box would enclose the whole map (170..2060 m) and
     # swallow every ground trace and the PlayerStart.
@@ -601,6 +636,18 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
                           (0, 0, 80000 + 300), material=hg.color_material("MI_GB_Foothills", (0.13, 0.13, 0.065)),
                           tag=tag, folder=folder, collision=False)
     apron.static_mesh_component.set_editor_property("cast_shadow", False)
+    # Round 3B: the real DEM terrain beyond the map (gen_farterrain.py) replaces the apron in game (the flat
+    # one-colour sheet read as a hazy lake from the Ma Pi Leng rim); the apron stays as the fallback.
+    far_path = "/Game/HaGiang/Generated/Meshes/SM_HG_FarTerrain"
+    if unreal.EditorAssetLibrary.does_asset_exist(far_path) and "far_terrain" in mats:
+        far = hg.spawn_mesh("FarTerrain", far_path + ".SM_HG_FarTerrain", (0, 0, 0), material=mats["far_terrain"],
+                            tag=tag, folder=folder, collision=False)
+        far.static_mesh_component.set_editor_property("cast_shadow", False)
+        try:
+            unreal.EditorStaticMeshLibrary.remove_collisions(far.static_mesh_component.static_mesh)
+        except Exception as exc:
+            hg.warn(f"FarTerrain collision: {exc}")
+        apron.set_actor_hidden_in_game(True)
     try:
         unreal.EditorStaticMeshLibrary.remove_collisions(apron.static_mesh_component.static_mesh)
     except Exception as exc:
@@ -610,6 +657,8 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
     spawn_scatter("Scatter_poles", meshes["SM_HG_UtilityPole"], mats["pole"], scatter.get("poles", []), tag, folder,
                   cull=(50000.0, 70000.0), collision=True)
     for colour, items in scatter.get("houses", {}).items():
+        if colour == "grey":
+            items = dressing.remaining_grey_houses(layout_for_dressing(), items)   # the rest are kit H'Mong houses
         spawn_scatter(f"Scatter_houses_{colour}_walls", meshes["SM_HG_HouseWalls"], mats["house_wall"], items, tag, folder,
                       cull=(0.0, 0.0), collision=True)
         spawn_scatter(f"Scatter_houses_{colour}_roofs", meshes["SM_HG_HouseRoof"], mats[f"roof_{colour}"], items, tag, folder,

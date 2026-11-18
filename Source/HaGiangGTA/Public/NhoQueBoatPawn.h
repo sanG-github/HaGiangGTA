@@ -109,6 +109,10 @@ protected:
 private:
 	/** Cruise canoes: boatman at the stern wheel + seated tourists on the benches (HGPeopleBuilder). */
 	void BuildCrew();
+	/** Cano look from the mesh kit (replaces the greybox parts; collision unchanged). */
+	void BuildCanoKit();
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitHull;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitFlag;
 	TArray<FHGPersonRig> Crew;
 	bool bCrewBuilt = false;
 

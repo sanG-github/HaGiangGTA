@@ -38,13 +38,17 @@ void AHGTouristNPC::BeginPlay()
 	switch (Style)
 	{
 	case EHGTouristStyle::EasyRider: Look = EHGPersonLook::EasyRider; break;
-	case EHGTouristStyle::Local: Look = (bFlowerSeller || (Hash & 1)) ? EHGPersonLook::HmongWoman : EHGPersonLook::LocalMan; break;
+	case EHGTouristStyle::Local:
+		Look = bFlowerSeller || (Hash & 1) ? EHGPersonLook::HmongWoman : ((Hash % 3) == 0 ? EHGPersonLook::HmongKid : EHGPersonLook::LocalMan);
+		break;
 	default: break;
 	}
 	const int32 Variant = Hash % HGPeople::NumVariants;
-	Rig = HGPeople::Spawn(this, BodyRoot, Look, EHGPersonPose::Standing, Variant, TEXT("Person"), FVector::ZeroVector,
+	// Flower sellers squat on their heels behind a tray of goods (the Doc Tham Ma / Ma Pi Leng roadside sellers).
+	const EHGPersonPose Pose = bFlowerSeller ? EHGPersonPose::Squat : EHGPersonPose::Standing;
+	Rig = HGPeople::Spawn(this, BodyRoot, Look, Pose, Variant, TEXT("Person"), FVector::ZeroVector,
 		Look == EHGPersonLook::Backpacker && (Hash % 3) == 0);
-	if (Rig.Arm[1] && Look != EHGPersonLook::HmongWoman)
+	if (Rig.Arm[1] && Look != EHGPersonLook::HmongWoman && Look != EHGPersonLook::HmongKid)
 	{
 		UStaticMesh* PhoneMesh = FHGMeshKit::Cached(TEXT("SM_HGPhone"), [](FHGMeshKit& K)
 		{

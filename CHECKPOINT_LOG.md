@@ -436,6 +436,62 @@ now resolved) and 5-7 re-placements per session (47-69 in round 2). Distant foot
 (the hazy ranges material made the apron read as a lake); the Mom Da review camera moved 5 m so the Panorama cafe no
 longer fills its corner.
 
+## Round 3B - banks, gorge shade, ranges, Ha Giang dressing (agent B, `worktree-agent-a492f1a4f1c84f0fb`, merged A's ee9cb3b)
+
+Root causes:
+- **Brown "curtain" banks** (A's 32_boat_053): gen_heightmap carved the river bed straight to -1.5 m at the shore
+  and lifted the first ~12 m of land to +0.6..+5 m, on a near-river water mask built from 5.8 m blocks
+  (`blur_coarse > 0.01`): every shoreline was a 2-7 m vertical, stair-stepped face, painted with a flat ochre
+  stripe. Measured: low-shore land cell -> neighbouring water cell drop, median 11 m / 90th pct 27 m.
+  Fix (terrain part of gen_heightmap step 4): numpy distance rings (`ring_distance`, no scipy) instead of the
+  block mask; DEM specks of land inside the river folded into the water (islets 4401 -> ~240 cells outside the
+  dock); a 4 m shelf under the water (-0.6 m at the edge, boats float to it); a sloped, irregular rocky drawdown
+  bank (35-55 deg) within ~25 m of the shore on ground up to ~30 m above the water; cliffs taller than that
+  (Tu San) still drop straight in. Now: median 0.9 m, 90th pct 3.5 m. The Ta Lang dock keeps the round-2 shore
+  (round-2 carve blended in within 150-220 m of the dock; water level from the round-2 mask): A's pontoon /
+  moored-boat / departure layout is tuned on it - my first version moved a pontoon into the departure lane and
+  the playtest boat stayed boxed in at the dock. Material: irregular band top (+-1.7 m), grey-brown mud with
+  pebbles and faint old waterlines, water-stained rock on steep faces, dark wet line.
+- **Near-black Tu San narrows** (35_boat_128): the auto-exposure floor was EV100 0.6; with the non-physical
+  10 lux sun a sky-lit-only slot canyon sits near EV -1, so exposure could not adapt. Floor -1.2, Lumen sky-light
+  leaking 0.16 (bounce fill only where the sky is occluded), mild local exposure, valley haze (second fog layer).
+- **Flat blue horizon band**: one ring mesh, one colour. Now gen_ranges.py: four ridge rings (6 / 8 / 10.5 /
+  13.5 km, peaks rising with distance), sloped gullied flanks so the sun shades them, per-layer material with
+  height-graded valley haze; plus the second fog layer in the valleys.
+- **Sign lettering**: TextRender's distance-field font has no Vietnamese stacked diacritics ("D C TH M MÃ");
+  a world-space UMG widget did not draw for runtime-created components. Lettering is baked by gen_signs.py
+  (system Arial) into masks for masked sign materials.
+
+New: `HGDressingProp` (H'Mong house: stone / rammed-earth walls on a stone platform, yin-yang tile roof with
+channel tiles, red couplets, corn drying under the eaves, firewood, dry-stone yard wall only on gentle ground;
+Ma Pi Leng flag pole with a flapping national flag; carved name stone; wooden boards; terraced young corn as one
+HISM per hamlet, on the 2.6 m contour treads, off the banks and clear of houses) placed by the new
+`Scripts/hg_lib/dressing.py` (34 houses replace the grey-roofed scatter houses; 8 corn terraces; MPL flag + stone;
+Tham Ma and Ta Lang boards). No buckwheat: it flowers Oct-Nov, the art bible's season is late March. Road:
+segment start / length (per-segment MID, see below) -> dashes (3 m / 6 m) and 4 m concrete pours per real metre with
+per-pour tone; gravel verges from a baked shoulder mask (T_HG_ShoulderMask) in the terrain material. People:
+squatting sellers behind a tray of goods, H'Mong kids, women carrying babies on their backs, thumbs, eyebrows.
+`-hgreview` also shoots vistas, houses, corn, flag and signs.
+Coordinator additions:
+- **Player cano**: kit Nho Que tourist boat (lofted narrow steel hull, blue with a white sheer stripe and dark
+  bottom, plank floor, rails, 6 benches with backrests, wheel console, low red roof with the yellow star on thin
+  posts, long-tail outboard, flapping flag on a stern staff). New FHGMeshKit::Loft / Fan. Collision unchanged.
+- **"Non la on the player's bike"** (26_auto_ThamMa_21): not the player body - the NPC rider (LocalMan variant 1:
+  olive jacket + non la) appeared on top of the player when the playtest's auto stages switch auto-drive on with
+  the player aboard. NPC riders now never show on a player-controlled bike.
+- **Flat white limestone faces**: bedding strata (warped bands), dark crevices, shrubs on ledges, limestone
+  albedo 0.27 -> 0.23.
+- **Haze lake past the rim**: real DEM terrain beyond the map (gen_farterrain.py, out to 12 km, 100 m grid,
+  tucked under the landscape at the seam) replaces A's one-colour apron in game (apron kept as the editor
+  fallback); the synthetic ridge layers moved out to 14-26 km behind it.
+- Road distance per metre: custom primitive data never reached the spline-mesh shaders (centre line stayed
+  solid), so each road segment now gets a MID with RoadSegStartM / RoadSegLenM; concrete edge dust narrowed.
+- Perf protocol: C++ builds and CP05 rebuilds also under /tmp/hg_perf.lock.
+Measured (locked, 1280x720): playtest missions 3/3 PASS, boat hire PASS, average 40.2 FPS (Round 2B: 69.2);
+-hgperf 60 / 64 FPS. NOT a valid comparison: five orphaned CrashReportClient processes (pids 1523, 3366, 45941,
+52701, 74000; from earlier editor/game crashes) each pin a core at ~100% (load ~12 with no Unreal running). Kill
+them and rerun the locked playtest + -hgperf before judging the 60 FPS budget. validate_layout: 0 FAIL.
+Open: harness crash (SIGSEGV in screenshot readback while the viewport-restore r.SetRes runs) in one playtest.
 ---
 
 ## Round 4 - traffic U-turns, boat tour, menus, upgrade, water GI tier (`improve/gameplay-realism`)
