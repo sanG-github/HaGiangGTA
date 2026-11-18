@@ -652,6 +652,9 @@ def far_terrain(tex) -> unreal.Material:
     """Real DEM terrain beyond the map edge (gen_farterrain.py): dry khaki grass and dark shrub patches like the
     landscape, grey limestone on steep faces, valley floors fading into the low haze. Cheap: 2 samples."""
     g = Graph("M_HG_FarTerrain")
+    # Round 4B: two-sided - in game only the slopes above eye level drew (an "arch" over a void past Ma Pi Leng,
+    # terrain slivers in the sky). Two-sided draws the whole heightfield whatever the importer did to the winding.
+    g.mat.set_editor_property("two_sided", True)
     wp = g.world_pos()
     z = g.mask(wp, b=True)
     n = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 40000.0))

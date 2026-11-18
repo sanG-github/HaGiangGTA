@@ -696,8 +696,10 @@ namespace HGCanoKit
 		K.Paint(FC(0.06f, 0.06f, 0.065f), HGSurf::Satin);
 		K.Box(FVector(-600.f, 0.f, 60.f), FVector(30.f, 30.f, 30.f));                  // pivot mount
 		K.Box(FVector(-668.f, 0.f, 98.f), FVector(96.f, 56.f, 50.f));
-		K.Paint(FC(0.42f, 0.03f, 0.02f), HGSurf::Gloss);
-		K.Box(FVector(-668.f, 0.f, 128.f), FVector(90.f, 52.f, 12.f));                  // red cowl
+		K.Paint(FC(0.035f, 0.035f, 0.04f), HGSurf::Gloss);
+		K.Box(FVector(-668.f, 0.f, 128.f), FVector(90.f, 52.f, 12.f));                  // dark cowl (a red one read as a box)
+		K.Paint(FC(0.4f, 0.03f, 0.02f), HGSurf::Gloss);
+		K.Box(FVector(-668.f, 0.f, 112.f), FVector(92.f, 57.f, 5.f));                   // thin red stripe
 		K.Paint(FC(0.03f, 0.03f, 0.03f), HGSurf::Satin);
 		K.Tube(FVector(-640.f, 30.f, 110.f), FVector(-650.f, 34.f, 160.f), 4.f, 4.f, 6, true);     // exhaust
 		K.Paint(FC(0.55f, 0.55f, 0.56f), HGSurf::Chrome);

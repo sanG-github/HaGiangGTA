@@ -536,7 +536,7 @@ void AHGDressingProp::BuildRoadside()
 		}
 	}
 	const FVector C = GetActorLocation();
-	struct FRoadSample { FVector P; FVector T; int32 Road; float D; };
+	struct FRoadSample { FVector P; FVector T; int32 Road; float D; float Bend; };
 	TArray<FRoadSample> Samples;
 	int32 RoadIdx = 0;
 	for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It, ++RoadIdx)
@@ -552,7 +552,10 @@ void AHGDressingProp::BuildRoadside()
 			const FVector P = Sp->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
 			if (FVector::DistSquared2D(P, C) < FMath::Square(Radius + 1500.f))
 			{
-				Samples.Add({ P, Sp->GetTangentAtDistanceAlongSpline(D, ESplineCoordinateSpace::World).GetSafeNormal2D(), RoadIdx, D });
+				const FVector Ta = Sp->GetTangentAtDistanceAlongSpline(FMath::Max(D - 500.f, 0.f), ESplineCoordinateSpace::World).GetSafeNormal2D();
+				const FVector Tb = Sp->GetTangentAtDistanceAlongSpline(FMath::Min(D + 500.f, Len), ESplineCoordinateSpace::World).GetSafeNormal2D();
+				const float Bend = FMath::RadiansToDegrees(FMath::Acos(FMath::Clamp(FVector::DotProduct(Ta, Tb), -1.f, 1.f)));
+				Samples.Add({ P, Sp->GetTangentAtDistanceAlongSpline(D, ESplineCoordinateSpace::World).GetSafeNormal2D(), RoadIdx, D, Bend });
 			}
 		}
 	}
@@ -595,9 +598,10 @@ void AHGDressingProp::BuildRoadside()
 			const int32 Block = FMath::FloorToInt(S.D / 1000.f);
 			FRandomStream R(HashCombine(HashCombine(GetTypeHash(S.Road), GetTypeHash(Block)), GetTypeHash(Side > 0.f)));
 			const float Pick = R.FRand();
-			const float Off = R.FRandRange(560.f, 680.f);
+			// Fence line: one offset per road side (per-block offsets stacked runs at two distances).
+			const float Off = 590.f + 50.f * float(GetTypeHash(S.Road * 2 + (Side > 0.f)) % 3) * 0.5f;
 			const FVector Base = S.P + N * Side * Off;
-			if (Pick < 0.42f)
+			if (Pick < 0.42f && S.Bend < 22.f)      // no fences around hairpins (they read as loose bricks)
 			{
 				FVector A, B;
 				const FVector Pa = Base - S.T * 125.f, Pb = Base + S.T * 125.f;

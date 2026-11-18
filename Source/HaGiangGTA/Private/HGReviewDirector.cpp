@@ -134,8 +134,8 @@ void AHGReviewDirector::BuildShots()
 		{
 			if (!It->bAutoCruise && It->BoatType == EHGBoatType::Cano)
 			{
-				// The player's hire cano at the dock, from the boat camera's distance (~19 m back, 3.3 m up).
-				AddActorShot(*It, TEXT("player_cano_chase"), FVector(-1900.f, 0.f, 330.f), FVector(0.f, 0.f, 80.f));
+				// The player's hire cano at the dock, from the boat camera's distance (A, round 4: 12 m back, 3 m up).
+				AddActorShot(*It, TEXT("player_cano_chase"), FVector(-1200.f, 0.f, 300.f), FVector(0.f, 0.f, 80.f));
 				AddActorShot(*It, TEXT("player_cano_side"), FVector(200.f, 1100.f, 250.f), FVector(0.f, 0.f, 80.f));
 				break;
 			}
@@ -223,8 +223,20 @@ void AHGReviewDirector::BuildShots()
 			break;
 		}
 		case EHGDressingKind::FlagPole:
+		{
 				AddActorShot(*It, TEXT("flag_pole"), FVector(-900.f, 1400.f, 400.f), FVector(0.f, 0.f, 700.f));
-				break;
+			// Round 4B: the Ma Pi Leng rim horizon, level, all round (far terrain / ridge layers / haze check).
+			const FVector Eye = It->GetActorLocation() + FVector(0.f, 0.f, 250.f);
+			for (int32 k = 0; k < 6; ++k)
+			{
+				FShot S;
+				S.Label = FString::Printf(TEXT("rim_%03d"), k * 60);
+				S.Loc = Eye;
+				S.LookAt = Eye + FRotator(-3.f, k * 60.f, 0.f).Vector() * 10000.f;
+				Shots.Add(S);
+			}
+			break;
+		}
 			default:
 				AddActorShot(*It, *(TEXT("sign_") + It->GetName()), FVector(0.f, 650.f, 180.f), FVector(0.f, 0.f, 110.f));
 				break;
