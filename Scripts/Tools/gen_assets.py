@@ -173,6 +173,12 @@ def write_obj(path, v, f, n=None, uv=None):
         theta = np.arctan2(v[:, 1], v[:, 0])
         zr = (v[:, 2] - v[:, 2].min()) / max(np.ptp(v[:, 2]), 1e-6)
         uv = np.stack([(theta / (2 * np.pi)) + 0.5, zr], axis=1)
+    # Round 5B (agent B): the OBJ import (right-handed file -> left-handed Unreal) mirrors Y - the far terrain came
+    # in north-south mirrored in round 3B. Write Y negated with the winding reversed so every mesh arrives as built
+    # here (normals / UVs computed above, before the flip).
+    v = np.asarray(v, float) * np.array([1.0, -1.0, 1.0])
+    n = np.asarray(n, float) * np.array([1.0, -1.0, 1.0])
+    f = np.asarray(f)[:, [0, 2, 1]]
     lines = ["# HaGiangGTA procedural mesh (cm)"]
     lines += [f"v {a:.3f} {b:.3f} {c:.3f}" for a, b, c in v]
     lines += [f"vt {a:.5f} {b:.5f}" for a, b in uv]
@@ -652,9 +658,11 @@ def make_road_furniture():
         bf = np.array([(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)])
         return bv, bf
     parts.append(box(0, 0, 35, 12, 12, 110))                    # post (buried 20 cm)
-    parts.append(box(200, 9, 62, 400, 4, 14))                   # upper rib of the W
-    parts.append(box(200, 11, 52, 400, 3, 8))                   # valley of the W
-    parts.append(box(200, 9, 42, 400, 4, 14))                   # lower rib
+    # Rail on local -Y: that is where it always showed in game (the import mirrored Y) and where gen_scatter's
+    # yaw puts the road side; round 5B removed the mirror, so the model states it directly.
+    parts.append(box(200, -9, 62, 400, 4, 14))                  # upper rib of the W
+    parts.append(box(200, -11, 52, 400, 3, 8))                  # valley of the W
+    parts.append(box(200, -9, 42, 400, 4, 14))                  # lower rib
     vs, fs, off = [], [], 0
     for bv, bf in parts:
         vs.append(bv); fs.append(bf + off); off += len(bv)
@@ -729,7 +737,7 @@ def make_set_dressing(rng):
         return np.vstack(vs), np.vstack(fs)
 
     # Curve chevron sign (black board, the white arrows are painted by UV in the material).
-    v, f = boxes([(0, 0, 60, 6, 6, 140), (0, -4, 150, 60, 3, 45)])
+    v, f = boxes([(0, 0, 60, 6, 6, 140), (0, 4, 150, 60, 3, 45)])   # board on +Y as always seen in game (5B)
     uv = np.stack([(v[:, 0] + 30) / 60.0, (v[:, 2] - 127) / 45.0], axis=1)
     write_obj(out / "SM_HG_Chevron.obj", v, f, uv=uv)
     # Concrete utility pole with a cross-arm.

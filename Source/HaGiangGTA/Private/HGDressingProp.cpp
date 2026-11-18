@@ -239,20 +239,21 @@ namespace HGDressingKit
 	void BuildStoneFence(FHGMeshKit& K)
 	{
 		FRandomStream R{ 911 };
-		const float Rows[3][2] = { { 0.f, 32.f }, { 30.f, 28.f }, { 56.f, 26.f } };
-		for (int32 Row = 0; Row < 3; ++Row)
+		// Round 5B: finer courses - 4 rows of 15-28 cm stones (3 rows of 26-48 cm boxes read as bricks up close).
+		const float Rows[4][2] = { { 0.f, 24.f }, { 22.f, 22.f }, { 42.f, 21.f }, { 61.f, 19.f } };
+		for (int32 Row = 0; Row < 4; ++Row)
 		{
-			const float W = 58.f - Row * 7.f;
-			float X = -125.f + (Row % 2) * 18.f;
+			const float W = 58.f - Row * 5.f;
+			float X = -125.f + (Row % 2) * 9.f;
 			while (X < 122.f)
 			{
-				const float L = FMath::Min(R.FRandRange(26.f, 48.f), 125.f - X);
+				const float L = FMath::Min(R.FRandRange(15.f, 28.f), 125.f - X);
 				if (L < 8.f) { break; }
 				const float G = R.FRandRange(0.06f, 0.15f);   // weathered limestone, darker than fresh cut
 				K.Paint(FColorL(G, G * (0.96f + R.FRand() * 0.06f), G * (0.86f + R.FRand() * 0.08f)), HGSurf::Matte);
 				K.Box(FVector(X + L * 0.5f, R.FRandRange(-4.f, 4.f), Rows[Row][0] + Rows[Row][1] * 0.5f),
 					FVector(L - 2.f, W + R.FRandRange(-6.f, 6.f), Rows[Row][1] + R.FRandRange(-3.f, 4.f)),
-					FRotator(R.FRandRange(-4.f, 4.f), R.FRandRange(-6.f, 6.f), R.FRandRange(-4.f, 4.f)));
+					FRotator(R.FRandRange(-7.f, 7.f), R.FRandRange(-9.f, 9.f), R.FRandRange(-7.f, 7.f)));
 				X += L;
 			}
 		}
