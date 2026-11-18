@@ -913,7 +913,19 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		const AActor* Obstacle = Hit.GetActor();
 		const bool bStill = Obstacle && Obstacle->GetVelocity().Size() < 50.f;
 		BlockedTime = (bStill && FMath::Abs(Speed) < 150.f) ? BlockedTime + DeltaSeconds : 0.f;
-		if (BlockedTime > 3.f && CachedOncomingGap > 6000.f && GoAroundTime <= 0.f)
+		// Nose to nose with an oncoming vehicle that is also stopped (one of them strayed into the other's lane on a
+		// hairpin): both squeeze to their own edge, which opens the gap - going "round" to the left would only meet
+		// head-on again, and waiting for the other never ends.
+		const AHGGroundVehicle* Other = Cast<AHGGroundVehicle>(Obstacle);
+		const bool bHeadOn = Other && Other->HasRoadPosition() && Other->GetTravelDirection() != AutoDriveDirection;
+		if (BlockedTime > 2.f && bHeadOn && GoAroundTime <= 0.f)
+		{
+			GoAroundTime = 5.f;
+			LaneShiftTarget = 250.f;   // clamped to the road edge by GetLaneOffsetAt
+			BlockedTime = 0.f;
+			++TrafficStats.GoArounds;
+		}
+		else if (BlockedTime > 3.f && CachedOncomingGap > 6000.f && GoAroundTime <= 0.f)
 		{
 			GoAroundTime = 6.f;
 			LaneShiftTarget = -(FMath::Abs(AutoDriveLane) + 150.f);

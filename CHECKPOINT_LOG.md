@@ -376,3 +376,62 @@ turning into a luggage-stacked tour bike, faded-to-nothing centre line, giraffe-
 Open: Ta Lang slab joints still hard to read from the chase camera; DistantRanges is a flat blue band; people
 are mannequin-like at close range (no faces / hands detail); boat crews sit under the roof and are mostly hidden
 from the high boat camera.
+
+---
+
+## Round 3 - road data, missions, boat hire, merge of B (`improve/gameplay-realism`)
+
+Road data (gen_heightmap.py, road functions only: `enforce_min_radius`, `vertex_radius`, `grade_limit`,
+`fit_to_shelf`, the route smoothing / profile block in `generate()`, `pad()` start point, the dock slipway / yard
+pads and a final road-core re-level):
+- **Hairpins**: position-based relaxation caps the centreline curvature at R 9 m (sagitta of every vertex over
+  its neighbours' chord, excess spread outwards so narrow hairpins grow a balloon), keeps the two legs >= 8 m apart
+  and away from the rest of the route. Tightest bend 2.1 m -> 9.1 m, 47 cusps -> 0, max turn 6.4 deg/m.
+- **Grades**: the DEM under the OSM line of the Ma Pi Leng rim road (a shelf cut into a cliff) climbed up to 87 %
+  (30 % averaged over 400 m) - convoys stalled there and were re-placed. `fit_to_shelf` slides the line up to
+  15 m sideways onto the slope at the height a 14 %-limited profile wants (never closer than 12 m to another leg),
+  then the profile is grade-limited: max 87 % -> 20 % (11 segments over 15 %).
+- **Floating road**: the dock pad flattened the whole 147 m spur to dock level (road up to 14 m above the
+  landscape), the yard sat 0.45 m over the road and viewpoint pads started 2 m from the centreline. Slipway pad
+  is the last 12 m only, yard at road level, pads start at the road edge, and the road core is re-levelled last.
+  Road vs landscape (bilinear, as rendered): worst +14 m -> +0.16 m.
+- validate_layout road checks: minimum radius, maximum turn per metre, maximum grade, legs apart, profile
+  (0.3 m) - all PASS; 115 checks, 0 FAIL.
+- AI: 0 dead stops and 5 re-placements (all trucks: a cow on the road and a truck U-turn at its range end)
+  in the full playtest, against 15 stops and 47-69 re-placements before.
+
+Missions (`UHGMissionSubsystem`): xe om Dong Van -> Ma Pi Leng (150,000 + tip), Ma Pi Leng photo [P] (50,000 +
+framing bonus, shutter flash), police chase to the Ta Lang dock (3 stars, 300,000, busted = fail). HUD objective
+line, centre banner, magenta target / yellow job markers on the minimap. Playtest: all three PASS.
+Boat hire at the dock: [F] on foot near the slipway pays 100,000 VND and boards the cano (no 40 m swim), PASS.
+Tour boats steer round the player's cano. River on the minimap. Boat camera: 19 m behind, 3.3 m up, pitch -7
+(boat ~1/5 of the frame); canopy hidden when the arm is pulled in. Boat [R] used by the playtest bot when stuck.
+
+Merge: agent B's branch (382d10c) merged; traffic wired to B's bikes (convoys EasyRiderWin + one tour group per
+convoy, solo traffic RandomTrafficModel); parked bikes plain Win, empty (the xe om job adds the passenger).
+
+Perf: `-hgperf` prints a SUMMARY PASS/FAIL (any camera under 60 fails), `-hgprofile=<camera or check>` dumps a GPU
+profile there, rays flag objects clipping a review camera. Review cameras are pushed clear of building footprints
+(the Ta Lang dock camera was inside the ticket booth: 62 -> 76 FPS). TuSan_boat 67 FPS: Lumen screen-probe gather
+4.3 of 10.8 ms GPU. Window-size guard now restores the start size (it was shrunk to 679 px and grown to 1280 px by
+something outside the game); tested by shrinking it on purpose.
+
+River width along the dock -> Ma Pi Leng boat route (3.7 km): water surface min 23 m, p10 39 m, median 80 m, max
+181 m; gorge 50 m above the water min 57 m, median 274 m; only 1 of 126 route points narrower than 60 m at that
+height - the dark narrows are shade, not a slot narrower than the real river.
+
+Self-review fixes this round: objective line moved below the flycam prompt (they overlapped), context controls
+line per vehicle ("R về luồng" on the water), water planes trimmed to the map (the below-dam plane floated 590 m
+past the end of the terrain as a flat lake in the rim views), distant-ranges apron raised to 900-1600 m and kept
+outside the square map, parked bikes left empty for the xe om job, head-on AI deadlock on hairpins resolved (both
+squeeze to their own edge), and the scripted runs pin the viewport at 1280x720 px (the window came up at 676, 1019
+or 1280 px for the same -resx=1280, so earlier FPS numbers were not all at the same resolution).
+
+Numbers (M1 Pro, perf lock held, 1280x720 window): `-hgperf` SUMMARY PASS, min 67 FPS (Spawn 76, ThamMa eye 76 /
+drone 110, MomDa 79, MaPiLeng plaza 87 / drone 113, NhoQue rim 81, TaLang dock 76, TuSan boat 67, TuSan flycam 83).
+Later locked runs read 50-59 at a few cameras while another Unreal instance (CP05 build + clang, 190-240 % CPU)
+ran alongside - builds don't take the lock - so treat single runs on this machine with care. Playtest: missions
+3/3 PASS, boat hire PASS, boat dock -> Ma Pi Leng bend 198-265 s, AI 0-14 dead stops (head-on deadlocks at U-turns,
+now resolved) and 5-7 re-placements per session (47-69 in round 2). Distant foothills are now their own olive mesh
+(the hazy ranges material made the apron read as a lake); the Mom Da review camera moved 5 m so the Panorama cafe no
+longer fills its corner.

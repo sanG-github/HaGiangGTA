@@ -15,12 +15,12 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
           "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost",
           "SM_HG_Kapok_Trunk", "SM_HG_Kapok_Bloom", "SM_HG_Tree_Trunk", "SM_HG_Tree_Crown",
           "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
-          "SM_HG_DistantRanges", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
+          "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
           "SM_HG_StoneWall", "SM_HG_Monument"]
 # Round 3B: layered distant ranges (Scripts/Tools/gen_ranges.py) replace the single SM_HG_DistantRanges ring.
 RANGE_LAYERS = [f"SM_HG_RangeLayer_{i}" for i in range(4)]
 MESHES += RANGE_LAYERS
-PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_Chevron",
+PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron",
          "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument",
          *RANGE_LAYERS)
 NANITE = {m for m in MESHES if m not in PROPS}

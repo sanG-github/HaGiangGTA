@@ -15,6 +15,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/Engine.h"
 #include "Engine/GameViewportClient.h"
+#include "Widgets/SWindow.h"
 #include "Engine/World.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/PlayerStart.h"
@@ -480,6 +481,7 @@ void AHGGtaGameMode::PlayDriveKeys(float DeltaSeconds)
 
 void AHGGtaGameMode::PlayDriveBoatKeys(float DeltaSeconds)
 {
+	PlaySetKey(EKeys::R, false);
 	ANhoQueBoatPawn* Boat = PlayBoat.Get();
 	if (!Boat || PlayBoatPath.Num() < 2)
 	{
@@ -505,6 +507,15 @@ void AHGGtaGameMode::PlayDriveBoatKeys(float DeltaSeconds)
 		const bool bStuck = FVector::Dist2D(Boat->GetActorLocation(), PlayBoatCheckLoc) < 80.f && PlayBoatReverse <= 0.f;
 		PlayBoatCheckLoc = Boat->GetActorLocation();
 		PlayBoatCheckTime = 0.f;
+		PlayBoatStuckStreak = bStuck ? PlayBoatStuckStreak + 1 : 0;
+		if (PlayBoatStuckStreak >= 3)
+		{
+			// Like a player who gives up backing out of the shallows: [R] puts the boat back on the cruise line.
+			PlayBoatStuckStreak = 0;
+			PlaySetKey(EKeys::R, true);   // released on the next tick
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boat stuck 3 times: [R] back onto the cruise line"));
+			return;
+		}
 		if (bStuck)
 		{
 			PlayBoatReverse = 2.5f;
@@ -526,6 +537,38 @@ void AHGGtaGameMode::PlayDriveBoatKeys(float DeltaSeconds)
 	PlaySetKey(EKeys::A, Err < -5.f);
 	PlaySetKey(EKeys::W, FMath::Abs(Err) < 70.f);
 	PlaySetKey(EKeys::LeftShift, FMath::Abs(Err) < 12.f);   // open it up on the straights of the gorge
+}
+
+bool AHGGtaGameMode::EnforceViewport(float DeltaSeconds)
+{
+	// The test window sometimes shrinks (another Unreal instance starting on the same desktop): put it back,
+	// so screenshots and FPS are always measured at the same resolution.
+	PlayResCheck -= DeltaSeconds;
+	if (PlayResCheck <= 0.f && GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport)
+	{
+		PlayResCheck = 1.f;
+		const FIntPoint Size = GEngine->GameViewport->Viewport->GetSizeXY();
+		if (PlayInitialRes.X == 0 && Size.X > 0)
+		{
+			// The window comes up at a different pixel size from run to run on this Mac (676, 1019 or 1280 px wide
+			// for the same -resx=1280); 1019x573 is the size macOS settles a 1280x720 window at (it pulls a 1280 px
+			// viewport back to it) and what rounds 1-2 measured at: hold the viewport there so FPS and shots compare.
+			PlayInitialRes = FIntPoint(1019, 573);
+		}
+		// Any change (it was shrunk to 679 px and grown to 1280 px by something outside the game): resize the
+		// window by the difference so the viewport is back to the start size (FPS comparable, shots alike).
+		const TSharedPtr<SWindow> Win = GEngine->GameViewport->GetWindow();
+		if (Win.IsValid() && PlayInitialRes.X > 0 && (FMath::Abs(Size.X - PlayInitialRes.X) > 8 || FMath::Abs(Size.Y - PlayInitialRes.Y) > 8)
+			&& PlayResFixes < 20)
+		{
+			++PlayResFixes;   // never fight the OS in a loop
+			const FVector2D Want = Win->GetSizeInScreen() + FVector2D(PlayInitialRes - Size);
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    viewport changed to %dx%d: restoring %dx%d"), Size.X, Size.Y, PlayInitialRes.X, PlayInitialRes.Y);
+			Win->Resize(Want);
+			return true;
+		}
+	}
+	return false;
 }
 
 void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
@@ -553,19 +596,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 	{
 		PlayTrafficTick(DeltaSeconds);
 	}
-	// The test window sometimes shrinks (another Unreal instance starting on the same desktop): put it back,
-	// so screenshots and FPS are always measured at the same resolution.
-	PlayResCheck -= DeltaSeconds;
-	if (PlayResCheck <= 0.f && GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport)
-	{
-		PlayResCheck = 2.f;
-		const FIntPoint Size = GEngine->GameViewport->Viewport->GetSizeXY();
-		if (Size.X > 0 && Size.X < 900)
-		{
-			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    viewport shrank to %dx%d: restoring 1280x720"), Size.X, Size.Y);
-			GEngine->Exec(GetWorld(), TEXT("r.SetRes 1280x720w"));
-		}
-	}
+	EnforceViewport(DeltaSeconds);
 
 	// Auto-drive stages: (road distance m, label, seconds). Distances come from the route sections.
 	struct FStage { float StartM; const TCHAR* Label; float Secs; };
@@ -614,13 +645,17 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		if (!bPlayShrunk && PlayTime > 5.f)
 		{
 			bPlayShrunk = true;
-			GEngine->Exec(GetWorld(), TEXT("r.SetRes 680x382w"));
-			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] window shrunk to 680x382 on purpose (restore guard test)"));
+			if (GEngine->GameViewport && GEngine->GameViewport->GetWindow().IsValid())
+			{
+				GEngine->GameViewport->GetWindow()->Resize(GEngine->GameViewport->GetWindow()->GetSizeInScreen() * 0.6f);
+			}
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] window shrunk to 60 %% on purpose (restore guard test)"));
 		}
 		if (PlayTime > 8.5f)
 		{
 			const FIntPoint Size = GEngine->GameViewport && GEngine->GameViewport->Viewport ? GEngine->GameViewport->Viewport->GetSizeXY() : FIntPoint::ZeroValue;
-			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] restore guard: viewport %dx%d -> %s"), Size.X, Size.Y, Size.X >= 900 ? TEXT("PASS") : TEXT("FAIL"));
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] restore guard: viewport %dx%d (start %dx%d) -> %s"), Size.X, Size.Y, PlayInitialRes.X, PlayInitialRes.Y,
+				FMath::Abs(Size.X - PlayInitialRes.X) <= 8 ? TEXT("PASS") : TEXT("FAIL"));
 			PlayCheck(TEXT("walk"), true);
 			PlayPhase = 2;
 		}
@@ -828,13 +863,15 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			if (PlayTime > 1.f)
 			{
 				const float Dist = FVector::Dist2D(Bike->GetActorLocation(), Tour->Target);
-				if (Dist > 2000.f) { PlayDriveKeys(DeltaSeconds); }
+				if (Dist > 600.f) { PlayDriveKeys(DeltaSeconds); }
 				else { PlaySetKey(EKeys::W, false); PlaySetKey(EKeys::A, false); PlaySetKey(EKeys::D, false); PlaySetKey(EKeys::S, Bike->GetSpeedKmh() > 2.f); }
 			}
 			if (Tour->State == EHGMissionState::Done || PlayTime > 40.f)
 			{
 				PlayReleaseKeys();
-				Result(TEXT("tour_dong_van"), Tour->State == EHGMissionState::Done, FString::Printf(TEXT("(%.0f s on the job)"), Tour->Elapsed));
+				Result(TEXT("tour_dong_van"), Tour->State == EHGMissionState::Done, FString::Printf(TEXT("(%.0f s on the job, %.1f m from the drop-off)"),
+					Tour->Elapsed, FVector::Dist2D(Bike->GetActorLocation(), Tour->Target) / 100.f));
+				MS->AbortActive();   // a failed job must not block the next test
 				PlayPhase = 42; PlayTime = 0.f;
 			}
 			return;
@@ -872,6 +909,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			if (Photo->State == EHGMissionState::Done || PlayTime > 9.f)
 			{
 				Result(TEXT("photo_ma_pi_leng"), Photo->State == EHGMissionState::Done, FString::Printf(TEXT("(objective was: %s)"), *MS->GetObjective()));
+				MS->AbortActive();
 				PlayPhase = 44; PlayTime = 0.f;
 			}
 			return;
@@ -881,6 +919,7 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			if (PlayTime < DeltaSeconds * 1.5f)
 			{
 				PlayMoneyMark = WS->GetMoney();
+				MS->AbortActive();
 				if (AHGPlayerCharacter* Walker = Cast<AHGPlayerCharacter>(PC->GetPawn()))
 				{
 					Bike->EnterVehicle(Walker);
@@ -1112,6 +1151,15 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 	if (!bPerfRun || PerfStage < 0 || PerfStage >= PerfSpots.Num())
 	{
 		return;
+	}
+	if (EnforceViewport(DeltaSeconds) && PerfTime > -3.f)
+	{
+		// The window was resized: the frames so far were at another resolution - warm up again, measure after.
+		PerfTime = -3.f;
+		PerfAccum = 0.0;
+		PerfGpuAccum = PerfGameAccum = PerfDrawAccum = 0.0;
+		PerfWorst = 0.0;
+		PerfFrames = 0;
 	}
 	PerfTime += DeltaSeconds;
 	if (PerfTime < 0.f)

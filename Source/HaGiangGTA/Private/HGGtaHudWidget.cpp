@@ -158,9 +158,11 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	Prompt.Reset();
 	SurfaceName.Reset();
 	bDriving = false;
+	bOnWater = false;
 	if (const AHGVehicleBase* Vehicle = Cast<AHGVehicleBase>(Pawn))
 	{
 		bDriving = true;
+		bOnWater = Vehicle->IsWaterVehicle();
 		ModeName = Vehicle->GetVehicleDisplayName().ToString();
 		SpeedKmh = FMath::Abs(Vehicle->GetSpeedKmh());
 		if (const AHGGroundVehicle* Ground = Cast<AHGGroundVehicle>(Vehicle))
@@ -586,8 +588,9 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	{
 		const FSlateFontInfo OF = Font(int32(22 * S));
 		const FVector2D OS = Measure(Objective, OF);
-		Box(Out, L + 5, G, (W - OS.X) * 0.5f - 16.f * S, 22.f * S, OS.X + 32.f * S, OS.Y + 14.f * S, FLinearColor(0.f, 0.f, 0.f, 0.45f));
-		Text(Out, L + 6, G, Objective, (W - OS.X) * 0.5f, 29.f * S, OF, FLinearColor(1.f, 0.85f, 0.3f));
+		// Below the viewpoint prompt row (top left), so a long flycam prompt never runs into it.
+		Box(Out, L + 5, G, (W - OS.X) * 0.5f - 16.f * S, 82.f * S, OS.X + 32.f * S, OS.Y + 14.f * S, FLinearColor(0.f, 0.f, 0.f, 0.45f));
+		Text(Out, L + 6, G, Objective, (W - OS.X) * 0.5f, 89.f * S, OF, FLinearColor(1.f, 0.85f, 0.3f));
 	}
 	if (MissionBannerTime > 0.f && !MissionBanner.IsEmpty())
 	{
@@ -602,8 +605,10 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	}
 	{
 		// Controls for what the player is doing now; was one 9 px line at 720p that nobody could read.
-		const FString Help = bDriving
-			? TEXT("W ga  ·  S phanh  ·  A/D lái  ·  SPACE phanh tay  ·  SHIFT tăng tốc  ·  R về đường  ·  F xuống xe  ·  V flycam")
+		const FString Help = bOnWater
+			? TEXT("W ga  ·  S lùi  ·  A/D lái  ·  SHIFT tăng tốc  ·  R về luồng  ·  chuột / C nhìn  ·  F lên bờ  ·  V flycam")
+			: bDriving
+			? TEXT("W ga  ·  S phanh  ·  A/D lái  ·  SPACE phanh tay  ·  SHIFT tăng tốc  ·  R về đường  ·  chuột / C nhìn  ·  F xuống xe  ·  V flycam")
 			: TEXT("WASD đi  ·  chuột nhìn  ·  SHIFT chạy  ·  SPACE nhảy  ·  F lên xe  ·  V flycam");
 		const FSlateFontInfo HF = Font(FMath::Max(int32(17 * S), 11), true, TEXT("Regular"));
 		const FVector2D HS = Measure(Help, HF);

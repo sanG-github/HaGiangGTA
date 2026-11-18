@@ -118,12 +118,22 @@ def _clear_of_buildings(out, layout, scatter, clear_cm=450.0, max_push_m=15.0):
     def clearance(x, y):
         return min(P.rect_distance(x * 100.0, y * 100.0, f["cx"], f["cy"], f["yaw"], f["hx"], f["hy"]) for f in fps)
 
+    def in_view(x, y, dx, dy, fov):
+        """A building centre within 60 m inside the horizontal view cone (it fills a corner of the frame - the
+        Panorama cafe roof in the Mom Da ledge shot)."""
+        for f in fps:
+            vx, vy = f["cx"] / 100.0 - x, f["cy"] / 100.0 - y
+            d = math.hypot(vx, vy)
+            if 1e-3 < d < 60.0 and (vx * dx + vy * dy) / d > math.cos(math.radians(fov * 0.5 + 10.0)):
+                return True
+        return False
+
     fixed = []
     for name, cam, look, fov in out:
         dx, dy = _norm2(look[0] - cam[0], look[1] - cam[1])
         c = list(cam)
         pushed = 0.0
-        while clearance(c[0], c[1]) < clear_cm and pushed < max_push_m:
+        while (clearance(c[0], c[1]) < clear_cm or in_view(c[0], c[1], dx, dy, fov)) and pushed < max_push_m:
             c[0] += dx
             c[1] += dy
             pushed += 1.0

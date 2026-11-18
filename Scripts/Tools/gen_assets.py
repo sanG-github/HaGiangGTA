@@ -675,7 +675,7 @@ def make_set_dressing(rng):
     # Apron from just outside the 5.9 km landscape (half 2.95 km) to the ranges, 450 m below the mesh pivot
     # (placed at z 800 m -> 350 m, under the river and every map edge): from the Ma Pi Leng rim the player looked
     # past the map edge into empty haze; now a low valley floor runs out to the distant ranges.
-    APRON_Z = -45000.0
+    APRON_Z = 10000.0            # 900 m: at the height of the map edges (a 350 m floor read as a flat sea)
     apron = np.array([300000.0, 380000.0, 450000.0, 515000.0])
     # One coherent noise field over (angle, ring) so ridges continue between neighbouring vertices.
     A, J = np.meshgrid(ang, np.arange(rings))
@@ -686,14 +686,31 @@ def make_set_dressing(rng):
     # The apron rises from the valley floor into rolling foothills (a flat one read as a lake in the haze).
     foot = wave_noise(np.stack([np.cos(ang) * 1.7, np.sin(ang) * 1.7, np.zeros_like(ang)], axis=1), rng,
                       octaves=3, waves=6, base=2.0, ridged=False)
+    # Never inside the square landscape (half 2.95 km; its corners reach 4.17 km): each apron vertex stays 50 m
+    # outside the map boundary along its angle, or the 900 m apron would float over the low corners of the map.
+    edge_r = 296000.0 / np.maximum(np.abs(np.cos(ang)), np.abs(np.sin(ang))) + 5000.0
     for k, r in enumerate(apron):
         t = k / (len(apron) - 1)
         for i, a in enumerate(ang):
-            verts.append((np.cos(a) * r, np.sin(a) * r, APRON_Z + t * (25000.0 + 30000.0 * foot[i])))
+            rr = max(r, edge_r[i]) if k < len(apron) - 1 else max(r, edge_r[i] + 2000.0)
+            verts.append((np.cos(a) * rr, np.sin(a) * rr, APRON_Z + t * (30000.0 + 40000.0 * foot[i])))
     for j, r in enumerate(radii):
         for i, a in enumerate(ang):
             h = (60000.0 + 150000.0 * ridge[j, i]) * envelope[j]
+            if j < 4:   # rise out of the apron instead of dipping to the pivot height first
+                h = max(h, (APRON_Z + 30000.0 + 40000.0 * foot[i]) * (1.0 - j / 4.0))
             verts.append((np.cos(a) * r, np.sin(a) * r, h))
+    # The apron also goes out as its own mesh with a land material (with the hazy "ranges" material it read as a
+    # flat lake beyond the map edge); in the ranges mesh it stays only as the skirt the ranges rise from.
+    na = len(apron) * seg
+    av = np.array(verts[:na])
+    af = []
+    for j in range(len(apron) - 1):
+        for i in range(seg):
+            a0, a1 = j * seg + i, j * seg + (i + 1) % seg
+            b0, b1 = a0 + seg, a1 + seg
+            af += [(a0, b0, b1), (a0, b1, a1)]
+    write_obj(out / "SM_HG_DistantApron.obj", av, np.array(af))
     rings += len(apron)
     for j in range(rings - 1):
         for i in range(seg):

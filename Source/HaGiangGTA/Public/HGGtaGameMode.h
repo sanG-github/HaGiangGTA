@@ -69,14 +69,19 @@ private:
 	int32 PlayOrbitShot = 0;
 	float PlayResCheck = 0.f;
 	bool bPlayShrunk = false;
+	FIntPoint PlayInitialRes = FIntPoint::ZeroValue;
+	int32 PlayResFixes = 0;
 	int32 PlayMoneyMark = 0;
 	int32 PlayBoatHireStep = 0;
+	int32 PlayBoatStuckStreak = 0;
 	float PlayOffRoadSecs = 0.f;
 	FVector PlayStageStart = FVector::ZeroVector;
 	FVector PlayCheckpointLoc = FVector::ZeroVector;
 	float PlayFpsAccum = 0.f, PlayFpsWindow = 1.f, PlayTotalTime = 0.f, PlayWorstMs = 0.f;
 	int32 PlayFpsCount = 0, PlayFpsFrames = 0, PlayTotalFrames = 0;
 	float PlayFps() const;
+	/** Scripted runs: keep the game viewport at 1280x720 px (the window size varies from run to run on the Mac). */
+	bool EnforceViewport(float DeltaSeconds);   // true if it resized the window this tick
 	void PlaySetKey(const FKey& Key, bool bDown);
 	void PlayReleaseKeys();
 	/** One tick of the key-pressing rider: steer for the right lane ahead, brake for the bends. */
