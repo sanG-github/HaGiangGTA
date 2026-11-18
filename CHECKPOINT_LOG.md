@@ -598,3 +598,38 @@ Results (machine load average 16-20: absolute FPS invalid, compare within a sess
 - -hgperf, 2 runs: TuSan_boat 49 / 53, TuSan_flycam 59 / 58, slowest Spawn_ThamMa 39 / 38. In Round 4's session the
   boat camera ran at 85 % of the flycam; now 87 % (road cull). 70+ not demonstrable while the machine is loaded.
 - 00_spawn.png: the floating block is gone; validate_layout 116 checks, 0 FAIL.
+
+## Round 4B - far terrain fix, ridges, cano, limestone, roadside life (agent B, `worktree-agent-a492f1a4f1c84f0fb`, merged A's 0d80b54)
+
+Root causes:
+- **Arch past Ma Pi Leng / terrain slivers in the sky** (Play_3b_final 20_mission_photo_aim, 13_keys_TaLang_24):
+  not the ridge layers (reshaping them changed nothing; `-hghide=FarTerrain` removed both). The OBJ import
+  (right-handed file -> left-handed Unreal) mirrors Y, so SM_HG_FarTerrain (round 3B) came in north-south
+  mirrored: its inner edge stood tens to hundreds of metres off the landscape border, sheets of terrain hung over
+  voids (the sky showed through as a "lake"). The ridge rings never showed it (near-symmetric, two-sided).
+  gen_farterrain.py now writes Y negated + reversed winding; material two-sided. Rim review shots (6 level
+  views from the MPL flag pole) confirm a continuous terrain to the horizon. Other generated OBJ meshes
+  (A's gen_assets) are probably mirrored too - harmless for symmetric props, worth knowing for anything placed.
+- Ridges: 26 km ring dropped, 3 rings (14 / 17.5 / 21.5 km), broad summits instead of needle spikes, monotonic
+  rows (no folds), one aerial-haze amount per layer instead of the height-graded haze that turned every lower
+  flank sky-coloured. Distant meshes forced Nanite-off on SM5 (logged: 1 LOD, full mesh).
+- **Cano read as an orange box**: dark teal hull + near-black bottom, raised pointed bow with a foredeck that
+  follows the gunwale and a stem post, shorter / slimmer deep-maroon roof on 3 post pairs (open stern: helmsman
+  and engine show), bigger dark outboard with a red stripe, exhaust and long shaft, foam wake (prop wash +
+  Kelvin arms + bow wings, scaled with speed, one draw). Freeboard: hull frame +24 cm (was 20 cm above water).
+- **Flat pale limestone**: macro bands from the existing 32 m top projection (no extra landscape fetch): light /
+  warm ochre-grey / dark weathered curtains + more ledge shrubs; karst rock meshes get the same (one sample).
+- **Roadside life** (new `RoadsideLife` dressing kind, one per hamlet, 3 HISMs): dry-stone fence runs at one
+  offset per road side (none around hairpins), corn drying racks, firewood stacks; 14 / 9 / 9 m cull, no shadows.
+- Coordinator round-5 notes: steep house spots (A skipped > 2.5 m relief) keep their house on a dry-stone terrace
+  wall (`PlinthDepth`, up to 9 m relief, uphill dug in 1 m): 36 houses, 15 on terraces, 0 skipped. Road MIDs are
+  now shared by marking phase (start mod 36 m in 0.25 m steps + length): <= 144 per material instead of 281.
+- Crash reporters: my CP05 editor (pid 8537, 05:01) crashed in Slate teardown after quit_editor (ICU BiDi /
+  STextBlock destructor); A's deferred-quit ci_run_checkpoint (cf19be5) taken, probe script uses the same
+  pattern; lock polling 3 s. No new crash folder after the following CP05 / playtest / perf runs.
+
+Measured (1280x720, lock held; load average 24-28 with 8 CrashReportClients at ~97% - absolute FPS is
+load-contaminated): final playtest all PASS (3 missions, boat hire, boat tour, upgrades, pause, profile), avg
+27.9 FPS. Same-session A/B -hgperf, round-4B visuals on vs `-hgnokit -hghide=FarTerrain,RangeLayer`:
+Spawn_ThamMa 78.2 vs 74.5 ms, Viewpoint_3 59.9 vs 51.4 ms. Earlier, lighter load: playtest 59.8 FPS with far
+terrain vs 61.4 without. validate_layout: 0 FAIL.
