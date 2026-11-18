@@ -158,16 +158,38 @@ def _apply_profile(mesh: unreal.StaticMesh, name: str) -> None:
     hg.log(f"{name}: {lods} LODs (M1 profile, Nanite off)")
 
 
+HASH_TAG = "HGSourceHash"
+
+
+def _file_hash(path: str) -> str:
+    """sha1 of a generated source file ('' if missing)."""
+    import hashlib
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha1(fh.read()).hexdigest()
+    except OSError:
+        return ""
+
+
 def import_meshes(force: bool = False) -> dict:
     folder = f"{DEST}/Meshes"
     sm_sub = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
     out = {}
     for name in MESHES:
         path = f"{folder}/{name}"
+        src = os.path.join(hg.project_dir(), "Generated", "Assets", "Meshes", f"{name}.obj")
+        src_hash = _file_hash(src)
         mesh = None if force else (unreal.EditorAssetLibrary.load_asset(path) if unreal.EditorAssetLibrary.does_asset_exist(path) else None)
+        if mesh is not None and src_hash and unreal.EditorAssetLibrary.get_metadata_tag(mesh, HASH_TAG) != src_hash:
+            # Round 5B: an existing asset was never refreshed when its OBJ changed - the main checkout kept the
+            # round-3B (mirrored) far terrain through every regenerate + CP05. Reimport in place when the OBJ's
+            # content differs from the one the asset was imported from (assets without the tag: once).
+            hg.log(f"{name}: OBJ changed since import -> reimport")
+            mesh = None
         if mesh is None:
-            src = os.path.join(hg.project_dir(), "Generated", "Assets", "Meshes", f"{name}.obj")
             mesh = _import(src, folder, name)
+            if src_hash:
+                unreal.EditorAssetLibrary.set_metadata_tag(mesh, HASH_TAG, src_hash)
             body = mesh.get_editor_property("body_setup")
             if name in COMPLEX_COLLISION and body is not None:
                 body.set_editor_property("collision_trace_flag", unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
