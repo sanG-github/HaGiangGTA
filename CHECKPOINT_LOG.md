@@ -558,3 +558,43 @@ Results (machine load-contaminated by orphaned CrashReportClient processes: read
 - Water GI tier A/B at TuSan_boat, 2 runs each: 64 / 65 FPS without, 65 / 65 with, GPU 14.3 ms both ways - the
   view is draw-thread bound (~14.8 ms), so it buys nothing; now opt-in (-hgwatergi=1). 70+ there needs draw-thread
   work (crew / dressing draw calls), not GI.
+
+---
+
+## Round 5 - traffic to zero re-placements, gorge draw calls, profile, review fixes (`improve/gameplay-realism`)
+
+Review items:
+- 00_spawn "brown block over the camera": not a B dressing house. It was a blue-roofed scatter house (world.py
+  scatter houses) 15 m from the Doc Tham Ma spawn, standing at the ground height of its centre on a slope with
+  4.2 m of relief, so its downhill side hung 2.1 m in the air above the road. Fix (world._seat_houses): every scatter
+  house sits on the lowest ground under its footprint (+0.7 m eaves) and spots with > 3 m relief are dropped (7 of
+  34 non-grey). B's dressing.py had the same flaw for the kit H'Mong houses (scatter-centre z, up to 2 m hanging):
+  minimal edit there - each house turns its long side along the contour (12 headings, least relief), sits on the
+  lowest ground under it, and spots with > 2.5 m relief are skipped (21 houses kept, 15 skipped).
+- 06_boat_103 guests under the roof: boat chase camera 3.5 deg flatter (orbit base -3.5) and socket 2.4 m: the eye
+  is level with the roof edge and the benches show under it.
+
+Traffic:
+- Lane keeping: preview scaled by the curvature ahead (x0.35 on the 9 m hairpins) and a 3x cross-track gain when
+  the body is within 30 cm of the road edge (bikes ended on the inside kerb's chevron boards and were re-placed).
+- AI beyond 450 m from the camera rides its lane line kinematically (speed from cruise / curves / convoy leader,
+  turn at the stretch end in place); the 10 Hz physics sent bikes 15-24 m off the Ta Lang descent.
+- Cows: a vehicle waiting 2 s behind a cow shoos it off to its own side of the road (HGCowActor::ShooOff: trot
+  to 2.5 m past the edge, the herd's home moves with it, stops at a drop). Trucks already pass stopped
+  obstacles in the mirror lane.
+Performance: rendered-primitive census per -hgperf camera. TuSan_boat drew 505 primitives: 281 road spline
+segments (one MID each since 3B), 181 landscape components, 26 scatter ISMs (56,644 instances), 1 boat - the
+crews and corn are not the cost. Road segments now cull at 900 m at runtime (-hgroadcull=<m> for A/B): 505 -> 224
+primitives there. Same-session A/B (load average 16-20, absolute FPS invalid): 50 / 47 FPS without, 49 / 54 with.
+Profile: Saved/HGProfile.ini (money, grip tyres, intro seen) loaded on the first spawn and saved on every change;
+the playtest uses HGProfile_test.ini (deleted at start) and checks the round trip.
+Intro: the bot's simulated Enter never reached the unpaused game (Enter works in the pause menu); Space closes it
+(card says "Space hoặc Enter"). The location card waits until the intro is closed.
+Results (machine load average 16-20: absolute FPS invalid, compare within a session only):
+- Playtests, AI dead stops / re-placements per session: r5 a 1 / 0 (a bike waiting behind a parked bike at the
+  Tham Ma viewpoint), r5 b 0 / 0, r5 c (final build) 0 / 0. Round 4: 0-7 / 1-6. Longest U-turn wait 2 s in c.
+- Missions 4/4 PASS (incl. boat tour, back at the dock in 189-215 s), list + grip tyres PASS (48 -> 58 km/h),
+  pause + restart at a viewpoint PASS, intro closed PASS (Space), profile round trip PASS.
+- -hgperf, 2 runs: TuSan_boat 49 / 53, TuSan_flycam 59 / 58, slowest Spawn_ThamMa 39 / 38. In Round 4's session the
+  boat camera ran at 85 % of the flycam; now 87 % (road cull). 70+ not demonstrable while the machine is loaded.
+- 00_spawn.png: the floating block is gone; validate_layout 116 checks, 0 FAIL.

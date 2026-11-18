@@ -121,6 +121,7 @@ private:
 	float PlayIntroT = 0.f;
 	double LastShotRequestTime = -10.0;
 	bool bPerfQuitPending = false;
+	bool bPlayProfileChecked = false;
 	bool bPlayBoatJobLogged = false;
 	bool bPlayBoatReturn = false;
 	float PlayReturnStart = 0.f;

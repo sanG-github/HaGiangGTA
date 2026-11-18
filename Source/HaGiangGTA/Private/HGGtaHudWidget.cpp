@@ -138,7 +138,13 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	Time += InDeltaTime;
-	CardTime = FMath::Max(0.f, CardTime - InDeltaTime);
+	// The location card waits while the intro card is up (they overlapped at the dock in -hgplayboat).
+	const UHGMissionSubsystem* IntroMS = GetWorld() ? GetWorld()->GetSubsystem<UHGMissionSubsystem>() : nullptr;
+	const bool bIntroUp = IntroMS && IntroMS->IsIntroOpen();
+	if (!bIntroUp)
+	{
+		CardTime = FMath::Max(0.f, CardTime - InDeltaTime);
+	}
 
 	UWorld* World = GetWorld();
 	APlayerController* PC = GetOwningPlayer();
@@ -551,7 +557,7 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	}
 
 	// ---------------- Location card (GTA style, on arrival) ----------------
-	if (CardTime > 0.f)
+	if (CardTime > 0.f && !(GetWorld() && GetWorld()->GetSubsystem<UHGMissionSubsystem>() && GetWorld()->GetSubsystem<UHGMissionSubsystem>()->IsIntroOpen()))
 	{
 		const float A = FMath::Clamp(CardTime / 0.8f, 0.f, 1.f) * FMath::Clamp((5.f - CardTime) / 0.5f, 0.f, 1.f);
 		TextR(Out, L + 5, G, CardName, W - 70.f * S, H * 0.55f, Font(int32(40 * S)), FLinearColor(1.f, 1.f, 1.f, A));
@@ -722,6 +728,6 @@ void UHGGtaHudWidget::PaintMenus(const UHGMissionSubsystem& MS, FSlateWindowElem
 			Text(Out, L + 2, G, Line, PX + 50.f * S, Y, RF, FLinearColor(1.f, 1.f, 1.f, 0.95f * A));
 			Y += 40.f * S;
 		}
-		Centered(TEXT("Nhấn  Enter  để bắt đầu"), PY + PH - 56.f * S, SubF, FLinearColor(Gold.R, Gold.G, Gold.B, A * (0.6f + 0.4f * FMath::Sin(Time * 4.f))));
+		Centered(TEXT("Nhấn  Space  hoặc  Enter  để bắt đầu"), PY + PH - 56.f * S, SubF, FLinearColor(Gold.R, Gold.G, Gold.B, A * (0.6f + 0.4f * FMath::Sin(Time * 4.f))));
 	}
 }

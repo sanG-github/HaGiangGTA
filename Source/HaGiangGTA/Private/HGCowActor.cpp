@@ -123,6 +123,19 @@ void AHGCowActor::BeginPlay()
 	}
 }
 
+void AHGCowActor::ShooOff(const FVector& Away, float WalkMeters)
+{
+	if (HurryTime > 0.f)
+	{
+		return;
+	}
+	const FVector Dir = FVector(Away.X, Away.Y, 0.f).GetSafeNormal();
+	Target = GetActorLocation() + Dir * WalkMeters * 100.f;
+	Home = Target;
+	IdleTime = FMath::FRandRange(8.f, 15.f);
+	HurryTime = 8.f;
+}
+
 void AHGCowActor::PickNewTarget()
 {
 	const FVector2D R = FMath::RandPointInCircle(WanderRadius);
@@ -135,6 +148,8 @@ void AHGCowActor::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	Phase += DeltaSeconds;
 	MooCooldown = FMath::Max(0.f, MooCooldown - DeltaSeconds);
+	HurryTime = FMath::Max(0.f, HurryTime - DeltaSeconds);
+	const float Pace = HurryTime > 0.f ? 3.f : 1.f;   // shooed off the road: a quick walk
 
 	FVector Loc = GetActorLocation();
 	const FVector ToTarget = FVector(Target.X - Loc.X, Target.Y - Loc.Y, 0.f);
@@ -151,7 +166,7 @@ void AHGCowActor::Tick(float DeltaSeconds)
 	else
 	{
 		const FRotator Want = ToTarget.Rotation();
-		const FRotator NewRot = FMath::RInterpConstantTo(GetActorRotation(), FRotator(0.f, Want.Yaw, 0.f), DeltaSeconds, 40.f);
+		const FRotator NewRot = FMath::RInterpConstantTo(GetActorRotation(), FRotator(0.f, Want.Yaw, 0.f), DeltaSeconds, 40.f * Pace);
 		SetActorRotation(NewRot);
 		// Look 1 m ahead: cows on the real map graze beside cliff roads and the reservoir - never walk onto
 		// ground steeper than MaxWanderSlopeDeg or into the water, pick another spot instead.
@@ -162,21 +177,26 @@ void AHGCowActor::Tick(float DeltaSeconds)
 		const bool bGroundAhead = GetWorld()->LineTraceSingleByChannel(AheadGround, Ahead + FVector(0, 0, 300.f), Ahead - FVector(0, 0, 1500.f), ECC_Visibility, AheadParams);
 		const bool bTooSteep = !bGroundAhead || AheadGround.ImpactNormal.Z < FMath::Cos(FMath::DegreesToRadians(MaxWanderSlopeDeg));
 		const bool bWet = bGroundAhead && AHGWaterBody::FindSurface(GetWorld(), Ahead, SurfaceZ) && AheadGround.ImpactPoint.Z < SurfaceZ + 20.f;
-		if (bTooSteep || bWet)
+		if ((bTooSteep || bWet) && HurryTime <= 0.f)
 		{
 			PickNewTarget();
+		}
+		else if (bTooSteep || bWet)
+		{
+			HurryTime = 0.f;   // the shoulder drops away: stop at the edge instead of walking off it
+			Target = Loc;
 		}
 		else
 		{
 			FHitResult Block;
-			AddActorWorldOffset(NewRot.Vector() * WalkSpeed * DeltaSeconds, true, &Block);
+			AddActorWorldOffset(NewRot.Vector() * WalkSpeed * Pace * DeltaSeconds, true, &Block);
 			if (Block.bBlockingHit)
 			{
 				PickNewTarget();
 			}
 		}
 		SetHeadRotation(FRotator(-5.f + 4.f * FMath::Sin(Phase * 3.f), 0.f, 0.f));
-		StepPhase += DeltaSeconds * WalkSpeed / 14.f;
+		StepPhase += DeltaSeconds * WalkSpeed * Pace / 14.f;
 	}
 
 	// Legs: walk cycle (diagonal pairs) while moving, settle when grazing; tail swish.

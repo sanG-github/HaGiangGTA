@@ -50,6 +50,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
 	FText SignText;
 
+	/** HmongHouse: dry-stone terrace wall under the platform, this deep below its 2.6 m foot (steep plots). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
+	float PlinthDepth = 0.f;
+
 	/** CornField: radius (cm). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
 	float Radius = 5000.f;

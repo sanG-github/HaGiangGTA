@@ -223,6 +223,9 @@ private:
 	bool IsTurnClear();
 	void BeginTurnaround();
 	void TickTurnaround(float DeltaSeconds);
+	void TickFarLOD(float DeltaSeconds);
+	bool bFarHandbrakeScratch = false;
+	float CowWaitTime = 0.f;
 	FVector TurnPathPoint(float S, FVector* OutTangent) const;
 	/** Road whose centreline is closest to Location (2D), and that distance (cm). */
 	AHGRoadSplineActor* FindNearestRoad(const FVector& Location, float& OutLateralCm, float& OutDistanceCm) const;

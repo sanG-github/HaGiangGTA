@@ -1,4 +1,5 @@
 #include "HGRoadSplineActor.h"
+#include "Misc/CommandLine.h"
 
 #include "Components/SplineComponent.h"
 #include "Components/SplineMeshComponent.h"
@@ -73,6 +74,7 @@ void AHGRoadSplineActor::RebuildRoadMeshes()
 		}
 	}
 	Segments.Reset();
+	SharedMIDs.Reset();
 
 	if (!RoadMesh)
 	{
@@ -108,9 +110,22 @@ void AHGRoadSplineActor::RebuildRoadMeshes()
 		{
 			// Round 3B: road distance for the materials (dashes and concrete pours per real metre) as MID
 			// parameters - custom primitive data did not reach the spline-mesh shaders on this platform.
-			UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(Mat, Seg);
-			MID->SetScalarParameterValue(TEXT("RoadSegStartM"), D0 / 100.f);
-			MID->SetScalarParameterValue(TEXT("RoadSegLenM"), Step / 100.f);
+			// Round 4B: shared MIDs - the markings repeat every 36 m (9 m dash cycle, 4 m pours), so only the start
+			// modulo 36 m matters; quantised to 0.25 m that is <= 144 phases per material instead of one MID per
+			// segment (281 unique materials broke draw batching).
+			const float PhaseM = FMath::Fmod(D0 / 100.f, 36.f);
+			const int32 PhaseKey = FMath::RoundToInt(PhaseM * 4.f) % 144;
+			const int32 LenKey = FMath::RoundToInt(Step / 100.f * 4.f);
+			const FString Key = FString::Printf(TEXT("%p_%d_%d"), Mat, PhaseKey, LenKey);
+			TObjectPtr<UMaterialInstanceDynamic>* Found = SharedMIDs.Find(Key);
+			UMaterialInstanceDynamic* MID = Found ? Found->Get() : nullptr;
+			if (!MID)
+			{
+				MID = UMaterialInstanceDynamic::Create(Mat, this);
+				MID->SetScalarParameterValue(TEXT("RoadSegStartM"), PhaseKey * 0.25f);
+				MID->SetScalarParameterValue(TEXT("RoadSegLenM"), LenKey * 0.25f);
+				SharedMIDs.Add(Key, MID);
+			}
 			Seg->SetMaterial(0, MID);
 		}
 		Seg->SetForwardAxis(ESplineMeshAxis::X, false);
@@ -127,4 +142,22 @@ void AHGRoadSplineActor::RebuildRoadMeshes()
 		Segments.Add(Seg);
 	}
 	UE_LOG(LogHaGiang, Log, TEXT("Road meshes rebuilt: %d segments"), Count);
+}
+
+void AHGRoadSplineActor::BeginPlay()
+{
+	Super::BeginPlay();
+	float Cull = RuntimeCullDistance;
+	float Meters = -1.f;
+	if (FParse::Value(FCommandLine::Get(), TEXT("hgroadcull="), Meters))
+	{
+		Cull = Meters * 100.f;
+	}
+	for (USplineMeshComponent* Seg : Segments)
+	{
+		if (Seg)
+		{
+			Seg->SetCullDistance(Cull);
+		}
+	}
 }

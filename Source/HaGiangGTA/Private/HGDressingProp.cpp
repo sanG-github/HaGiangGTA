@@ -206,6 +206,35 @@ namespace HGDressingKit
 		K.Tube(FVector(0.f, 0.f, 0.f), FVector(0.f, 0.f, 26.f), 1.2f, 0.8f, 5, false);
 	}
 
+	/** Round 4B: terrace wall under a hillside house - coursed dry stone over a 100 cm unit height (scaled in Z),
+	 *  a little wider than the house platform, battered inwards like the real retaining walls. */
+	void BuildPlinth(FHGMeshKit& K)
+	{
+		FRandomStream R{ 5150 };
+		const float HX = 560.f, HY = 370.f;
+		K.Paint(FColorL(0.12f, 0.115f, 0.105f), HGSurf::Matte);
+		K.Box(FVector(0.f, 0.f, -50.f), FVector(2 * HX + 30.f, 2 * HY + 30.f, 100.f));
+		for (int32 Row = 0; Row < 4; ++Row)
+		{
+			const float Z = -12.f - Row * 25.f;
+			for (const float S : { -1.f, 1.f })
+			{
+				for (float X = -HX; X < HX; X += R.FRandRange(40.f, 70.f))
+				{
+					const float G = R.FRandRange(0.07f, 0.16f);
+					K.Paint(FColorL(G, G * 0.97f, G * 0.9f), HGSurf::Matte);
+					K.Box(FVector(X + 25.f, S * (HY + 16.f + Row * 3.f), Z), FVector(R.FRandRange(36.f, 56.f), 12.f, R.FRandRange(16.f, 23.f)));
+				}
+				for (float Y = -HY; Y < HY; Y += R.FRandRange(40.f, 70.f))
+				{
+					const float G = R.FRandRange(0.07f, 0.16f);
+					K.Paint(FColorL(G, G * 0.97f, G * 0.9f), HGSurf::Matte);
+					K.Box(FVector(S * (HX + 16.f + Row * 3.f), Y + 25.f, Z), FVector(12.f, R.FRandRange(36.f, 56.f), R.FRandRange(16.f, 23.f)));
+				}
+			}
+		}
+	}
+
 	/** Round 4B: dry-stone fence segment, 250 cm along +X, ~85 cm high, irregular grey limestone blocks. */
 	void BuildStoneFence(FHGMeshKit& K)
 	{
@@ -341,6 +370,16 @@ void AHGDressingProp::BeginPlay()
 	if (UStaticMeshComponent* C = FHGMeshKit::AddComponent(this, Root, Mesh, TEXT("Kit"), FVector::ZeroVector))
 	{
 		C->SetCullDistance(Cull);
+	}
+	if (Kind == EHGDressingKind::HmongHouse && PlinthDepth > 1.f)
+	{
+		// Steep plot: the platform stands on a terrace wall down to the low side of the slope.
+		UStaticMesh* PlinthMesh = FHGMeshKit::Cached(TEXT("SM_HGHousePlinth"), [](FHGMeshKit& K) { BuildPlinth(K); });
+		if (UStaticMeshComponent* P = FHGMeshKit::AddComponent(this, Root, PlinthMesh, TEXT("Plinth"), FVector(0.f, 0.f, -250.f)))
+		{
+			P->SetRelativeScale3D(FVector(1.f, 1.f, PlinthDepth / 100.f));
+			P->SetCullDistance(Cull);
+		}
 	}
 	if (Kind == EHGDressingKind::FlagPole)
 	{

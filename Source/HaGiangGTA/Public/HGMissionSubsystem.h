@@ -66,6 +66,12 @@ public:
 	virtual void Tick(float DeltaTime) override;
 	virtual TStatId GetStatId() const override;
 	virtual bool IsTickableWhenPaused() const override { return true; }
+	virtual void Deinitialize() override;
+
+	// ---- Player profile (Saved/HGProfile.ini; the scripted runs use HGProfile_test.ini) ----
+	void SaveProfile();
+	bool LoadProfile();
+	FString ProfilePath() const;
 
 	const TArray<FHGMission>& GetMissions() const { return Missions; }
 	const FHGMission* GetActive() const { return Missions.IsValidIndex(ActiveIndex) ? &Missions[ActiveIndex] : nullptr; }
@@ -148,6 +154,9 @@ private:
 	TWeakObjectPtr<AHGRoadSplineActor> Road;
 
 	bool bListOpen = false;
+	bool bProfileLoaded = false;
+	int32 SavedMoney = -1;
+	float ProfileTimer = 0.f;
 	TMap<FKey, bool> MenuKeysDown;
 	bool bGripTyres = false;
 	bool bPauseOpen = false;
