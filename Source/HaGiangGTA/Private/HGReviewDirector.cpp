@@ -8,6 +8,7 @@
 #include "HGBikePawn.h"
 #include "HGTouristNPC.h"
 #include "HGDressingProp.h"
+#include "HGViewpointActor.h"
 #include "HGCowActor.h"
 #include "HGTruckPawn.h"
 #include "NhoQueBoatPawn.h"
@@ -115,6 +116,25 @@ void AHGReviewDirector::BuildShots()
 				AddActorShot(*It, TEXT("boat_quarter"), FVector(-700.f, 450.f, 260.f), FVector(-100.f, 0.f, 80.f));
 				break;
 			}
+		}
+	}
+	// Vistas (Round 3B): from each viewpoint towards its subject and out to the horizon (distant ranges, haze).
+	{
+		int32 V = 0;
+		for (TActorIterator<AHGViewpointActor> It(World); It; ++It, ++V)
+		{
+			const FVector Eye = It->GetActorLocation() + FVector(0.f, 0.f, 1500.f);   // above the bushes / props
+			const FVector ToSubject = (It->OrbitCenter - Eye).GetSafeNormal2D();
+			FShot A;
+			A.Label = FString::Printf(TEXT("vista_%d_subject"), V);
+			A.Loc = Eye;
+			A.LookAt = It->OrbitCenter;
+			Shots.Add(A);
+			FShot B;
+			B.Label = FString::Printf(TEXT("vista_%d_horizon"), V);
+			B.Loc = Eye;
+			B.LookAt = Eye + ToSubject.RotateAngleAxis(150.f, FVector::UpVector) * 100000.f + FVector(0.f, 0.f, -2000.f);
+			Shots.Add(B);
 		}
 	}
 	// Set dressing (Round 3B): two houses, every sign / flag, one corn terrace from above.

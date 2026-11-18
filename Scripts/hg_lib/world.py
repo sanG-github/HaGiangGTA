@@ -354,12 +354,23 @@ def build_golden_hour(tag, folder):
             fc.set_editor_property(k, v)
         except Exception as exc:
             hg.warn(f"Fog.{k}: {exc}")
+    # Round 3B - valley haze: a second, low-lying fog layer that settles in the gorges and valley floors (e-folds
+    # every ~200 m above the river) so the distant ranges stand out layer by layer above it, and the shaded
+    # gorge gets some in-scattered light instead of going black.
+    try:
+        second = unreal.ExponentialHeightFogData()
+        second.set_editor_property("fog_density", 0.0025)
+        second.set_editor_property("fog_height_falloff", 0.05)
+        second.set_editor_property("fog_height_offset", 3000.0)
+        fc.set_editor_property("second_fog_data", second)
+    except Exception as exc:
+        hg.warn(f"Fog second layer: {exc}")
 
     ppv = hg.spawn_actor(unreal.PostProcessVolume, "PP_GoldenHour", (0, 0, 100000), (0, 0, 0), tag, folder)
     ppv.set_editor_property("unbound", True)
     s = ppv.get_editor_property("settings")
     for k, v in (("bloom_intensity", 0.55), ("vignette_intensity", 0.32), ("film_grain_intensity", 0.12),
-                 ("auto_exposure_min_brightness", 0.6), ("auto_exposure_max_brightness", 2.5),
+                 ("auto_exposure_min_brightness", -1.2), ("auto_exposure_max_brightness", 2.5),   # 3B: -1.2 (was 0.6) lets the eye adapt in the sky-lit-only Tu San narrows
                  ("white_temp", 6600.0), ("color_saturation", unreal.Vector4(1.04, 1.06, 1.04, 1.0)),
                  ("color_contrast", unreal.Vector4(1.08, 1.08, 1.08, 1.0)),
                  ("color_gain_shadows", unreal.Vector4(0.94, 1.0, 1.08, 1.0)),
@@ -369,7 +380,7 @@ def build_golden_hour(tag, folder):
                  # sky-occluded places (a bounce fill that only matters where Lumen sees no sky), and local
                  # exposure lifts the shadows without flattening the sunlit walls.
                  ("lumen_skylight_leaking", 0.16),
-                 ("local_exposure_shadow_contrast_scale", 0.72), ("local_exposure_highlight_contrast_scale", 0.9),
+                 ("local_exposure_shadow_contrast_scale", 0.85), ("local_exposure_highlight_contrast_scale", 1.0),
                  ("local_exposure_detail_strength", 1.1)):
         try:
             s.set_editor_property(k, v)

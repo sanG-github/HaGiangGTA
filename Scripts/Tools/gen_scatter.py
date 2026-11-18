@@ -380,7 +380,7 @@ def main():
     peach = []
     for hx_, hy_, *_ in [h for v in houses.values() for h in v]:
         for _ in range(2):
-            a_ = rng.uniform(0, 2 * math.pi); r0 = rng.uniform(9, 16)
+            a_ = rng.uniform(0, 2 * math.pi); r0 = rng.uniform(14, 21)   # 3B: clear of the kit H'Mong house + yard
             tx_, ty_ = hx_ / 100.0 + math.cos(a_) * r0, hy_ / 100.0 + math.sin(a_) * r0
             r_, c_ = T.idx(tx_, ty_)
             if T.slope[r_, c_] > 35 or road_dist(tx_, ty_) < 6 or T.height(tx_, ty_) < T.water + 6:
@@ -449,7 +449,7 @@ def main():
             road_px[rr[ok], cc[ok]] = True
     shoulder = np.zeros((sres, sres), np.float32)
     cur = road_px.copy()
-    for ring, val in ((1, 1.0), (2, 1.0), (3, 0.6), (4, 0.25)):
+    for ring, val in ((1, 1.0), (2, 0.55), (3, 0.15)):            # ~2 m verge, ragged edge
         nxt = cur.copy()
         nxt[1:, :] |= cur[:-1, :]
         nxt[:-1, :] |= cur[1:, :]

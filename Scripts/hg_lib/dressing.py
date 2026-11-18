@@ -83,7 +83,9 @@ def build(layout, scatter, tag, folder):
         cx = sum(p[0] for p in c) / len(c)
         cy = sum(p[1] for p in c) / len(c)
         cz = sum(p[2] for p in c) / len(c)
-        _spawn(K.CORN_FIELD, f"CornTerraces_{i:02d}", (cx, cy, cz), 0.0, tag, folder, radius=6500.0 + 900.0 * min(len(c), 5))
+        corn = _spawn(K.CORN_FIELD, f"CornTerraces_{i:02d}", (cx, cy, cz), 0.0, tag, folder,
+                      radius=6500.0 + 900.0 * min(len(c), 5))
+        corn.set_editor_property("min_z", float(layout["water"]["surface_z_cm"]) + 1500.0)   # off the river banks
 
     # --- Viewpoint props ---
     marks = layout.get("landmarks", {})

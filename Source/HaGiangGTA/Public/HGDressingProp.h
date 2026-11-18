@@ -50,6 +50,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
 	float Radius = 5000.f;
 
+	/** CornField: no plants below this world Z (the river banks / drawdown zone). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Dressing")
+	float MinZ = -1.0e7f;
+
 protected:
 	virtual void BeginPlay() override;
 

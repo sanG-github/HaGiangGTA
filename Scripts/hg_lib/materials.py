@@ -163,16 +163,13 @@ def road_along(g: Graph, v):
     """Distance along the road in metres: AHGRoadSplineActor writes each segment's start distance (custom
     primitive data 0) and length (1); V runs 0..1 along the segment. Markings and slabs then repeat per real
     metre instead of per (slightly varying) segment."""
-    def cpd(index):
-        e = g.node(unreal.MaterialExpressionCustomPrimitiveData)
-        for prop in ("primitive_data_index", "primitive_index", "data_index", "index"):
-            try:
-                e.set_editor_property(prop, index)
-                break
-            except Exception:
-                continue
+    def cpd(index, name):
+        # UE5: a Scalar Parameter flagged "Use Custom Primitive Data" reads the component's data slot.
+        e = g.scalar(name, 0.0)
+        e.set_editor_property("use_custom_primitive_data", True)
+        e.set_editor_property("primitive_data_index", index)
         return e
-    return g.add(cpd(0), g.mul(v, cpd(1)))
+    return g.add(cpd(0, "RoadSegStartM"), g.mul(v, cpd(1, "RoadSegLenM")))
 
 
 def remap_mask(g: Graph, value, center, sharpness, invert=False):
@@ -276,10 +273,10 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         smap_uv = g.mul(g.add(g.mask(wp, r=True, g=True), half_cm), 1.0 / (2.0 * half_cm))
         verge = g.mul(g.texture(tex["T_HG_ShoulderMask"], smap_uv), g.sub(1.0, g.mul(rock, 0.7)))
         verge = g.saturate(g.mul(g.sub((verge, "R"), g.mul((n_fine, "G"), 0.35)), 1.6))     # ragged grass edge
-        gravel = g.mul(g.color("Gravel", (0.27, 0.24, 0.2)), g.add(0.8, g.mul((n_fine, "R"), 0.4)))
+        gravel = g.mul(g.color("Gravel", (0.19, 0.17, 0.14)), g.add(0.8, g.mul((n_fine, "R"), 0.4)))
         chips = g.saturate(g.mul(g.sub((n_fine, "B"), 0.62), 6.0))
         stones = g.saturate(g.mul(g.sub(0.3, (n_fine, "B")), 6.0))
-        gravel = g.lerp(g.lerp(gravel, g.mul(lime, 1.15), g.mul(chips, 0.7)), g.color("DarkStone", (0.07, 0.065, 0.06)), g.mul(stones, 0.6))
+        gravel = g.lerp(g.lerp(gravel, g.mul(lime, 0.8), g.mul(chips, 0.6)), g.color("DarkStone", (0.07, 0.065, 0.06)), g.mul(stones, 0.6))
         base = g.lerp(base, gravel, verge)
     rough = g.lerp(g.lerp(0.92, 0.95, plots), 0.78, rock)
     normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rock, 0.6), 0.4)))

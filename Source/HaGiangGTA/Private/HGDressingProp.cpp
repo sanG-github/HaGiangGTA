@@ -5,6 +5,11 @@
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Components/TextRenderComponent.h"
+#include "Blueprint/UserWidget.h"
+#include "Blueprint/WidgetTree.h"
+#include "Components/TextBlock.h"
+#include "Components/WidgetComponent.h"
+#include "Styling/CoreStyle.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -38,7 +43,7 @@ namespace HGDressingKit
 			while (t < Len)
 			{
 				const float L = R.FRandRange(28.f, 46.f);
-				const float Tone = R.FRandRange(0.24f, 0.4f);
+				const float Tone = R.FRandRange(0.15f, 0.27f);
 				K.Paint(FColorL(Tone, Tone * 0.98f, Tone * 0.93f), HGSurf::Matte);
 				const FVector P = A + D * FMath::Min(t + L * 0.5f, Len - 10.f);
 				K.Box(FVector(P.X, P.Y, BaseZ + c * 24.f + 12.f), FVector(L - 3.f, Thick + R.FRandRange(-5.f, 5.f), R.FRandRange(19.f, 26.f)),
@@ -53,12 +58,12 @@ namespace HGDressingKit
 		const bool bStone = (V % 2) == 0;
 		const bool bFence = (V % 3) != 2;
 		FRandomStream R(1000 + V);
-		const FColorL Earth(0.36f, 0.24f, 0.15f), Stone(0.33f, 0.32f, 0.3f), Wood(0.13f, 0.075f, 0.04f);
+		const FColorL Earth(0.27f, 0.17f, 0.1f), Stone(0.22f, 0.21f, 0.2f), Wood(0.1f, 0.055f, 0.03f);
 		const FColorL Tile(0.11f, 0.11f, 0.115f), TileLight(0.17f, 0.17f, 0.175f);
 		const float HL = 500.f, HW = 310.f, WallTop = 300.f;
-		// Stone plinth (also hides the ground on a slope).
-		K.Paint(FColorL(0.25f, 0.24f, 0.23f));
-		K.Box(FVector(0.f, 0.f, -50.f), FVector(2 * HL + 60.f, 2 * HW + 60.f, 180.f));
+		// Stone platform (hillside plots: it reaches 2.6 m down so the downhill side never floats).
+		K.Paint(FColorL(0.17f, 0.165f, 0.155f));
+		K.Box(FVector(0.f, 0.f, -110.f), FVector(2 * HL + 60.f, 2 * HW + 60.f, 300.f));
 		// Walls.
 		K.Paint(bStone ? Stone : Earth);
 		K.Box(FVector(0.f, 0.f, 40.f + (WallTop - 40.f) * 0.5f), FVector(2 * HL, 2 * HW, WallTop - 40.f));
@@ -68,7 +73,7 @@ namespace HGDressingKit
 			// Coursed stone: slightly darker / lighter bands with mortar lines.
 			for (int32 c = 0; c < 9; ++c)
 			{
-				const float T = R.FRandRange(0.27f, 0.37f);
+				const float T = R.FRandRange(0.18f, 0.26f);
 				K.Paint(FColorL(T, T * 0.98f, T * 0.94f));
 				K.Box(FVector(0.f, 0.f, 52.f + c * 28.f), FVector(2 * HL + 1.5f, 2 * HW + 1.5f, 22.f));
 			}
@@ -95,14 +100,19 @@ namespace HGDressingKit
 		// Yin-yang tile roof: two slopes, channel tiles every 24 cm, ridge cap.
 		const float OH = 70.f, RidgeZ = WallTop + 170.f;
 		const float SlopeW = FMath::Sqrt(FMath::Square(HW + OH) + FMath::Square(RidgeZ - (WallTop - 30.f)));
-		const float Ang = FMath::RadiansToDegrees(FMath::Atan2(RidgeZ - (WallTop - 30.f), HW + OH));
 		for (const float S : { -1.f, 1.f })
 		{
 			const FVector Mid(0.f, S * (HW + OH) * 0.5f, (RidgeZ + WallTop - 30.f) * 0.5f);
-			K.Paint(Tile, HGSurf::Satin);
-			K.Box(Mid, FVector(2 * HL + 2 * OH, SlopeW, 8.f), FRotator(0.f, 0.f, -S * Ang));
 			const FVector Down = FVector(0.f, S * (HW + OH), WallTop - 30.f - RidgeZ).GetSafeNormal();
-			const FVector Up = FRotator(0.f, 0.f, -S * Ang).RotateVector(FVector::UpVector);
+			FVector Up = FVector::CrossProduct(FVector::ForwardVector, Down);
+			if (Up.Z < 0.f)
+			{
+				Up = -Up;
+			}
+			// Roof plane: local X along the ridge, local Y down the slope (built from axes, no roll-sign guessing).
+			const FRotator SlopeRot = FRotationMatrix::MakeFromXY(FVector::ForwardVector, Down).Rotator();
+			K.Paint(Tile, HGSurf::Satin);
+			K.Box(Mid, FVector(2 * HL + 2 * OH, SlopeW, 8.f), SlopeRot);
 			int32 i = 0;
 			for (float X = -HL - OH + 12.f; X < HL + OH; X += 24.f, ++i)
 			{
@@ -154,12 +164,12 @@ namespace HGDressingKit
 
 	void BuildStone(FHGMeshKit& K)
 	{
-		K.Paint(FColorL(0.36f, 0.35f, 0.33f), HGSurf::Matte);
+		K.Paint(FColorL(0.24f, 0.235f, 0.22f), HGSurf::Matte);
 		K.Ellipsoid(FVector(0.f, 0.f, 70.f), FVector(150.f, 55.f, 100.f), FRotator(0.f, 0.f, 4.f), 10, 6);
-		K.Paint(FColorL(0.3f, 0.29f, 0.27f));
+		K.Paint(FColorL(0.2f, 0.195f, 0.18f));
 		K.Ellipsoid(FVector(-110.f, 10.f, 30.f), FVector(60.f, 45.f, 45.f), FRotator(10.f, 20.f, 0.f), 8, 5);
 		K.Ellipsoid(FVector(120.f, -5.f, 20.f), FVector(55.f, 40.f, 35.f), FRotator(-8.f, 10.f, 0.f), 8, 5);
-		K.Paint(FColorL(0.42f, 0.41f, 0.38f));
+		K.Paint(FColorL(0.3f, 0.29f, 0.27f));
 		K.Box(FVector(0.f, 50.f, 95.f), FVector(220.f, 14.f, 90.f), FRotator(0.f, 0.f, -6.f));   // dressed face
 	}
 
@@ -217,9 +227,20 @@ void AHGDressingProp::BeginPlay()
 	switch (Kind)
 	{
 	case EHGDressingKind::HmongHouse:
+	{
+		// No dry-stone yard wall on a slope steeper than ~12 deg (it would float / bury on the downhill side).
+		FHitResult Hit;
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(HGHouseGround), false, this);
+		const FVector L = GetActorLocation();
+		if (GetWorld()->LineTraceSingleByChannel(Hit, L + FVector(0, 0, 500.f), L - FVector(0, 0, 1500.f), ECC_Visibility, Params)
+			&& Hit.ImpactNormal.Z < 0.978f && (Variant % 3) != 2)
+		{
+			Variant = (Variant % 6) < 3 ? 2 : 5;
+		}
 		Mesh = FHGMeshKit::Cached(*FString::Printf(TEXT("SM_HGHmongHouse_%d"), Variant % 6), [this](FHGMeshKit& K) { BuildHouse(K, Variant % 6); });
 		Cull = 60000.f;
 		break;
+	}
 	case EHGDressingKind::FlagPole:
 		Mesh = FHGMeshKit::Cached(TEXT("SM_HGFlagPoleTall"), [](FHGMeshKit& K) { BuildFlagPole(K); });
 		break;
@@ -249,19 +270,41 @@ void AHGDressingProp::BeginPlay()
 	}
 	if ((Kind == EHGDressingKind::StoneSign || Kind == EHGDressingKind::WoodSign) && !SignText.IsEmpty())
 	{
-		UTextRenderComponent* T = NewObject<UTextRenderComponent>(this, TEXT("SignText"), RF_Transient);
-		T->SetupAttachment(Root);
-		T->SetHorizontalAlignment(EHTA_Center);
-		T->SetVerticalAlignment(EVRTA_TextCenter);
+		// World-space UMG text: the TextRender distance-field font has no Vietnamese stacked diacritics
+		// (D, O-circumflex-acute, A-circumflex-hook... came out as gaps); UMG's Roboto has them all.
 		const bool bStone = Kind == EHGDressingKind::StoneSign;
-		T->SetRelativeLocation(bStone ? FVector(0.f, 58.f, 98.f) : FVector(0.f, 4.f, 150.f));
-		T->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
-		T->SetWorldSize(bStone ? 30.f : 26.f);
-		T->SetTextRenderColor(bStone ? FColor(150, 18, 12) : FColor(235, 225, 200));
-		T->SetText(SignText);
-		T->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		T->RegisterComponent();
-		AddInstanceComponent(T);
+		UWidgetComponent* WC = NewObject<UWidgetComponent>(this, TEXT("SignText"), RF_Transient);
+		WC->SetupAttachment(Root);
+		WC->SetWidgetSpace(EWidgetSpace::World);
+		WC->SetDrawSize(FVector2D(1200.f, 220.f));
+		WC->SetPivot(FVector2D(0.5f, 0.5f));
+		WC->SetRelativeLocation(bStone ? FVector(0.f, 58.f, 98.f) : FVector(0.f, 4.f, 150.f));
+		WC->SetRelativeRotation(FRotator(0.f, 90.f, 0.f));
+		WC->SetRelativeScale3D(FVector(1.f, bStone ? 0.17f : 0.2f, bStone ? 0.17f : 0.2f));
+		WC->SetBlendMode(EWidgetBlendMode::Transparent);
+		WC->SetBackgroundColor(FLinearColor::Transparent);
+		WC->SetTwoSided(false);
+		WC->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+		WC->SetCastShadow(false);
+		WC->SetDrawAtDesiredSize(false);
+		WC->SetManuallyRedraw(true);
+		if (UUserWidget* W = CreateWidget<UUserWidget>(GetWorld(), UUserWidget::StaticClass()))
+		{
+			if (!W->WidgetTree)
+			{
+				W->WidgetTree = NewObject<UWidgetTree>(W, TEXT("WidgetTree"), RF_Transient);
+			}
+			UTextBlock* T = W->WidgetTree->ConstructWidget<UTextBlock>(UTextBlock::StaticClass());
+			T->SetText(SignText);
+			T->SetFont(FCoreStyle::GetDefaultFontStyle("Bold", 120));
+			T->SetColorAndOpacity(FSlateColor(bStone ? FLinearColor(0.42f, 0.02f, 0.015f) : FLinearColor(0.78f, 0.72f, 0.58f)));
+			T->SetJustification(ETextJustify::Center);
+			W->WidgetTree->RootWidget = T;
+			WC->SetWidget(W);
+		}
+		WC->RegisterComponent();
+		AddInstanceComponent(WC);
+		WC->RequestRenderUpdate();
 	}
 }
 
@@ -326,7 +369,8 @@ void AHGDressingProp::BuildCornField()
 			}
 			// Only bare landscape (not roads, walls, water), gentle ground, on the terrace treads (2.6 m contour
 			// bands, as in the terrain material's ploughed stripes), clear of the houses.
-			if (!Hit.GetActor() || !Hit.GetActor()->GetClass()->GetName().Contains(TEXT("Landscape")) || Hit.ImpactNormal.Z < 0.8f)
+			if (!Hit.GetActor() || !Hit.GetActor()->GetClass()->GetName().Contains(TEXT("Landscape")) || Hit.ImpactNormal.Z < 0.8f
+				|| Hit.ImpactPoint.Z < MinZ)
 			{
 				continue;
 			}
