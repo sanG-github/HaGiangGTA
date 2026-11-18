@@ -74,6 +74,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Hat;
 
 	UPROPERTY(EditAnywhere, Category = "Movement") float WalkSpeed = 260.f;
+	float LookIgnoreUntil = 0.f;
 	UPROPERTY(EditAnywhere, Category = "Movement") float SprintSpeed = 620.f;
 	UPROPERTY(EditAnywhere, Category = "Movement") float SwimSpeed = 300.f;
 	UPROPERTY(EditAnywhere, Category = "Movement") float SwimSprintSpeed = 480.f;

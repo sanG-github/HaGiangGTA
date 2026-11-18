@@ -514,6 +514,12 @@ def build_set_dressing(scatter, meshes, mats, tag, folder):
     ranges = hg.spawn_mesh("DistantRanges", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantRanges.SM_HG_DistantRanges",
                            (0, 0, 80000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
     ranges.static_mesh_component.set_editor_property("cast_shadow", False)
+    # Scenery only: its auto-generated collision box would enclose the whole map (170..2060 m) and
+    # swallow every ground trace and the PlayerStart.
+    try:
+        unreal.EditorStaticMeshLibrary.remove_collisions(ranges.static_mesh_component.static_mesh)
+    except Exception as exc:
+        hg.warn(f"DistantRanges collision: {exc}")
     origin, extent = ranges.get_actor_bounds(False)
     hg.log(f"DistantRanges bounds: origin {origin} extent {extent}")
     spawn_scatter("Scatter_chevrons", meshes["SM_HG_Chevron"], mats["chevron"], scatter.get("chevrons", []), tag, folder,

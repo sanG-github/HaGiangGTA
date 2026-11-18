@@ -66,6 +66,9 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
 	float LoopRestartDistance = -1.f;
 
+	/** Scripted playtest (-hgplaytest): the auto-drive steers even while the player rides. */
+	bool bAutoDriveWithPlayer = false;
+
 	/**
 	 * Stretch of road (cm along the spline) the AI keeps to: it turns around at these ends instead of the
 	 * road ends. < 0 = no limit. Trucks use it to stay on QL4C (they never take the narrow Ta Lang road).

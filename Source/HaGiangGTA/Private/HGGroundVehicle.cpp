@@ -272,7 +272,7 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 	float Steer = ReadAxis(SteerAction);
 	bool bHandbrake = ReadButton(HandbrakeAction) || (!Controller && bGrounded && !bAutoDrive);
 	const bool bBoost = ReadButton(BoostAction);
-	if (bAutoDrive && !IsPlayerControlled())
+	if (bAutoDrive && (!IsPlayerControlled() || bAutoDriveWithPlayer))
 	{
 		ComputeAutoDriveInput(Dt, Throttle, Steer, bHandbrake);
 	}
@@ -347,7 +347,7 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 void AHGGroundVehicle::PossessedBy(AController* NewController)
 {
 	Super::PossessedBy(NewController);
-	if (bAutoDrive && NewController && NewController->IsPlayerController())
+	if (bAutoDrive && !bAutoDriveWithPlayer && NewController && NewController->IsPlayerController())
 	{
 		StopAutoDrive(); // the player stole it
 	}

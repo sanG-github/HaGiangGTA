@@ -146,6 +146,13 @@ class Graph:
         MEL.connect_material_property(src, src_output, prop)
 
     def finish(self):
+        # The editor adds missing usage flags on the fly; the game does not and renders the default
+        # checker material instead (roads = spline meshes, scatter = instanced static meshes).
+        for flag in ("used_with_instanced_static_meshes", "used_with_spline_meshes"):
+            try:
+                self.mat.set_editor_property(flag, True)
+            except Exception as exc:
+                unreal.log_warning(f"{self.mat.get_name()}.{flag}: {exc}")
         MEL.layout_material_expressions(self.mat)
         MEL.recompile_material(self.mat)
         unreal.EditorAssetLibrary.save_loaded_asset(self.mat)

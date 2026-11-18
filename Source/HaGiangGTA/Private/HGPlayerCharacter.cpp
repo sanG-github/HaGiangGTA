@@ -9,7 +9,9 @@
 #include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HaGiangGTA.h"
 #include "HGInputFactory.h"
@@ -152,6 +154,21 @@ void AHGPlayerCharacter::PawnClientRestart()
 	EnsureInputObjects();
 	Super::PawnClientRestart();
 	HGInput::AddContext(this, OnFootContext, 0);
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		// Third-person limits: looking straight up swings the boom under the character (camera in the
+		// ground, sky only). Start level, slightly looking down the road.
+		if (PC->PlayerCameraManager)
+		{
+			PC->PlayerCameraManager->ViewPitchMin = -70.f;
+			PC->PlayerCameraManager->ViewPitchMax = 30.f;
+		}
+		LookIgnoreUntil = GetWorld()->GetTimeSeconds() + 0.6f;
+		FRotator R = PC->GetControlRotation();
+		R.Pitch = -12.f;
+		R.Roll = 0.f;
+		PC->SetControlRotation(R);
+	}
 }
 
 void AHGPlayerCharacter::UnPossessed()
@@ -184,6 +201,12 @@ void AHGPlayerCharacter::Move(const FInputActionValue& Value)
 void AHGPlayerCharacter::Look(const FInputActionValue& Value)
 {
 	const FVector2D Axis = Value.Get<FVector2D>();
+	// When the window grabs the cursor (startup, focus) macOS reports one huge mouse delta that slams the
+	// camera to its pitch limit (sky-only / ground-only view). Ignore it.
+	if (GetWorld()->GetTimeSeconds() < LookIgnoreUntil || Axis.Size() > 40.f)
+	{
+		return;
+	}
 	AddControllerYawInput(Axis.X);
 	AddControllerPitchInput(-Axis.Y);
 }
