@@ -1,7 +1,11 @@
 #include "HGGroundVehicle.h"
 
 #include "Components/BoxComponent.h"
+#include "Components/SplineComponent.h"
 #include "Engine/World.h"
+#include "GameFramework/Controller.h"
+#include "HGHappyWaterSubsystem.h"
+#include "HGRoadSplineActor.h"
 
 namespace
 {
@@ -49,7 +53,15 @@ bool AHGGroundVehicle::TraceGround(const FVector& From, FHitResult& OutHit) cons
 
 void AHGGroundVehicle::UpdateSpeed(float DeltaSeconds, float Throttle, bool bHandbrake, bool bBoost, const FVector& MoveDir)
 {
-	const float Boost = (bBoost ? BoostMultiplier : 1.f) * SpeedMultiplier;
+	float Nitro = 1.f;
+	if (IsPlayerControlled())
+	{
+		if (const UHGHappyWaterSubsystem* HW = GetWorld()->GetSubsystem<UHGHappyWaterSubsystem>())
+		{
+			Nitro = HW->GetSpeedMultiplier();
+		}
+	}
+	const float Boost = (bBoost ? BoostMultiplier : 1.f) * SpeedMultiplier * Nitro;
 	const float TopSpeed = MaxForwardSpeed * Boost;
 
 	if (Throttle > KINDA_SMALL_NUMBER)
@@ -247,10 +259,24 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 
 	const float Dt = FMath::Min(DeltaSeconds, 1.f / 20.f);
 
-	const float Throttle = ReadAxis(ThrottleAction);
-	const float Steer = ReadAxis(SteerAction);
-	const bool bHandbrake = ReadButton(HandbrakeAction) || (!Controller && bGrounded);
+	float Throttle = ReadAxis(ThrottleAction);
+	float Steer = ReadAxis(SteerAction);
+	bool bHandbrake = ReadButton(HandbrakeAction) || (!Controller && bGrounded && !bAutoDrive);
 	const bool bBoost = ReadButton(BoostAction);
+	if (bAutoDrive && !IsPlayerControlled())
+	{
+		ComputeAutoDriveInput(Dt, Throttle, Steer, bHandbrake);
+	}
+	else if (IsPlayerControlled())
+	{
+		if (const UHGHappyWaterSubsystem* HW = GetWorld()->GetSubsystem<UHGHappyWaterSubsystem>())
+		{
+			if (HW->AreControlsInverted())
+			{
+				Steer = -Steer; // rượu ngô: the road is spinning
+			}
+		}
+	}
 	LastThrottle = Throttle;
 
 	const float SpeedAlpha = FMath::Clamp(FMath::Abs(Speed) / 600.f, 0.f, 1.f);
@@ -281,4 +307,171 @@ void AHGGroundVehicle::Tick(float DeltaSeconds)
 	{
 		ResetToSpawn();
 	}
+}
+
+// ---------------------------------------------------------------------------
+// AI auto-drive
+// ---------------------------------------------------------------------------
+
+void AHGGroundVehicle::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	if (bAutoDrive && NewController && NewController->IsPlayerController())
+	{
+		StopAutoDrive(); // the player stole it
+	}
+}
+
+void AHGGroundVehicle::StartAutoDrive(AHGRoadSplineActor* Road, float DistanceCm, int32 Direction, float CruiseKmh, float LaneOffsetCm)
+{
+	if (!Road || !Road->GetSpline())
+	{
+		return;
+	}
+	USplineComponent* Spline = Road->GetSpline();
+	AutoDriveRoad = Road;
+	AutoDriveDirection = Direction >= 0 ? 1 : -1;
+	AutoDriveCruise = CruiseKmh / 0.036f;
+	AutoDriveLane = LaneOffsetCm;
+	RoadDistance = FMath::Clamp(DistanceCm, 0.f, Spline->GetSplineLength());
+
+	const FVector Tangent = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World) * float(AutoDriveDirection);
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Tangent).GetSafeNormal();
+	const FVector Loc = Spline->GetLocationAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World)
+		+ Right * AutoDriveLane + FVector(0.f, 0.f, Collision->GetScaledBoxExtent().Z + GroundClearance + 20.f);
+	const FRotator Rot(0.f, Tangent.Rotation().Yaw, 0.f);
+	SetActorLocationAndRotation(Loc, Rot, false, nullptr, ETeleportType::TeleportPhysics);
+	HeadingYaw = Rot.Yaw;
+	Speed = AutoDriveCruise * 0.5f;
+	bGrounded = false;
+	VerticalVelocity = 0.f;
+	SpawnTransform = GetActorTransform();
+
+	const bool bWas = bAutoDrive;
+	bAutoDrive = true;
+	if (!bWas)
+	{
+		OnAutoDriveChanged(true);
+	}
+}
+
+void AHGGroundVehicle::StopAutoDrive()
+{
+	if (!bAutoDrive)
+	{
+		return;
+	}
+	bAutoDrive = false;
+	AutoDriveLeader = nullptr;
+	OnAutoDriveChanged(false);
+}
+
+float AHGGroundVehicle::GetMinRadiusAhead(float LookCm) const
+{
+	if (!AutoDriveRoad)
+	{
+		return BIG_NUMBER;
+	}
+	const USplineComponent* Spline = AutoDriveRoad->GetSpline();
+	const float Len = Spline->GetSplineLength();
+	float MinRadius = BIG_NUMBER;
+	const float Step = 600.f;
+	FVector Prev = Spline->GetDirectionAtDistanceAlongSpline(RoadDistance, ESplineCoordinateSpace::World);
+	for (float D = Step; D <= LookCm; D += Step)
+	{
+		const float At = FMath::Clamp(RoadDistance + D * AutoDriveDirection, 0.f, Len);
+		const FVector Dir = Spline->GetDirectionAtDistanceAlongSpline(At, ESplineCoordinateSpace::World);
+		const float Angle = FMath::Acos(FMath::Clamp(FVector::DotProduct(Prev.GetSafeNormal2D(), Dir.GetSafeNormal2D()), -1.f, 1.f));
+		if (Angle > KINDA_SMALL_NUMBER)
+		{
+			MinRadius = FMath::Min(MinRadius, Step / Angle);
+		}
+		Prev = Dir;
+	}
+	return MinRadius;
+}
+
+void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrottle, float& OutSteer, bool& OutHandbrake)
+{
+	OutThrottle = 0.f;
+	OutSteer = 0.f;
+	OutHandbrake = false;
+	if (!AutoDriveRoad)
+	{
+		return;
+	}
+	USplineComponent* Spline = AutoDriveRoad->GetSpline();
+	const float Len = Spline->GetSplineLength();
+
+	// Track our distance along the road: integrate, re-sync to the true closest point a few times a second.
+	RoadDistance += Speed * DeltaSeconds * AutoDriveDirection;
+	RoadResyncTimer -= DeltaSeconds;
+	if (RoadResyncTimer <= 0.f)
+	{
+		RoadResyncTimer = 0.25f;
+		RoadDistance = AutoDriveRoad->GetDistanceAlongRoad(GetActorLocation());
+	}
+
+	// End of the road: loop or turn around.
+	const bool bAtEnd = (AutoDriveDirection > 0 && RoadDistance > Len - 1500.f) || (AutoDriveDirection < 0 && RoadDistance < 1500.f);
+	if (bAtEnd)
+	{
+		if (LoopRestartDistance >= 0.f)
+		{
+			StartAutoDrive(AutoDriveRoad, LoopRestartDistance, AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
+		}
+		else
+		{
+			StartAutoDrive(AutoDriveRoad, RoadDistance, -AutoDriveDirection, AutoDriveCruise * 0.036f, AutoDriveLane);
+		}
+		return;
+	}
+
+	// Pure pursuit toward a point ahead on our lane.
+	const float Look = AutoDriveLookahead + FMath::Abs(Speed) * 0.35f;
+	const float TargetD = FMath::Clamp(RoadDistance + Look * AutoDriveDirection, 0.f, Len);
+	const FVector Tangent = Spline->GetDirectionAtDistanceAlongSpline(TargetD, ESplineCoordinateSpace::World) * float(AutoDriveDirection);
+	const FVector Right = FVector::CrossProduct(FVector::UpVector, Tangent).GetSafeNormal();
+	const FVector Target = Spline->GetLocationAtDistanceAlongSpline(TargetD, ESplineCoordinateSpace::World) + Right * AutoDriveLane;
+	const FVector ToTarget = (Target - GetActorLocation()).GetSafeNormal2D();
+	const float DesiredYaw = ToTarget.Rotation().Yaw;
+	const float YawError = FRotator::NormalizeAxis(DesiredYaw - HeadingYaw);
+	OutSteer = FMath::Clamp(YawError / 22.f, -1.f, 1.f);
+
+	// Speed: cruise, slowed for curves (v = sqrt(a * R)) and by the vehicle ahead.
+	float TargetSpeed = AutoDriveCruise;
+	const float Radius = GetMinRadiusAhead(3600.f);
+	TargetSpeed = FMath::Min(TargetSpeed, FMath::Sqrt(AutoDriveLateralAccel * Radius));
+
+	if (const AHGGroundVehicle* Leader = AutoDriveLeader.Get())
+	{
+		if (Leader->IsAutoDriving() && Leader->GetAutoDriveDirection() == AutoDriveDirection)
+		{
+			const float Gap = (Leader->GetRoadDistance() - RoadDistance) * AutoDriveDirection;
+			const float Desired = ConvoyGap + FMath::Abs(Speed) * 0.5f;
+			if (Gap > 0.f)
+			{
+				// Close up when far behind, back off when too close.
+				TargetSpeed = FMath::Clamp(Leader->GetSpeed() + (Gap - Desired) * 0.8f, 0.f, AutoDriveCruise * 1.25f);
+			}
+		}
+	}
+
+	// Anything (player, cows, other traffic) right in front: brake.
+	FHitResult Hit;
+	const FVector Fwd = GetActorForwardVector();
+	const FVector Start = GetActorLocation() + Fwd * (Collision->GetScaledBoxExtent().X + 50.f);
+	const float Probe = 600.f + FMath::Abs(Speed) * 0.9f;
+	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGAutoDriveProbe), false, this);
+	if (GetWorld()->SweepSingleByObjectType(Hit, Start, Start + Fwd * Probe, FQuat::Identity,
+		FCollisionObjectQueryParams(ECC_Pawn), FCollisionShape::MakeSphere(90.f), Params))
+	{
+		const float Block = FMath::Clamp(Hit.Distance / Probe, 0.f, 1.f);
+		TargetSpeed = FMath::Min(TargetSpeed, AutoDriveCruise * Block * Block);
+		OnAutoDriveObstacle(Hit.GetActor());
+	}
+
+	const float SpeedError = TargetSpeed - Speed;
+	OutThrottle = FMath::Clamp(SpeedError / 300.f, -1.f, 1.f);
+	OutHandbrake = TargetSpeed < 30.f && FMath::Abs(Speed) < 60.f;
 }

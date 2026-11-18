@@ -7,6 +7,9 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "GameFramework/Controller.h"
+#include "Kismet/GameplayStatics.h"
+#include "Sound/SoundBase.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -14,7 +17,7 @@ namespace
 {
 	const FName ColorParam(TEXT("Color"));
 
-	enum class EPartColor : uint8 { Body, Black, Chrome, Shirt, Skin, Backpack, Nylon };
+	enum class EPartColor : uint8 { Body, Black, Chrome, Shirt, Skin, Backpack, Nylon, Star, HiVis };
 
 	FLinearColor PartColor(EPartColor C, const FLinearColor& Body)
 	{
@@ -27,11 +30,13 @@ namespace
 		case EPartColor::Skin: return FLinearColor(0.85f, 0.62f, 0.5f);
 		case EPartColor::Backpack: return FLinearColor(0.1f, 0.25f, 0.6f);
 		case EPartColor::Nylon: return FLinearColor(0.85f, 0.88f, 0.9f);
+		case EPartColor::Star: return FLinearColor(1.f, 0.82f, 0.f);
+		case EPartColor::HiVis: return FLinearColor(0.75f, 0.95f, 0.05f);
 		}
 		return FLinearColor::White;
 	}
 
-	const FName PartColorTag[] = { TEXT("C_Body"), TEXT("C_Black"), TEXT("C_Chrome"), TEXT("C_Shirt"), TEXT("C_Skin"), TEXT("C_Backpack"), TEXT("C_Nylon") };
+	const FName PartColorTag[] = { TEXT("C_Body"), TEXT("C_Black"), TEXT("C_Chrome"), TEXT("C_Shirt"), TEXT("C_Skin"), TEXT("C_Backpack"), TEXT("C_Nylon"), TEXT("C_Star"), TEXT("C_HiVis") };
 }
 
 AHGBikePawn::AHGBikePawn()
@@ -136,6 +141,27 @@ AHGBikePawn::AHGBikePawn()
 	AddPassengerPart(TEXT("P_Thighs"), Cube, FVector(16.f, 0.f, 4.f), FRotator::ZeroRotator, FVector(36.f, 34.f, 14.f), EPartColor::Black);
 	AddPassengerPart(TEXT("P_Backpack"), Cube, FVector(-24.f, 0.f, 36.f), FRotator(-6.f, 0.f, 0.f), FVector(20.f, 34.f, 48.f), EPartColor::Backpack);
 	AddPassengerPart(TEXT("P_RainCover"), Cube, FVector(-27.f, 0.f, 37.f), FRotator(-6.f, 0.f, 0.f), FVector(16.f, 37.f, 52.f), EPartColor::Nylon);
+	// Red "co do sao vang" T-shirt: the yellow star shows on the chest (the backpack hides the back).
+	AddPassengerPart(TEXT("P_Star"), Cyl, FVector(17.f, 0.f, 42.f), FRotator(90.f, 0.f, 0.f), FVector(14.f, 14.f, 1.f), EPartColor::Star);
+	PassengerArmL = Tag(AddPart(TEXT("P_ArmL"), PassengerRoot, Cyl, FVector(8.f, -22.f, 50.f), FRotator(-60.f, 0.f, 0.f), FVector(9.f, 9.f, 55.f)), EPartColor::Skin);
+	PassengerArmR = Tag(AddPart(TEXT("P_ArmR"), PassengerRoot, Cyl, FVector(8.f, 22.f, 50.f), FRotator(-60.f, 0.f, 0.f), FVector(9.f, 9.f, 55.f)), EPartColor::Skin);
+	PassengerParts.Add(PassengerArmL);
+	PassengerParts.Add(PassengerArmR);
+
+	// NPC Easy Rider (tour guide) in a reflective vest; hidden while the player rides.
+	auto AddRiderPart = [&](FName Name, UStaticMesh* Mesh, const FVector& Loc, const FRotator& Rot, const FVector& Size, EPartColor Color)
+	{
+		UStaticMeshComponent* C = Tag(AddPart(Name, DriverSeat, Mesh, Loc, Rot, Size), Color);
+		C->SetVisibility(false);
+		RiderParts.Add(C);
+	};
+	AddRiderPart(TEXT("R_Torso"), Cyl, FVector(0.f, 0.f, 30.f), FRotator(12.f, 0.f, 0.f), FVector(42.f, 34.f, 60.f), EPartColor::HiVis);
+	AddRiderPart(TEXT("R_Head"), Sph, FVector(6.f, 0.f, 74.f), FRotator::ZeroRotator, FVector(24.f, 22.f, 26.f), EPartColor::Skin);
+	AddRiderPart(TEXT("R_Helmet"), Sph, FVector(6.f, 0.f, 82.f), FRotator::ZeroRotator, FVector(29.f, 27.f, 20.f), EPartColor::Black);
+	AddRiderPart(TEXT("R_Legs"), Cube, FVector(18.f, 0.f, 2.f), FRotator::ZeroRotator, FVector(40.f, 36.f, 14.f), EPartColor::Black);
+	AddRiderPart(TEXT("R_Arms"), Cyl, FVector(30.f, 0.f, 44.f), FRotator(70.f, 0.f, 90.f), FVector(9.f, 9.f, 62.f), EPartColor::HiVis);
+
+	ScreamSound = TSoftObjectPtr<USoundBase>(FSoftObjectPath(TEXT("/Game/HaGiang/Generated/Audio/SW_HG_Scream.SW_HG_Scream")));
 }
 
 UStaticMeshComponent* AHGBikePawn::AddPart(FName Name, USceneComponent* Parent, UStaticMesh* Mesh,
@@ -168,6 +194,99 @@ void AHGBikePawn::BeginPlay()
 	Super::BeginPlay();
 	ApplyColors();
 	SetHasPassenger(bHasPassenger);
+	SetNpcRiderVisible(IsAutoDriving());
+	LoadedScream = ScreamSound.LoadSynchronous();
+}
+
+void AHGBikePawn::SetBodyColor(const FLinearColor& Color)
+{
+	BodyColor = Color;
+	if (HasActorBegunPlay())
+	{
+		ApplyColors();
+	}
+}
+
+void AHGBikePawn::SetNpcRiderVisible(bool bVisible)
+{
+	for (UStaticMeshComponent* Part : RiderParts)
+	{
+		if (Part)
+		{
+			Part->SetVisibility(bVisible);
+		}
+	}
+}
+
+void AHGBikePawn::OnAutoDriveChanged(bool bNowAutoDriving)
+{
+	SetNpcRiderVisible(bNowAutoDriving);
+}
+
+void AHGBikePawn::PossessedBy(AController* NewController)
+{
+	Super::PossessedBy(NewController);
+	SetNpcRiderVisible(false); // the player is riding now
+}
+
+void AHGBikePawn::Scream()
+{
+	if (!bHasPassenger || ScreamCooldown > 0.f)
+	{
+		return;
+	}
+	ScreamCooldown = 7.f;
+	ScreamTime = 1.6f;
+	if (LoadedScream)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, LoadedScream, PassengerRoot->GetComponentLocation(),
+			FMath::FRandRange(0.85f, 1.f), FMath::FRandRange(0.92f, 1.1f));
+	}
+}
+
+void AHGBikePawn::UpdateScreaming(float DeltaSeconds)
+{
+	ScreamCooldown = FMath::Max(0.f, ScreamCooldown - DeltaSeconds);
+	ScreamTime = FMath::Max(0.f, ScreamTime - DeltaSeconds);
+	if (!bHasPassenger)
+	{
+		return;
+	}
+
+	// Airborne for a moment -> scream.
+	AirTime = IsGrounded() ? 0.f : AirTime + DeltaSeconds;
+	if (AirTime > 0.45f)
+	{
+		Scream();
+	}
+
+	// Fast along a drop-off -> scream. Checked a few times a second, player bikes only.
+	CliffCheckTimer -= DeltaSeconds;
+	if (CliffCheckTimer <= 0.f && IsPlayerControlled() && FMath::Abs(GetSpeed()) > 1100.f)
+	{
+		CliffCheckTimer = 0.3f;
+		const FVector Loc = GetActorLocation();
+		const FVector Right = GetActorRightVector().GetSafeNormal2D();
+		FCollisionQueryParams Params(SCENE_QUERY_STAT(HGCliffCheck), false, this);
+		for (const float Side : { -1.f, 1.f })
+		{
+			const FVector Probe = Loc + Right * Side * 650.f;
+			FHitResult Hit;
+			const bool bHit = GetWorld()->LineTraceSingleByChannel(Hit, Probe + FVector(0, 0, 200.f), Probe - FVector(0, 0, 6000.f), ECC_Visibility, Params);
+			if (!bHit || Hit.ImpactPoint.Z < Loc.Z - 2500.f)
+			{
+				Scream();
+				break;
+			}
+		}
+	}
+
+	// Arms up while screaming.
+	const float Up = ScreamTime > 0.f ? 1.f : 0.f;
+	const float ArmPitch = FMath::Lerp(-60.f, 160.f, Up);
+	const float Shake = Up * FMath::Sin(GetWorld()->GetTimeSeconds() * 22.f) * 8.f;
+	PassengerArmL->SetRelativeRotation(FMath::RInterpTo(PassengerArmL->GetRelativeRotation(), FRotator(ArmPitch, 0.f, -15.f * Up + Shake), DeltaSeconds, 10.f));
+	PassengerArmR->SetRelativeRotation(FMath::RInterpTo(PassengerArmR->GetRelativeRotation(), FRotator(ArmPitch, 0.f, 15.f * Up - Shake), DeltaSeconds, 10.f));
 }
 
 void AHGBikePawn::ApplyColors()
@@ -243,4 +362,5 @@ void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
 		PassengerRoot->SetRelativeRotation(FRotator(SwayAngle.Y + Bob, 0.f, SwayAngle.X));
 	}
 	PrevSpeed = CurSpeed;
+	UpdateScreaming(DeltaSeconds);
 }

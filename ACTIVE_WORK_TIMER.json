@@ -1,12 +1,12 @@
 {
-  "active_work_seconds": 2114,
+  "active_work_seconds": 2532,
   "cooldown_wait_seconds": 0,
-  "state": "stopped",
-  "segment_started_at": null,
-  "current_branch": "chore/ue-5.8",
+  "state": "running",
+  "segment_started_at": 1794976812,
+  "current_branch": "checkpoint/04-12hr-living-world",
   "current_checkpoint": "cp-04-12hr",
-  "last_completed_step": "retargeted to UE 5.8 (branch chore/ue-5.8)",
-  "next_pending_step": "UE 5.8 install finishing -> compile + fix",
+  "last_completed_step": "CP04 python",
+  "next_pending_step": "commit CP04",
   "pause_reason": null,
   "history": [
     {
@@ -108,6 +108,33 @@
       "t": 1794976081,
       "event": "stop",
       "active": 2114
+    },
+    {
+      "t": 1794976394,
+      "event": "start",
+      "active": 2114,
+      "checkpoint": "cp-04-12hr"
+    },
+    {
+      "t": 1794976432,
+      "event": "step",
+      "active": 2152,
+      "done": "CP04 sfx",
+      "next": "CP04 C++ auto-drive"
+    },
+    {
+      "t": 1794976746,
+      "event": "step",
+      "active": 2466,
+      "done": "CP04 C++",
+      "next": "CP04 python"
+    },
+    {
+      "t": 1794976812,
+      "event": "step",
+      "active": 2532,
+      "done": "CP04 python",
+      "next": "commit CP04"
     }
   ]
 }

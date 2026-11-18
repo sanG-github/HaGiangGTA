@@ -4,6 +4,8 @@
 #include "HGVehicleBase.h"
 #include "HGGroundVehicle.generated.h"
 
+class AHGRoadSplineActor;
+
 /**
  * Arcade, trace-based ground vehicle (no Chaos setup): follows slopes,
  * gravity along grades, launches off sharp crests, lands, slides along walls.
@@ -30,15 +32,70 @@ public:
 	/** Heading change rate, deg/s (for lean / passenger sway). */
 	float GetYawRate() const { return YawRateDeg; }
 
-	/** Multiplier on top speed and acceleration (Happy Water nitro, CP04). */
+	/** Multiplier on top speed and acceleration (Happy Water nitro is applied on top for the player). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tuning")
 	float SpeedMultiplier = 1.f;
+
+	virtual void PossessedBy(AController* NewController) override;
+
+	// ---- AI auto-drive along the road spline (convoys, trucks) ----
+
+	/**
+	 * Place the vehicle on the road at DistanceCm and drive it along the spline.
+	 * Direction +1 = increasing distance (up the pass), -1 = decreasing. LaneOffsetCm > 0 = right of travel.
+	 */
+	UFUNCTION(BlueprintCallable, Category = "HaGiang|AI")
+	void StartAutoDrive(AHGRoadSplineActor* Road, float DistanceCm, int32 Direction, float CruiseKmh, float LaneOffsetCm);
+
+	UFUNCTION(BlueprintCallable, Category = "HaGiang|AI")
+	void StopAutoDrive();
+
+	/** Follow this vehicle at a safe gap (convoy). */
+	UFUNCTION(BlueprintCallable, Category = "HaGiang|AI")
+	void SetAutoDriveLeader(AHGGroundVehicle* Leader) { AutoDriveLeader = Leader; }
+
+	UFUNCTION(BlueprintPure, Category = "HaGiang|AI")
+	bool IsAutoDriving() const { return bAutoDrive; }
+
+	UFUNCTION(BlueprintPure, Category = "HaGiang|AI")
+	float GetRoadDistance() const { return RoadDistance; }
+
+	int32 GetAutoDriveDirection() const { return AutoDriveDirection; }
+
+	/** When the AI reaches a road end it teleports here (cm along the spline); <0 = turn around. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "AI")
+	float LoopRestartDistance = -1.f;
 
 protected:
 	virtual void BeginPlay() override;
 
 	/** Hook for cosmetic animation after movement (lean, wheels...). */
 	virtual void UpdateVisuals(float DeltaSeconds, float Steer) {}
+
+	/** Called when auto-drive starts / stops (show or hide the NPC rider). */
+	virtual void OnAutoDriveChanged(bool bNowAutoDriving) {}
+
+	/** AI: throttle / steer / brake toward the road ahead. */
+	virtual void ComputeAutoDriveInput(float DeltaSeconds, float& OutThrottle, float& OutSteer, bool& OutHandbrake);
+
+	/** AI saw something blocking the lane (trucks honk). */
+	virtual void OnAutoDriveObstacle(AActor* Obstacle) {}
+
+	/** Tightest radius (cm) of the road in the next LookCm, for speed limits and blind-curve horns. */
+	float GetMinRadiusAhead(float LookCm) const;
+
+	UPROPERTY(EditAnywhere, Category = "AI") float AutoDriveLateralAccel = 380.f;   // cm/s^2 allowed in curves
+	UPROPERTY(EditAnywhere, Category = "AI") float AutoDriveLookahead = 1300.f;
+	UPROPERTY(EditAnywhere, Category = "AI") float ConvoyGap = 1000.f;
+
+	UPROPERTY(Transient) bool bAutoDrive = false;
+	UPROPERTY(Transient) TObjectPtr<AHGRoadSplineActor> AutoDriveRoad;
+	UPROPERTY(Transient) TWeakObjectPtr<AHGGroundVehicle> AutoDriveLeader;
+	float AutoDriveCruise = 1200.f;   // cm/s
+	float AutoDriveLane = 180.f;
+	int32 AutoDriveDirection = 1;
+	float RoadDistance = 0.f;
+	float RoadResyncTimer = 0.f;
 
 	// ---- Tuning (cm, seconds, degrees) ----
 	UPROPERTY(EditAnywhere, Category = "Tuning") float MaxForwardSpeed = 2800.f;      // ~100 km/h
