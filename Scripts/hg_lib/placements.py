@@ -411,7 +411,7 @@ def parked_bikes(ctx, road_m, count=5, pad=None):
         for side in (1, -1):
             for lat in (hw + 1.4, hw + 2.0, hw + 2.7, hw + 3.5):
                 x, y = x0 + rx * side * lat * 100, y0 + ry * side * lat * 100
-                why = ctx.ground_ok(x, y, max_slope=17.0, foot_cm=100.0, ref_z=z0, max_dz=140.0, road_clear_cm=100.0)
+                why = ctx.ground_ok(x, y, max_slope=15.0, foot_cm=150.0, ref_z=z0, max_dz=140.0, road_clear_cm=100.0)
                 if why is None:
                     yaw = math.degrees(math.atan2(fy, fx)) + (70.0 if side > 0 else -70.0)
                     cands.append((abs(along) + 0.3 * lat, x, y, yaw))
@@ -421,7 +421,7 @@ def parked_bikes(ctx, road_m, count=5, pad=None):
         for i in range(-10, 11):
             for j in range(-10, 11):
                 x, y = px + i * 120.0, py + j * 120.0
-                if ctx.ground_ok(x, y, max_slope=17.0, foot_cm=100.0, ref_z=pz, max_dz=100.0, road_clear_cm=100.0) is None:
+                if ctx.ground_ok(x, y, max_slope=15.0, foot_cm=150.0, ref_z=pz, max_dz=100.0, road_clear_cm=100.0) is None:
                     rm = road.closest(x, y)[0]
                     rx_, ry_ = road.frame(rm)[:2]
                     yaw = math.degrees(math.atan2(ry_ - y, rx_ - x))      # nose to the road

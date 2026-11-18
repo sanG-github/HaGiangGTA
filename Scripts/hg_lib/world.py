@@ -113,7 +113,17 @@ def build_road(layout, material, tag, folder, strip_mesh=None, concrete=None):
     if concrete is not None and "concrete_from_m" in road:
         actor.set_editor_property("secondary_material", concrete)
         actor.set_editor_property("secondary_width", road["concrete_half_width_cm"] * 2.0)
-        actor.set_editor_property("secondary_from_distance", road["concrete_from_m"] * 100.0)
+        # Measure where the concrete starts on the UE spline itself (its length differs slightly from
+        # the generator's polyline length).
+        acc, prev, start = 0.0, None, road["points_cm"][-1]
+        for p in road["points_cm"]:
+            if prev is not None:
+                acc += math.dist(prev[:2], p[:2]) / 100.0
+            if acc >= road["concrete_from_m"]:
+                start = p
+                break
+            prev = p
+        concrete_flag = start
     offset = ROAD_MESH_OFFSET_CM
     if strip_mesh is not None:
         actor.set_editor_property("road_mesh", strip_mesh)
@@ -121,6 +131,10 @@ def build_road(layout, material, tag, folder, strip_mesh=None, concrete=None):
         offset += 50.0
     pts = [unreal.Vector(p[0], p[1], p[2] + offset) for p in road["points_cm"]]
     actor.set_road_points(pts)
+    if concrete is not None and "concrete_from_m" in road:
+        d = actor.get_distance_along_road(unreal.Vector(*concrete_flag))
+        actor.set_editor_property("secondary_from_distance", d)
+        hg.log(f"Concrete Ta Lang road from {d / 100.0:.0f} m on the spline (layout {road['concrete_from_m']:.0f} m)")
     actor.rebuild_road_meshes()
     hg.log(f"Road: {len(pts)} points, {road['length_m'] / 1000:.2f} km")
     # QL4C continuing beyond the route to the map edge (scenery; AI/minimap use the longest road).

@@ -306,7 +306,9 @@ def generate():
     X, Y = np.meshgrid(xs, ys)
     cheb = np.maximum(np.abs(X - PATCH_CENTER[0]), np.abs(Y - PATCH_CENTER[1]))
     ring = (cheb > PATCH_CORE) & (cheb < PATCH_CORE + PATCH_BAND)
-    patch_offset = float(np.median((height - patch)[ring]))
+    # Real altitude (no offset): the HUD location card and the altimeter then agree (986 m at the viewpoint);
+    # the blend band absorbs the difference to the surrounding frame terrain.
+    patch_offset = 0.0
     wpatch = 1.0 - proc.smoothstep(PATCH_CORE, PATCH_CORE + PATCH_BAND, cheb)
     height = (height * (1 - wpatch) + (patch + patch_offset) * wpatch).astype(np.float32)
     del patch, ring, X, Y
@@ -458,6 +460,13 @@ def generate():
     poly = np.vstack([p for _, p in pieces])
     poly = proc.catmull_rom(poly[np.r_[True, np.linalg.norm(np.diff(poly, axis=0), axis=1) > 0.5]], step=2.0)
     road_xy, road_s = proc.resample(poly, 2.0)
+    # OSM keeps hairpins as sharp polyline corners: round them to a drivable radius (~8 m) with a
+    # light Gaussian along the line (endpoints pinned), then resample evenly.
+    k_ = np.exp(-0.5 * (np.arange(-6, 7) / 2.5) ** 2); k_ /= k_.sum()
+    for _ in range(2):
+        pad_ = np.vstack([np.repeat(road_xy[:1], 6, 0), road_xy, np.repeat(road_xy[-1:], 6, 0)])
+        road_xy = np.stack([np.convolve(pad_[:, 0], k_, "valid"), np.convolve(pad_[:, 1], k_, "valid")], 1)
+    road_xy, road_s = proc.resample(road_xy, 2.0)
     piece_len, acc = {}, 0.0
     for name, p in pieces:
         acc += float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1)))
@@ -479,7 +488,7 @@ def generate():
     def stub_z(p):
         return proc.smooth_1d(proc.smooth_1d(bilinear(height, p), 41), 21).astype(np.float32)
 
-    carve = [(road_xy, road_z, np.where(road_s >= concrete_from, CONCRETE_HALF_WIDTH_M, ROAD_HALF_WIDTH_M))]
+    carve = []
     stubs = []
     for st in (stub_south, stub_north):
         if len(st) > 3:
@@ -487,6 +496,8 @@ def generate():
             sz = stub_z(st)
             stubs.append((st, sz))
             carve.append((st, sz, np.full(len(st), ROAD_HALF_WIDTH_M)))
+    # Main route carved last: where a QL4C stub crosses it, the route's levels win.
+    carve.append((road_xy, road_z, np.where(road_s >= concrete_from, CONCRETE_HALF_WIDTH_M, ROAD_HALF_WIDTH_M)))
     for poly_, zz, hw in carve:
         d, v = polyline_distance(poly_, zz, 120.0)
         _, hwv = polyline_distance(poly_, hw.astype(np.float32), 120.0)
@@ -583,8 +594,9 @@ def generate():
     def cm3(x, y, z_):
         return [round(float(x) * 100.0, 1), round(float(y) * 100.0, 1), round(float(z_) * 100.0, 1)]
 
-    road_out = [cm3(road_xy[i, 0], road_xy[i, 1], road_z[i]) for i in range(0, len(road_xy), 5)]
-    if (len(road_xy) - 1) % 5:
+    # Every 4 m: coarser output collapses the 8 m-radius hairpins into corners (spline + AI).
+    road_out = [cm3(road_xy[i, 0], road_xy[i, 1], road_z[i]) for i in range(0, len(road_xy), 2)]
+    if (len(road_xy) - 1) % 2:
         road_out.append(cm3(road_xy[-1, 0], road_xy[-1, 1], road_z[-1]))
 
     # Water bodies: rotated planes along the reservoir (each ~260 m), one below the dam.
@@ -627,7 +639,7 @@ def generate():
                  "concrete_half_width_cm": CONCRETE_HALF_WIDTH_M * 100.0, "concrete_from_m": float(concrete_from),
                  "points_cm": road_out,
                  "sections_m": {k_: float(v) for k_, v in piece_len.items()},
-                 "stubs_cm": [[cm3(p[0], p[1], zz) for p, zz in zip(st[::5], sz[::5])] for st, sz in stubs]},
+                 "stubs_cm": [[cm3(p[0], p[1], zz) for p, zz in zip(st[::2], sz[::2])] for st, sz in stubs]},
         "viewpoints": {
             "doc_tham_ma": {"name": "DOC THAM MA", "altitude_m": round(real_alt["doc_tham_ma"]),
                             "location_cm": cm3(*vp1_xy, vp1_z)},

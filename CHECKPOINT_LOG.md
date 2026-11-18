@@ -218,3 +218,10 @@ Goal (user): "as we focus on only some places, make them exactly as much as poss
 - Landmarks: Youth Volunteers monument, Panorama cafe + name stone + drink stall, low stone walls / partial
   Mom Da fence, Tham Ma coffee shop + Hmong pack horses (`AHGCowActor::bHorse`), dock ticket booth + cafe deck,
   peach blossom near the hamlets.
+- Gameplay pass (second agent, merged `cecb434`): `Scripts/Tools/validate_layout.py` offline checker (42 FAIL ->
+  0 FAIL), `Scripts/hg_lib/placements.py` shared placement math, lane-keeping AI (Stanley) for convoys / trucks /
+  police, trucks kept off the Ta Lang concrete road, 7 convoys at the three viewpoints, boats on navigable water,
+  police spawn >= 150 m away, helicopter terrain probing, speed-zoomed minimap with north marker.
+- Data fixes after the merge: road output every 4 m with hairpins rounded, main route carved after the QL4C stubs,
+  Tham Ma patch at real altitude, concrete start measured on the UE spline. Final verification build (M1 Pro,
+  1600x900, CP05): 82-85 FPS; validator 106 checks, 0 FAIL, 4 WARN (data notes).
