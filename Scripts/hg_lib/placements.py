@@ -904,9 +904,12 @@ def vehicle_spawns(ctx):
         x, y, _ = b["location_cm"]
         m = ctx.road.closest(x, y)[0]
         spot = None
-        for cand in parked_bikes(ctx, m, count=4):
-            if all(math.hypot(cand[0] - t[0], cand[1] - t[1]) > 250.0 for t in taken):
-                spot = cand
+        for near in (m, m - 60.0, m + 60.0, m - 120.0, m + 120.0):   # nothing flat here: try a little further on
+            for cand in parked_bikes(ctx, near, count=4):
+                if all(math.hypot(cand[0] - t[0], cand[1] - t[1]) > 250.0 for t in taken):
+                    spot = cand
+                    break
+            if spot:
                 break
         if spot is None:
             bikes.append({"location_cm": (x, y, ctx.terrain.z(x, y) + 60.0), "yaw": b["yaw"]})

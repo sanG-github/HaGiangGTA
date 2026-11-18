@@ -9,6 +9,8 @@
 #include "GameFramework/PlayerController.h"
 #include "HGCowActor.h"
 #include "HGGroundVehicle.h"
+#include "HGMissionSubsystem.h"
+#include "NhoQueBoatPawn.h"
 #include "HGHappyWaterPickup.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGPlayerCharacter.h"
@@ -112,6 +114,13 @@ void UHGGtaHudWidget::CacheRoad()
 		Roads.Add(*It);
 	}
 	Roads.Sort([](const AHGRoadSplineActor& A, const AHGRoadSplineActor& B) { return A.GetRoadLength() > B.GetRoadLength(); });
+	if (const TArray<FVector>* River = ANhoQueBoatPawn::FindCruiseLine(GetWorld()))
+	{
+		for (const FVector& P : *River)
+		{
+			RiverLine.Add(FVector2D(P.X, P.Y));
+		}
+	}
 	for (const AHGRoadSplineActor* Road : Roads)
 	{
 		const USplineComponent* Spline = Road->GetSpline();
@@ -211,6 +220,18 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	const float WantRange = FMath::GetMappedRangeValueClamped(FVector2D(25.f, 90.f), FVector2D(35000.f, 75000.f), SpeedKmh);
 	MapRange = FMath::FInterpTo(MapRange, WantRange, InDeltaTime, 1.5f);
 
+	if (const UHGMissionSubsystem* M = World->GetSubsystem<UHGMissionSubsystem>())
+	{
+		Objective = M->GetObjective();
+		MissionBanner = M->GetBanner();
+		MissionBannerTime = M->GetBannerTime();
+		FlashTime = M->GetFlashTime();
+		if (Prompt.IsEmpty())
+		{
+			Prompt = M->GetPrompt();
+		}
+	}
+
 	// Minimap blips: rebuilt 10x a second (walking every actor in the level each frame cost game-thread time
 	// on the busy viewpoints).
 	BlipTimer -= InDeltaTime;
@@ -220,6 +241,45 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	}
 	BlipTimer = 0.1f;
 	Blips.Reset();
+	if (const UHGMissionSubsystem* MS = World->GetSubsystem<UHGMissionSubsystem>())
+	{
+		// Active job: its target (magenta diamond, pinned to the map edge); otherwise the job offers (yellow).
+		if (const FHGMission* Job0 = MS->GetActive())
+		{
+			FBlip B;
+			B.World = FVector2D(Job0->Target.X, Job0->Target.Y);
+			B.Color = FLinearColor(1.f, 0.2f, 0.85f);
+			B.Size = 9.f;
+			B.bDiamond = true;
+			B.bClampToEdge = true;
+			Blips.Add(B);
+		}
+		else
+		{
+			for (const FHGMission& Job : MS->GetMissions())
+			{
+				if (Job.State == EHGMissionState::Available)
+				{
+					FBlip B;
+					B.World = FVector2D(Job.Start.X, Job.Start.Y);
+					B.Color = FLinearColor(1.f, 0.9f, 0.1f);
+					B.Size = 7.f;
+					B.bDiamond = true;
+					B.bClampToEdge = true;
+					Blips.Add(B);
+				}
+			}
+		}
+		if (!MS->GetBoatHirePoint().IsNearlyZero())
+		{
+			FBlip B;
+			B.World = FVector2D(MS->GetBoatHirePoint().X, MS->GetBoatHirePoint().Y);
+			B.Color = FLinearColor(0.2f, 0.6f, 1.f);
+			B.Size = 6.f;
+			B.bSquare = true;
+			Blips.Add(B);
+		}
+	}
 	const float RangeSq = FMath::Square(MapRange * 1.5f);
 	const bool bBlink = FMath::Fmod(Time, 0.5f) < 0.25f;
 	for (TActorIterator<AActor> It(World); It; ++It)
@@ -358,6 +418,23 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	{
 		// Only the parts of each road near the player (the route alone is ~3,200 samples).
 		const float CullSq = FMath::Square(MapRange * 1.6f);
+		{
+			TArray<FVector2f> Run;
+			for (const FVector2D& P : RiverLine)
+			{
+				if (FVector2D::DistSquared(P, PlayerXY) <= CullSq * 1.5f)
+				{
+					Run.Add(ToMap(P));
+				}
+				else if (Run.Num() > 0)
+				{
+					Run.Add(ToMap(P));
+					Lines(Out, L + 2, G, Run, FLinearColor(0.15f, 0.55f, 0.75f), 9.f * S);
+					Run.Reset();
+				}
+			}
+			Lines(Out, L + 2, G, Run, FLinearColor(0.15f, 0.55f, 0.75f), 9.f * S);
+		}
 		for (int32 R = 0; R < RoadLines.Num(); ++R)
 		{
 			const float Width = R == 0 ? 1.f : 0.75f;   // QL4C stubs a little thinner than the route
@@ -392,7 +469,13 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 				P.Y = FMath::Clamp(P.Y, float(MY + 8.f * S), float(MY + MapSize - 8.f * S));
 			}
 			const float R = B.Size * S;
-			if (B.bSquare)
+			if (B.bDiamond)
+			{
+				const TArray<FVector2f> D = { FVector2f(P.X, P.Y - R), FVector2f(P.X + R, P.Y), FVector2f(P.X, P.Y + R), FVector2f(P.X - R, P.Y), FVector2f(P.X, P.Y - R) };
+				Lines(Out, L + 4, G, D, FLinearColor::Black, 5.f * S);
+				Lines(Out, L + 5, G, D, B.Color, 3.f * S);
+			}
+			else if (B.bSquare)
 			{
 				Box(Out, L + 4, G, P.X - R - 1.f, P.Y - R - 1.f, 2.f * R + 2.f, 2.f * R + 2.f, FLinearColor::Black);
 				Box(Out, L + 5, G, P.X - R, P.Y - R, 2.f * R, 2.f * R, B.Color);
@@ -498,6 +581,24 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 		const FString Fine = TEXT("-200.000 VNĐ");
 		const FSlateFontInfo F2 = Font(int32(34 * S));
 		Text(Out, L + 7, G, Fine, (W - Measure(Fine, F2).X) * 0.5f, H * 0.38f + BS.Y, F2, FLinearColor(1.f, 1.f, 1.f, FMath::Clamp(BustedTime, 0.f, 1.f)));
+	}
+	if (!Objective.IsEmpty())
+	{
+		const FSlateFontInfo OF = Font(int32(22 * S));
+		const FVector2D OS = Measure(Objective, OF);
+		Box(Out, L + 5, G, (W - OS.X) * 0.5f - 16.f * S, 22.f * S, OS.X + 32.f * S, OS.Y + 14.f * S, FLinearColor(0.f, 0.f, 0.f, 0.45f));
+		Text(Out, L + 6, G, Objective, (W - OS.X) * 0.5f, 29.f * S, OF, FLinearColor(1.f, 0.85f, 0.3f));
+	}
+	if (MissionBannerTime > 0.f && !MissionBanner.IsEmpty())
+	{
+		const float A = FMath::Clamp(MissionBannerTime / 0.6f, 0.f, 1.f);
+		const FSlateFontInfo BF = Font(int32(38 * S));
+		const FVector2D BS = Measure(MissionBanner, BF);
+		Text(Out, L + 7, G, MissionBanner, (W - BS.X) * 0.5f, H * 0.3f, BF, FLinearColor(0.45f, 1.f, 0.45f, A));
+	}
+	if (FlashTime < 0.4f)
+	{
+		Box(Out, L + 8, G, 0.f, 0.f, W, H, FLinearColor(1.f, 1.f, 1.f, 0.85f * (1.f - FlashTime / 0.4f)));   // camera shutter
 	}
 	{
 		// Controls for what the player is doing now; was one 9 px line at 720p that nobody could read.

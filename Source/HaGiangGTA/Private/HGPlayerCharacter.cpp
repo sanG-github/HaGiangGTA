@@ -15,6 +15,7 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "HaGiangGTA.h"
 #include "HGInputFactory.h"
+#include "HGMissionSubsystem.h"
 #include "HGPaint.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGVehicleBase.h"
@@ -271,6 +272,10 @@ void AHGPlayerCharacter::Interact(const FInputActionValue& /*Value*/)
 	if (FocusedVehicle)
 	{
 		FocusedVehicle->EnterVehicle(this);
+	}
+	else if (UHGMissionSubsystem* Missions = GetWorld()->GetSubsystem<UHGMissionSubsystem>())
+	{
+		Missions->TryBoatHire(this);   // at the Ta Lang dock: pay the boatman, board the cano
 	}
 }
 

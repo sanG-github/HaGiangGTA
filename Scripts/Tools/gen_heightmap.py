@@ -57,6 +57,7 @@ LANDSCAPE_SCALE = (CELL_M * 100.0, CELL_M * 100.0, Z_SCALE)
 ROAD_HALF_WIDTH_M = 3.0          # QL4C asphalt
 CONCRETE_HALF_WIDTH_M = 2.0      # Ta Lang concrete road
 ROAD_SHOULDER_M = 1.0
+ROAD_MIN_RADIUS_M = 9.0          # centreline; enforce_min_radius
 RIVER_HALF_WIDTH_M = 26.0        # Tu San narrows (the wide reservoir comes from the OSM polygon)
 DOWNSTREAM_DROP_M = 18.0         # water level below the Nho Que 1 dam
 SEED = 20261118
@@ -223,6 +224,96 @@ def bilinear(h, xy):
     tx, ty = f[..., 0] - c0, f[..., 1] - r0
     return ((h[r0, c0] * (1 - tx) + h[r0, c0 + 1] * tx) * (1 - ty)
             + (h[r0 + 1, c0] * (1 - tx) + h[r0 + 1, c0 + 1] * tx) * ty)
+
+
+def vertex_radius(p, k=2):
+    """Circumradius through p[i-k], p[i], p[i+k] (inf where straight)."""
+    a, b, c = p[:-2 * k], p[k:-k], p[2 * k:]
+    ab = np.linalg.norm(b - a, axis=1); bc = np.linalg.norm(c - b, axis=1); ca = np.linalg.norm(a - c, axis=1)
+    cross = np.abs((b - a)[:, 0] * (c - a)[:, 1] - (b - a)[:, 1] * (c - a)[:, 0])
+    r = np.full(len(p), np.inf)
+    r[k:-k] = ab * bc * ca / np.maximum(2.0 * cross, 1e-9)
+    return r
+
+def enforce_min_radius(xy, r_min=9.0, step=2.0, leg_gap=8.0, max_iter=4000, verbose=False):
+    """Road (not terrain): no bend tighter than r_min at the centreline, staying as close to the real alignment as
+    the curvature cap allows. OSM keeps switchbacks as near-corners and the Gaussian rounding left 47 of them under
+    6 m (2.1 m at Ma Pi Leng: the AI and the asphalt mesh cut them, bikes ended on the rim wall). Position-based
+    relaxation over windows around every tight spot: the sagitta of each vertex over its neighbours' chord is capped
+    to that of an r_min circle (the excess is spread to the neighbours, so a narrow hairpin grows a balloon), the
+    2 m segments may stretch to 2.8 m, and the two legs of a hairpin are kept leg_gap apart. Window ends are pinned."""
+    xy, _ = proc.resample(np.asarray(xy, float), step)
+    L = step
+    phi = 2.0 * math.asin(L / (2.0 * r_min))
+    dmin = 2.0 * r_min * math.sin(phi)              # second neighbours on a circle of radius r_min
+    r_goal = r_min
+    r_min = r_goal * 1.15        # relax to a little more than the goal: resampling afterwards costs ~10 %
+    for _round in range(8):
+        r = vertex_radius(xy, 1)
+        bad = np.where(r < r_goal)[0]
+        if len(bad) == 0:
+            break
+        clusters = []
+        for i in bad:
+            if clusters and i - clusters[-1][1] <= 8:
+                clusters[-1][1] = i
+            else:
+                clusters.append([i, i])
+        grow = 12 + 8 * _round
+        for a, b in clusters:
+            w0, w1 = max(a - grow, 0), min(b + grow, len(xy) - 1)
+            p = xy[w0:w1 + 1].copy()
+            n = len(p)
+            if n < 8:
+                continue
+            fixed = np.zeros(n, bool); fixed[:2] = fixed[-2:] = True
+            if w0 == 0: fixed[:3] = True
+            if w1 == len(xy) - 1: fixed[-3:] = True
+            ii, jj = np.triu_indices(n, 9)
+            for it in range(max_iter):
+                moved = 0.0
+                # bending: the sagitta of p[i] over the chord p[i-1]p[i+1] at most that of a circle of radius
+                # r_min (curvature cap); the excess is split between p[i] (inwards) and its neighbours (outwards).
+                for par in (0, 1, 2):
+                    i = np.arange(1 + par, n - 1, 3)
+                    mid = 0.5 * (p[i + 1] + p[i - 1])
+                    c = np.linalg.norm(p[i + 1] - p[i - 1], axis=1)
+                    off = p[i] - mid
+                    h = np.linalg.norm(off, axis=1)
+                    hmax = r_min - np.sqrt(np.maximum(r_min * r_min - (0.5 * c) ** 2, 0.0))
+                    v = h > hmax + 1e-4
+                    if v.any():
+                        u = off[v] / np.maximum(h[v], 1e-9)[:, None]
+                        ex = (h[v] - hmax[v])[:, None] * u
+                        p[i[v]] -= ex * (2.0 / 3.0) * (~fixed[i[v]])[:, None]
+                        p[i[v] - 1] += ex * (1.0 / 3.0) * (~fixed[i[v] - 1])[:, None]
+                        p[i[v] + 1] += ex * (1.0 / 3.0) * (~fixed[i[v] + 1])[:, None]
+                        moved += float(np.abs(ex).sum())
+                # stretch: segment lengths in [0.85 L, 1.4 L]
+                for par in (0, 1):
+                    i = np.arange(par, n - 1, 2)
+                    d = p[i + 1] - p[i]; dl = np.linalg.norm(d, axis=1)
+                    tgt = np.clip(dl, 0.85 * L, 1.4 * L)
+                    v = np.abs(tgt - dl) > 1e-4
+                    if v.any():
+                        corr = (d[v] / np.maximum(dl[v], 1e-9)[:, None]) * ((dl[v] - tgt[v]) * 0.5)[:, None]
+                        p[i[v]] += corr * (~fixed[i[v]])[:, None]
+                        p[i[v] + 1] -= corr * (~fixed[i[v] + 1])[:, None]
+                # legs of the hairpin stay a road apart
+                d = p[jj] - p[ii]; dl = np.linalg.norm(d, axis=1)
+                v = dl < leg_gap
+                if v.any():
+                    corr = (d[v] / np.maximum(dl[v], 1e-9)[:, None]) * ((leg_gap - dl[v]) * 0.25)[:, None]
+                    np.add.at(p, jj[v], corr * (~fixed[jj[v]])[:, None])
+                    np.add.at(p, ii[v], -corr * (~fixed[ii[v]])[:, None])
+                if moved < 1e-3 and it > 20:
+                    break
+            new = np.vstack([xy[:w0], p, xy[w1 + 1:]])
+            xy = new
+        xy, _ = proc.resample(xy, step)
+        if verbose:
+            print("round", _round, "clusters", len(clusters), "min R now", vertex_radius(xy, 1).min().round(2))
+    return xy
 
 
 def least_cost_road(height, a, b, spacing=8.0, margin=450.0, ideal_grade=0.07, avoid=None, avoid_m=45.0):
@@ -466,7 +557,13 @@ def generate():
     for _ in range(2):
         pad_ = np.vstack([np.repeat(road_xy[:1], 6, 0), road_xy, np.repeat(road_xy[-1:], 6, 0)])
         road_xy = np.stack([np.convolve(pad_[:, 0], k_, "valid"), np.convolve(pad_[:, 1], k_, "valid")], 1)
+    # Then cap the curvature (min radius ~9 m), and a light pass to take out the resampling kinks.
+    road_xy = enforce_min_radius(road_xy, ROAD_MIN_RADIUS_M)
+    k_ = np.exp(-0.5 * (np.arange(-3, 4) / 1.2) ** 2); k_ /= k_.sum()
+    pad_ = np.vstack([np.repeat(road_xy[:1], 3, 0), road_xy, np.repeat(road_xy[-1:], 3, 0)])
+    road_xy = np.stack([np.convolve(pad_[:, 0], k_, "valid"), np.convolve(pad_[:, 1], k_, "valid")], 1)
     road_xy, road_s = proc.resample(road_xy, 2.0)
+    print(f"road min radius {vertex_radius(road_xy, 1).min():.1f} m (2 m stencil), {vertex_radius(road_xy, 2).min():.1f} m (4 m)")
     piece_len, acc = {}, 0.0
     for name, p in pieces:
         acc += float(np.sum(np.linalg.norm(np.diff(p, axis=0), axis=1)))
@@ -536,7 +633,9 @@ def generate():
         up = off / dist
         c = rp + up * max(dist, radius * 0.6 + 3.0)
         zz = float(road_z[i]) + lift
-        m_ = capsule(rp + up * 2.0, c, radius, feather)
+        # Start the pad at the road edge, not 2 m from the centreline: a flat pad over the carriageway left the
+        # sloping road up to ~1 m in or above the landscape (the road core is re-levelled after the pads anyway).
+        m_ = capsule(rp + up * (ROAD_HALF_WIDTH_M + ROAD_SHOULDER_M), c, radius, feather)
         height = (height * (1 - m_) + (zz - 0.15) * m_).astype(np.float32)
         if key:
             landmarks[key] = {"xy": c, "z": zz, "yaw": road_heading(i), "up": up}
@@ -573,15 +672,28 @@ def generate():
 
     # Ta Lang dock: slipway pad + yard behind it.
     dock_z = WATER_ASL_M + 1.6
-    m_ = capsule(end, pad_end, 8.0, 6.0)
+    # Slipway pad: only the last 12 m of the spur. It used to flatten the whole 147 m spur to dock level while the
+    # road ramps down to it, so the road floated up to 14 m over the landscape where the spur leaves the Ta Lang road.
+    m_ = capsule(pad_end - to_w * 12.0, pad_end, 6.0, 4.0)
     height = (height * (1 - m_) + (dock_z - 0.15) * m_).astype(np.float32)
     yard = end - to_w * 14.0
     m_ = capsule(end - to_w * 3.0, yard, 11.0, 6.0)
-    height = (height * (1 - m_) + (float(road_z[nearest_index(road_xy, end)]) + 0.45) * m_).astype(np.float32)
+    # Yard at road level (was 0.45 m above it: the road end sank into the yard).
+    height = (height * (1 - m_) + (float(road_z[nearest_index(road_xy, end)]) - 0.15) * m_).astype(np.float32)
     landmarks["dock_yard"] = {"xy": yard, "z": float(road_z[nearest_index(road_xy, end)]) + 0.6,
                               "yaw": math.degrees(math.atan2(to_w[1], to_w[0])), "up": -to_w}
     boat_center = shore + to_w * 9.0
     print(f"pads {time.time() - t0:.1f}s")
+
+    # --- 8. road core re-levelled last (road, not terrain shaping): pads, the Mom Da ledge and the dock pads all
+    # wrote flat heights near the route; under the carriageway + shoulder the landscape is put back at exactly
+    # 0.15 m below the road profile, blended over 2 m, so the road never floats or sinks by more than ~0.2 m.
+    d_, v_ = polyline_distance(road_xy, road_z, 8.0)
+    _, hw_ = polyline_distance(road_xy, np.where(road_s >= concrete_from, CONCRETE_HALF_WIDTH_M, ROAD_HALF_WIDTH_M).astype(np.float32), 8.0)
+    core_ = hw_ + ROAD_SHOULDER_M * 0.5
+    w_ = np.where(np.isfinite(d_), 1.0 - proc.smoothstep(core_, core_ + 2.0, np.minimum(d_, 1e6)), 0.0)
+    height = (height * (1.0 - w_) + (v_ - 0.15) * w_).astype(np.float32)
+    del d_, v_, hw_, core_, w_
 
     # --- quantise ---
     height = np.clip(height, BASE_ASL_M + 1.0, MAX_ASL_M - 1.0)

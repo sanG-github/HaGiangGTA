@@ -24,6 +24,9 @@
 #include "HGGtaHUD.h"
 #include "HGGroundVehicle.h"
 #include "NhoQueBoatPawn.h"
+#include "HGMissionSubsystem.h"
+#include "HGWantedSubsystem.h"
+#include "HGBikePawn.h"
 #include "HGRoadSplineActor.h"
 #include "Components/SplineComponent.h"
 #include "UnrealClient.h"
@@ -605,10 +608,22 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		}
 		return;
 	}
-	if (PlayPhase == 1)                    // 1: walk forward 4 s
+	if (PlayPhase == 1)                    // 1: walk forward 4 s (+ shrink the window: the restore guard must fix it)
 	{
 		if (Player) { Player->AddMovementInput(Player->GetActorForwardVector(), 1.f); }
-		if (PlayTime > 8.5f) { PlayCheck(TEXT("walk"), true); PlayPhase = 2; }
+		if (!bPlayShrunk && PlayTime > 5.f)
+		{
+			bPlayShrunk = true;
+			GEngine->Exec(GetWorld(), TEXT("r.SetRes 680x382w"));
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] window shrunk to 680x382 on purpose (restore guard test)"));
+		}
+		if (PlayTime > 8.5f)
+		{
+			const FIntPoint Size = GEngine->GameViewport && GEngine->GameViewport->Viewport ? GEngine->GameViewport->Viewport->GetSizeXY() : FIntPoint::ZeroValue;
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] restore guard: viewport %dx%d -> %s"), Size.X, Size.Y, Size.X >= 900 ? TEXT("PASS") : TEXT("FAIL"));
+			PlayCheck(TEXT("walk"), true);
+			PlayPhase = 2;
+		}
 		return;
 	}
 	if (PlayPhase == 2)                    // 2: mount the nearest parked bike
@@ -762,8 +777,156 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 		{
 			PlayReleaseKeys();
 			LogStage(TEXT("keys_TaLang"));
-			PlayPhase = 10; PlayTime = 0.f; NextShot = 0.f;
+			PlayPhase = 40; PlayTime = 0.f; NextShot = 0.f;
 		}
+		return;
+	}
+	if (PlayPhase >= 40 && PlayPhase < 50)    // missions: tour, photo, police chase
+	{
+		UHGMissionSubsystem* MS = GetWorld()->GetSubsystem<UHGMissionSubsystem>();
+		UHGWantedSubsystem* WS = GetWorld()->GetSubsystem<UHGWantedSubsystem>();
+		const FHGMission* Tour = MS ? MS->Find(TEXT("tour_dong_van")) : nullptr;
+		const FHGMission* Photo = MS ? MS->Find(TEXT("photo_ma_pi_leng")) : nullptr;
+		const FHGMission* Chase = MS ? MS->Find(TEXT("chase_ta_lang")) : nullptr;
+		if (!MS || !WS || !Tour || !Photo || !Chase || !PlayBike.IsValid())
+		{
+			UE_LOG(LogHaGiang, Error, TEXT("[HG_PLAY] missions: not set up"));
+			PlayPhase = 10; PlayTime = 0.f; NextShot = 0.f;
+			return;
+		}
+		auto Result = [this, WS](const TCHAR* Name, bool bPass, const FString& Extra)
+		{
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] mission %s: %s | money %d (%+d) %s"), Name, bPass ? TEXT("PASS") : TEXT("FAIL"),
+				WS->GetMoney(), WS->GetMoney() - PlayMoneyMark, *Extra);
+			PlayMoneyMark = WS->GetMoney();
+		};
+		AHGGroundVehicle* Bike = PlayBike.Get();
+		if (PlayPhase == 40)               // tour: stop in the pickup ring at the Dong Van turn
+		{
+			if (PlayTime < DeltaSeconds * 1.5f)
+			{
+				PlayMoneyMark = WS->GetMoney();
+				if (AHGBikePawn* B = Cast<AHGBikePawn>(Bike)) { B->SetHasPassenger(false); }   // an empty xe om
+				Bike->PlaceOnRoad(PlayRoad.Get(), PlayRoad->GetDistanceAlongRoad(Tour->Start) - 400.f, +1, 140.f);
+			}
+			if (PlayTime > 3.f)
+			{
+				const bool bOn = MS->GetActive() && MS->GetActive()->Id == Tour->Id;
+				PlayCheck(TEXT("mission_tour_pickup"), true);
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] tour pickup: %s | objective: %s"), bOn ? TEXT("started") : TEXT("NOT started"), *MS->GetObjective());
+				PlayPhase = bOn ? 41 : 43; PlayTime = 0.f;
+			}
+			return;
+		}
+		if (PlayPhase == 41)               // ride the last 90 m to the Ma Pi Leng viewpoint on the keys and stop
+		{
+			if (PlayTime < DeltaSeconds * 1.5f)
+			{
+				Bike->PlaceOnRoad(PlayRoad.Get(), PlayRoad->GetDistanceAlongRoad(Tour->Target) - 9000.f, +1, 140.f);
+				PlayMaxKmh = 0.f;
+			}
+			if (PlayTime > 1.f)
+			{
+				const float Dist = FVector::Dist2D(Bike->GetActorLocation(), Tour->Target);
+				if (Dist > 2000.f) { PlayDriveKeys(DeltaSeconds); }
+				else { PlaySetKey(EKeys::W, false); PlaySetKey(EKeys::A, false); PlaySetKey(EKeys::D, false); PlaySetKey(EKeys::S, Bike->GetSpeedKmh() > 2.f); }
+			}
+			if (Tour->State == EHGMissionState::Done || PlayTime > 40.f)
+			{
+				PlayReleaseKeys();
+				Result(TEXT("tour_dong_van"), Tour->State == EHGMissionState::Done, FString::Printf(TEXT("(%.0f s on the job)"), Tour->Elapsed));
+				PlayPhase = 42; PlayTime = 0.f;
+			}
+			return;
+		}
+		if (PlayPhase == 42)               // banner shot
+		{
+			if (PlayTime > 0.5f) { PlayCheck(TEXT("mission_tour_done"), true); PlayPhase = 43; PlayTime = 0.f; }
+			return;
+		}
+		if (PlayPhase == 43)               // photo: on foot at the viewpoint, aim at the gorge, [P]
+		{
+			if (PlayTime < DeltaSeconds * 1.5f)
+			{
+				PlayMoneyMark = WS->GetMoney();
+				Bike->ExitVehicle();
+			}
+			AHGPlayerCharacter* Walker = Cast<AHGPlayerCharacter>(PC->GetPawn());
+			if (PlayTime > 0.5f && PlayTime < 0.5f + DeltaSeconds * 1.5f && Walker)
+			{
+				Walker->SetActorLocation(Photo->Start + FVector(0.f, 0.f, 120.f), false, nullptr, ETeleportType::TeleportPhysics);
+			}
+			if (Walker && PlayTime > 1.f)
+			{
+				// Aim like a player would: the camera boom looks at the gorge, a little down.
+				const FVector From = Walker->GetActorLocation() + FVector(0.f, 0.f, 150.f);
+				FRotator Aim = (Photo->Target - From).Rotation();
+				PC->SetControlRotation(Aim);
+			}
+			if (PlayTime > 4.f && PlayTime < 4.f + DeltaSeconds * 1.5f)
+			{
+				PlayCheck(TEXT("mission_photo_aim"), true);
+			}
+			if (PlayTime > 5.f) { PlaySetKey(EKeys::P, true); }
+			if (PlayTime > 5.3f) { PlaySetKey(EKeys::P, false); }
+			if (Photo->State == EHGMissionState::Done || PlayTime > 9.f)
+			{
+				Result(TEXT("photo_ma_pi_leng"), Photo->State == EHGMissionState::Done, FString::Printf(TEXT("(objective was: %s)"), *MS->GetObjective()));
+				PlayPhase = 44; PlayTime = 0.f;
+			}
+			return;
+		}
+		if (PlayPhase == 44)               // chase: back on the bike at the top of the Ta Lang road
+		{
+			if (PlayTime < DeltaSeconds * 1.5f)
+			{
+				PlayMoneyMark = WS->GetMoney();
+				if (AHGPlayerCharacter* Walker = Cast<AHGPlayerCharacter>(PC->GetPawn()))
+				{
+					Bike->EnterVehicle(Walker);
+				}
+			}
+			if (PlayTime > 0.5f && PlayTime < 0.5f + DeltaSeconds * 1.5f)
+			{
+				Bike->PlaceOnRoad(PlayRoad.Get(), PlayRoad->GetDistanceAlongRoad(Chase->Start) - 400.f, +1, 100.f);
+			}
+			if (PlayTime > 3.5f)
+			{
+				const bool bOn = MS->GetActive() && MS->GetActive()->Id == Chase->Id;
+				UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] chase: %s, %d stars | objective: %s"), bOn ? TEXT("started") : TEXT("NOT started"), WS->GetStars(), *MS->GetObjective());
+				PlayCheck(TEXT("mission_chase_start"), true);
+				PlayPhase = bOn ? 45 : 47; PlayTime = 0.f;
+			}
+			return;
+		}
+		if (PlayPhase == 45)               // the last 300 m to the dock on auto-drive with the police behind
+		{
+			if (PlayTime < DeltaSeconds * 1.5f)
+			{
+				Bike->bAutoDriveWithPlayer = true;
+				Bike->StartAutoDrive(PlayRoad.Get(), PlayRoad->GetRoadLength() - 30000.f, +1, 30.f, 100.f);
+			}
+			if (PlayTime >= 12.f && NextShot == 0.f)
+			{
+				NextShot = 1.f;
+				PlayCheck(TEXT("mission_chase_ride"), true);
+			}
+			if (Chase->State != EHGMissionState::Active || PlayTime > 60.f)
+			{
+				Bike->StopAutoDrive();
+				Bike->bAutoDriveWithPlayer = false;
+				Result(TEXT("chase_ta_lang"), Chase->State == EHGMissionState::Done, FString::Printf(TEXT("(%d stars left, %d busts)"), WS->GetStars(), WS->GetBustCount()));
+				PlayPhase = 46; PlayTime = 0.f; NextShot = 0.f;
+			}
+			return;
+		}
+		if (PlayPhase == 46)
+		{
+			if (PlayTime > 0.5f) { PlayCheck(TEXT("mission_chase_done"), true); PlayPhase = 47; PlayTime = 0.f; }
+			return;
+		}
+		WS->ClearWanted();
+		PlayPhase = 10; PlayTime = 0.f; NextShot = 0.f;
 		return;
 	}
 	if (PlayPhase >= 10 && PlayPhase < 10 + int32(UE_ARRAY_COUNT(Stages)))
@@ -829,17 +992,36 @@ void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
 			// The player's cano (Boat_Cano_*, world.build_vehicles), not one of the moored tour boats.
 			if (It->GetBoatType() == EHGBoatType::Cano && It->GetActorNameOrLabel().StartsWith(TEXT("Boat_Cano"))) { Dock = *It; }
 		}
-		if (!Walker || !Dock)
+		if ((!Walker && PlayBoatHireStep == 0) || !Dock)
 		{
 			UE_LOG(LogHaGiang, Error, TEXT("[HG_PLAY] boat stage: %s"), !Walker ? TEXT("player still on the bike") : TEXT("no docked cano"));
 			PlayPhase = 99;
 			return;
 		}
-		// Walk up to it (teleport next to the hull on the bank side), then [F].
-		const FVector Side = Dock->GetActorRightVector().GetSafeNormal2D();
-		Walker->SetActorLocation(Dock->GetActorLocation() + Side * 250.f + FVector(0.f, 0.f, 150.f), false, nullptr, ETeleportType::TeleportPhysics);
-		Walker->SetActorLocation(Dock->GetActorLocation() - Side * 250.f + FVector(0.f, 0.f, 150.f), false, nullptr, ETeleportType::TeleportPhysics);
-		const bool bIn = Dock->EnterVehicle(Walker);
+		// Walk to the boatman at the top of the slipway and hire the cano with [F] (pays 100,000 VND, no swim).
+		UHGMissionSubsystem* MS = GetWorld()->GetSubsystem<UHGMissionSubsystem>();
+		UHGWantedSubsystem* WS = GetWorld()->GetSubsystem<UHGWantedSubsystem>();
+		if (PlayBoatHireStep == 0)
+		{
+			Walker->SetActorLocation(MS->GetBoatHirePoint() + FVector(0.f, 0.f, 120.f), false, nullptr, ETeleportType::TeleportPhysics);
+			PlayMoneyMark = WS ? WS->GetMoney() : 0;
+			PlayBoatHireStep = 1;
+			PlayTime = 0.f;
+			return;
+		}
+		if (PlayBoatHireStep == 1)
+		{
+			if (PlayTime > 1.5f && PlayTime < 2.f) { PlaySetKey(EKeys::F, true); }
+			if (PlayTime >= 2.f) { PlaySetKey(EKeys::F, false); }
+			if (PlayTime < 2.5f) { return; }
+			PlayBoatHireStep = 2;
+		}
+		const bool bIn = PC->GetPawn() == Dock;
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boat hire with [F]: %s | money %+d"), bIn ? TEXT("PASS") : TEXT("FAIL"), WS ? WS->GetMoney() - PlayMoneyMark : 0);
+		if (!bIn && Walker)
+		{
+			Dock->EnterVehicle(Walker);   // carry on with the ride
+		}
 		UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY] boarded %s: %s (cruise line %d points, first %s, last %s, boat at %s)"), *Dock->GetName(), bIn ? TEXT("yes") : TEXT("NO"),
 			Cruiser ? Cruiser->CruisePoints.Num() : 0, Cruiser && Cruiser->CruisePoints.Num() ? *Cruiser->CruisePoints[0].ToString() : TEXT("-"),
 			Cruiser && Cruiser->CruisePoints.Num() ? *Cruiser->CruisePoints.Last().ToString() : TEXT("-"), *Dock->GetActorLocation().ToString());
@@ -950,6 +1132,21 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 					PerfCamera->GetCameraComponent()->SetFieldOfView(PerfFov[PerfStage]);
 					PerfCamera->GetCameraComponent()->SetConstraintAspectRatio(false);
 					PC->SetViewTarget(PerfCamera);
+					// Anything within 8 m in front of the camera (a building or prop clipping the view)?
+					const FTransform& T = PerfSpots[PerfStage];
+					const float Half = FMath::DegreesToRadians(PerfFov[PerfStage] * 0.45f);
+					FCollisionQueryParams Q(SCENE_QUERY_STAT(HGPerfClip), true);
+					for (int32 k = 0; k < 9; ++k)
+					{
+						const float Yaw = (k % 3 - 1) * Half, Pitch = (k / 3 - 1) * Half * 0.6f;
+						const FVector Dir = T.TransformVectorNoScale(FRotator(FMath::RadiansToDegrees(Pitch), FMath::RadiansToDegrees(Yaw), 0.f).Vector());
+						FHitResult Hit;
+						if (GetWorld()->LineTraceSingleByChannel(Hit, T.GetLocation(), T.GetLocation() + Dir * 800.f, ECC_Visibility, Q))
+						{
+							UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] %s: ray %d hits %s at %.1f m (clips the view?)"), *PerfNames[PerfStage], k,
+								Hit.GetActor() ? *Hit.GetActor()->GetActorNameOrLabel() : TEXT("?"), Hit.Distance / 100.f);
+						}
+					}
 				}
 				else if (APawn* Pawn = PC->GetPawn())
 				{
@@ -961,6 +1158,14 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 		return;
 	}
 	PerfAccum += DeltaSeconds;
+	{
+		FString ProfileAt;
+		if (!bPerfProfiled && PerfTime > 6.f && FParse::Value(FCommandLine::Get(), TEXT("hgprofile="), ProfileAt) && PerfNames.IsValidIndex(PerfStage) && PerfNames[PerfStage] == ProfileAt)
+		{
+			bPerfProfiled = true;
+			GEngine->Exec(GetWorld(), TEXT("ProfileGPU"));
+		}
+	}
 	PerfGpuAccum += FPlatformTime::ToMilliseconds(RHIGetGPUFrameCycles());
 	PerfGameAccum += FPlatformTime::ToMilliseconds(GGameThreadTime);
 	PerfDrawAccum += FPlatformTime::ToMilliseconds(GRenderThreadTime);
@@ -978,6 +1183,7 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 			FScreenshotRequest::RequestScreenshot(File, true, false);
 		}
 		PerfGpuAccum = 0.0;
+		PerfFps.Add(float(1000.0 / FMath::Max(AvgMs, 0.001)));
 		++PerfStage;
 		bPerfMoved = false;
 		PerfTime = -4.f;
@@ -986,6 +1192,19 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 		PerfFrames = 0;
 		if (PerfStage >= PerfSpots.Num())
 		{
+			// Summary: every camera must hold 60 FPS.
+			FString Low;
+			float MinFps = BIG_NUMBER;
+			for (int32 i = 0; i < PerfFps.Num(); ++i)
+			{
+				MinFps = FMath::Min(MinFps, PerfFps[i]);
+				if (PerfFps[i] < 60.f)
+				{
+					Low += FString::Printf(TEXT(" %s=%.0f"), *PerfNames[i], PerfFps[i]);
+				}
+			}
+			UE_LOG(LogHaGiang, Display, TEXT("[HG_PERF] SUMMARY %s: %d cameras, min %.0f FPS%s"), Low.IsEmpty() ? TEXT("PASS") : TEXT("FAIL"),
+				PerfFps.Num(), MinFps, Low.IsEmpty() ? TEXT("") : *FString::Printf(TEXT(", under 60:%s"), *Low));
 			UKismetSystemLibrary::QuitGame(this, nullptr, EQuitPreference::Quit, false);
 		}
 	}

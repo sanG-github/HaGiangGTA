@@ -38,6 +38,8 @@ private:
 	// -hgperf benchmark: frame-time statistics at each review camera (Generated/Heightmaps/HaGiang_review_cameras.json,
 	// written by Scripts/hg_lib/shots.py) or, without it, at each viewpoint; written to the log, then quit.
 	TArray<float> PerfFov;
+	TArray<float> PerfFps;
+	bool bPerfProfiled = false;
 	UPROPERTY(Transient) TObjectPtr<class ACameraActor> PerfCamera;
 	double PerfGpuAccum = 0.0, PerfGameAccum = 0.0, PerfDrawAccum = 0.0;
 	bool bPerfRun = false;
@@ -66,6 +68,9 @@ private:
 	float PlayMaxKmh = 0.f;
 	int32 PlayOrbitShot = 0;
 	float PlayResCheck = 0.f;
+	bool bPlayShrunk = false;
+	int32 PlayMoneyMark = 0;
+	int32 PlayBoatHireStep = 0;
 	float PlayOffRoadSecs = 0.f;
 	FVector PlayStageStart = FVector::ZeroVector;
 	FVector PlayCheckpointLoc = FVector::ZeroVector;

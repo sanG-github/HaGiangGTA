@@ -8,6 +8,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/SpringArmComponent.h"
+#include "GameFramework/PlayerController.h"
+#include "Camera/CameraComponent.h"
 #include "HGWaterBody.h"
 #include "Materials/MaterialInstanceDynamic.h"
 #include "Sound/SoundBase.h"
@@ -99,8 +101,10 @@ void ANhoQueBoatPawn::ApplyBoatType()
 
 		// Camera above the canopy (2.1 m) even when the arm's collision test pulls it in against a pontoon or a
 		// moored hull: with 3.2 m of socket height it ended inside our own roof / hull (black frames).
-		SpringArm->TargetArmLength = 1250.f;
-		SpringArm->SocketOffset = FVector(0.f, 0.f, 450.f);
+		// Low and well behind (round 3): the gorge is the subject, the boat ~1/5 of the frame. When the arm is pulled in
+		// against a pontoon the canopy is hidden (UpdateBoatCamera) instead of filling the view.
+		SpringArm->TargetArmLength = 1900.f;
+		SpringArm->SocketOffset = FVector(0.f, 0.f, 330.f);
 	}
 	else
 	{
@@ -255,7 +259,14 @@ void ANhoQueBoatPawn::UpdateBoatCamera(float DeltaSeconds)
 		return;
 	}
 	// Never look up from below: the arm end must stay above the hull and the water.
-	UpdateOrbitCamera(DeltaSeconds, -14.f, -55.f, -5.f);
+	UpdateOrbitCamera(DeltaSeconds, -7.f, -55.f, -3.f);
+	// Arm pulled in close (pontoon, cliff): hide the roof slab so it doesn't fill the lower third of the frame.
+	const bool bClose = Camera && FVector::Dist(Camera->GetComponentLocation(), GetActorLocation()) < 900.f;
+	if (Canopy && Canopy->IsVisible() == bClose && BoatType == EHGBoatType::Cano)
+	{
+		Canopy->SetVisibility(!bClose);
+		RoofStar->SetVisibility(!bClose);
+	}
 	// Where the arm puts the camera without collision; lift it (TargetOffset is world space) so it stays
 	// at least 1 m above the river surface whatever the orbit.
 	const FRotator ArmRot = SpringArm->GetComponentRotation();
@@ -308,9 +319,27 @@ void ANhoQueBoatPawn::ComputeCruiseInput(float& OutThrottle, float& OutSteer)
 		}
 		CruiseIndex += CruiseDir;
 	}
-	const float YawError = FRotator::NormalizeAxis(To.Rotation().Yaw - HeadingYaw);
+	float YawError = FRotator::NormalizeAxis(To.Rotation().Yaw - HeadingYaw);
+	float Slow = 1.f;
+	// Give the player's boat room: if it is within 60 m ahead, steer to pass it 15 m off and ease off.
+	if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
+	{
+		if (const ANhoQueBoatPawn* Player = Cast<ANhoQueBoatPawn>(PC->GetPawn()))
+		{
+			const FVector Fwd = FRotator(0.f, HeadingYaw, 0.f).Vector();
+			const FVector D = Player->GetActorLocation() - GetActorLocation();
+			const float Ahead = FVector::DotProduct(D, Fwd);
+			const float Side = FVector::DotProduct(D, FVector::CrossProduct(FVector::UpVector, Fwd));
+			if (Ahead > 0.f && Ahead < 6000.f && FMath::Abs(Side) < 1500.f)
+			{
+				const float Away = Side >= 0.f ? -1.f : 1.f;     // pass on the other side
+				YawError = FMath::Clamp(YawError + Away * 35.f * (1.f - Ahead / 6000.f), -90.f, 90.f);
+				Slow = FMath::GetMappedRangeValueClamped(FVector2D(1500.f, 6000.f), FVector2D(0.2f, 0.8f), Ahead);
+			}
+		}
+	}
 	OutSteer = FMath::Clamp(YawError / 25.f, -1.f, 1.f);
-	OutThrottle = CruiseThrottle * (FMath::Abs(YawError) > 60.f ? 0.4f : 1.f);
+	OutThrottle = CruiseThrottle * Slow * (FMath::Abs(YawError) > 60.f ? 0.4f : 1.f);
 }
 
 bool ANhoQueBoatPawn::HasWaterDepthAt(const FVector& Location, float SurfaceZ) const

@@ -101,6 +101,13 @@ class Grid:
     def ground(self, x, y):
         return float(self.patch(self.z, x, y, 0)[0, 0])
 
+    def ground_bilinear(self, x, y):
+        fx, fy = (x + self.half) / self.cell, (y + self.half) / self.cell
+        ix, iy = int(np.clip(math.floor(fx), 0, self.n - 2)), int(np.clip(math.floor(fy), 0, self.n - 2))
+        tx, ty = fx - ix, fy - iy
+        z = self.z
+        return float((z[iy, ix] * (1 - tx) + z[iy, ix + 1] * tx) * (1 - ty) + (z[iy + 1, ix] * (1 - tx) + z[iy + 1, ix + 1] * tx) * ty)
+
     def max_slope(self, x, y, r):
         return float(self.patch(self.slope, x, y, r).max())
 
@@ -407,23 +414,43 @@ def check_spawns(ctx, g, rep, legacy, river):
                   f"afloat (moved {moved:.1f} m from the layout spawn)" if moved > 0.05 else "afloat")
 
 
+ROAD_MIN_RADIUS_CHECK_M = 8.5     # gen_heightmap.ROAD_MIN_RADIUS_M = 9 at the centreline ("about 9 m")
+ROAD_MAX_TURN_DEG_PER_M = math.degrees(1.0 / ROAD_MIN_RADIUS_CHECK_M)
+ROAD_PROFILE_TOL_CM = 30.0
+
+
 def check_road(ctx, g, rep):
-    """Road data problems the gameplay code cannot fix (reported for gen_heightmap.py)."""
+    """Road geometry: minimum radius / maximum turn per metre on the spline points, and the road profile against the
+    landscape (gen_heightmap re-levels the road core 0.15 m under the profile)."""
     road = ctx.road
     cusps = P.road_cusps(road)
+    pts = np.array(ctx.layout["road"]["points_cm"], dtype=float)
+    xy = pts[:, :2] / 100.0
+    a, b, c = xy[:-2], xy[1:-1], xy[2:]
+    ab, bc, ca = (np.linalg.norm(b - a, axis=1), np.linalg.norm(c - b, axis=1), np.linalg.norm(a - c, axis=1))
+    cross = np.abs((b - a)[:, 0] * (c - a)[:, 1] - (b - a)[:, 1] * (c - a)[:, 0])
+    R = ab * bc * ca / np.maximum(2.0 * cross, 1e-9)
+    seg = np.linalg.norm(np.diff(xy, axis=0), axis=1)
+    h = np.unwrap(np.arctan2(np.diff(xy[:, 1]), np.diff(xy[:, 0])))
+    turn = np.degrees(np.abs(np.diff(h))) / np.maximum(0.5 * (seg[:-1] + seg[1:]), 1e-6)
+    k = int(np.argmin(R))
+    m_k = road.closest(*(xy[k + 1] * 100.0))[0]
+    rep.check("road", "minimum radius", None if R.min() >= ROAD_MIN_RADIUS_CHECK_M else
+              f"{(R < ROAD_MIN_RADIUS_CHECK_M).sum()} points under {ROAD_MIN_RADIUS_CHECK_M} m (tightest {R.min():.1f} m at {m_k:.0f} m)",
+              f"tightest {R.min():.1f} m (at {m_k:.0f} m)")
+    rep.check("road", "maximum turn per metre", None if turn.max() <= ROAD_MAX_TURN_DEG_PER_M else
+              f"{turn.max():.1f} deg/m > {ROAD_MAX_TURN_DEG_PER_M:.1f}", f"{turn.max():.1f} deg/m")
     if cusps:
-        rep.add("road", "spline cusps (decimated hairpins)", "WARN",
-                f"{len(cusps)} spots turn tighter than 6 m radius - decimated hairpins in road.points_cm (AI and asphalt mesh cut them), e.g. at "
-                + ", ".join(f"{m:.0f}" for m in cusps[:8]) + (" ..." if len(cusps) > 8 else "") + " m")
-    pts = ctx.layout["road"]["points_cm"]
-    dz = np.array([p[2] - g.ground(p[0], p[1]) for p in pts])
-    bad = np.nonzero(np.abs(dz) > 150)[0]
-    if len(bad):
-        k = int(bad[np.argmax(np.abs(dz[bad]))])
-        m = road.closest(pts[k][0], pts[k][1])[0]
-        rep.add("road", "road profile vs terrain", "WARN",
-                f"{len(bad)}/{len(pts)} road points > 1.5 m off the landscape (worst {dz[k] / 100:+.1f} m at {m:.0f} m); "
-                "vehicles drive on the landscape")
+        rep.add("road", "spline cusps (decimated hairpins)", "FAIL",
+                f"{len(cusps)} spots turn tighter than 6 m radius, e.g. at " + ", ".join(f"{m:.0f}" for m in cusps[:8]) + " m")
+    # Landscape under the centreline (bilinear, as UE renders it); the road mesh sits 0.15 m over the carve.
+    dz = np.array([p[2] - g.ground_bilinear(p[0], p[1]) for p in pts])
+    bad = np.nonzero(np.abs(dz) > ROAD_PROFILE_TOL_CM)[0]
+    kk = int(np.argmax(np.abs(dz)))
+    m = road.closest(pts[kk][0], pts[kk][1])[0]
+    rep.check("road", "road profile vs landscape", None if not len(bad) else
+              f"{len(bad)}/{len(pts)} road points > {ROAD_PROFILE_TOL_CM / 100:.1f} m off the landscape (worst {dz[kk] / 100:+.2f} m at {m:.0f} m)",
+              f"all within {ROAD_PROFILE_TOL_CM / 100:.1f} m (worst {dz[kk] / 100:+.2f} m at {m:.0f} m)")
     return cusps
 
 

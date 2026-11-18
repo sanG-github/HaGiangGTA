@@ -182,6 +182,7 @@ void UHGWantedSubsystem::Busted()
 {
 	Money = FMath::Max(0, Money - BustFine);
 	BustedMessageTime = 5.f;
+	++BustCount;
 	ClearWanted();
 	UE_LOG(LogHaGiang, Log, TEXT("BUSTED! -%d VND"), BustFine);
 }

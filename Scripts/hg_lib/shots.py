@@ -98,7 +98,37 @@ def shots(layout, scatter):
     fx, fy = _norm2(river[g][0] - ahead[0], river[g][1] - ahead[1])
     out.append(("VP3_TuSan_flycam", [river[g][0] + fx * 200.0 - fy * 120.0, river[g][1] + fy * 200.0 + fx * 120.0, water_z + 520.0],
                 [river[max(g - 30, 0)][0], river[max(g - 30, 0)][1], water_z], 55))
-    return out
+    return _clear_of_buildings(out, layout, scatter)
+
+
+def _clear_of_buildings(out, layout, scatter, clear_cm=450.0, max_push_m=15.0):
+    """Move any camera that stands in or right next to a building (the Ta Lang dock camera was inside the ticket
+    booth) forward along its view until it is clear_cm from every footprint (placements.footprints)."""
+    try:
+        from hg_lib import placements as P
+    except ImportError:
+        try:
+            import placements as P  # noqa: F401 - when run from Scripts/hg_lib
+        except ImportError:
+            return out
+    fps = P.footprints(layout, scatter)
+    if not fps:
+        return out
+
+    def clearance(x, y):
+        return min(P.rect_distance(x * 100.0, y * 100.0, f["cx"], f["cy"], f["yaw"], f["hx"], f["hy"]) for f in fps)
+
+    fixed = []
+    for name, cam, look, fov in out:
+        dx, dy = _norm2(look[0] - cam[0], look[1] - cam[1])
+        c = list(cam)
+        pushed = 0.0
+        while clearance(c[0], c[1]) < clear_cm and pushed < max_push_m:
+            c[0] += dx
+            c[1] += dy
+            pushed += 1.0
+        fixed.append((name, c, look, fov))
+    return fixed
 
 
 def write_review_cameras(gen_dir):

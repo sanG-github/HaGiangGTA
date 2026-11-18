@@ -190,6 +190,8 @@ def build_vehicles(layout, tag, folder):
         actor = hg.spawn_actor(unreal.HGBikePawn, f"HondaWin_{i:02d}", bike["location_cm"], (0, bike["yaw"], 0),
                                tag, folder)
         actor.set_editor_property("body_color", colors[i % len(colors)])
+        # Parked bikes wait empty: the xe om job puts a backpacker on (traffic bikes keep theirs).
+        actor.set_editor_property("has_passenger", False)
     for i, boat in enumerate(spawns["boats"]):
         x, y, z = boat["location_cm"]
         actor = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_{boat['type']}_{i:02d}", (x, y, z),
