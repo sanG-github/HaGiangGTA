@@ -28,6 +28,12 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
 
     step("Importing textures, Nanite meshes, audio")
     tex = assets.import_textures()
+    try:
+        from . import scans
+        tex["scan"] = scans.import_scans()   # Round 7B: Poly Haven sets (empty until downloaded)
+    except Exception as exc:  # never block the checkpoint on optional scans
+        hg.warn(f"Poly Haven scans skipped: {exc}")
+        tex["scan"] = {}
     meshes = assets.import_meshes()
     flute = assets.import_flute()
 

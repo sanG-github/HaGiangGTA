@@ -433,6 +433,20 @@ namespace HGDressingKit
 	}
 }
 
+namespace
+{
+	/** Round 7B: vertex colour + scanned stone / earth detail (M_HG_KitDressing) when the checkpoint built it. */
+	UMaterialInterface* DressingMaterial()
+	{
+		static TWeakObjectPtr<UMaterialInterface> Cached;
+		if (!Cached.IsValid())
+		{
+			Cached = LoadObject<UMaterialInterface>(nullptr, TEXT("/Game/HaGiang/Generated/Materials/M_HG_KitDressing.M_HG_KitDressing"));
+		}
+		return Cached.IsValid() ? Cached.Get() : FHGMeshKit::VertexColorMaterial();
+	}
+}
+
 AHGDressingProp::AHGDressingProp()
 {
 	PrimaryActorTick.bCanEverTick = true;
@@ -483,6 +497,10 @@ void AHGDressingProp::BeginPlay()
 	if (UStaticMeshComponent* C = FHGMeshKit::AddComponent(this, Root, Mesh, TEXT("Kit"), FVector::ZeroVector))
 	{
 		C->SetCullDistance(Cull);
+		if (Kind == EHGDressingKind::HmongHouse || Kind == EHGDressingKind::StoneSign)
+		{
+			C->SetMaterial(0, DressingMaterial());
+		}
 	}
 	if (Kind == EHGDressingKind::HmongHouse && PlinthDepth > 1.f)
 	{
@@ -492,6 +510,7 @@ void AHGDressingProp::BeginPlay()
 		if (UStaticMeshComponent* P = FHGMeshKit::AddComponent(this, Root, PlinthMesh, TEXT("Plinth"), FVector(0.f, 0.f, -250.f)))
 		{
 			P->SetCullDistance(Cull);
+			P->SetMaterial(0, DressingMaterial());
 		}
 	}
 	if (Kind == EHGDressingKind::FlagPole)
@@ -792,7 +811,9 @@ void AHGDressingProp::BuildRoadside()
 			}
 		}
 	}
-	MakeHism(TEXT("StoneFence"), FenceMesh, 14000)->AddInstances(Fence, false, true);
+	UHierarchicalInstancedStaticMeshComponent* FenceHism = MakeHism(TEXT("StoneFence"), FenceMesh, 14000);
+	FenceHism->SetMaterial(0, DressingMaterial());
+	FenceHism->AddInstances(Fence, false, true);
 	MakeHism(TEXT("CornRacks"), RackMesh, 9000)->AddInstances(Racks, false, true);
 	MakeHism(TEXT("WoodStacks"), WoodMesh, 9000)->AddInstances(Wood, false, true);
 	UE_LOG(LogTemp, Log, TEXT("%s: roadside %d fence segments, %d corn racks, %d wood stacks"), *GetName(), Fence.Num(), Racks.Num(), Wood.Num());
