@@ -225,7 +225,8 @@ def import_sfx(force: bool = False) -> dict:
 
 
 LOOPS = ("SW_HG_BikeEngine_Loop", "SW_HG_TruckEngine_Loop", "SW_HG_BoatMotor_Loop", "SW_HG_Siren_Loop", "SW_HG_Heli_Loop",
-         "SW_HG_Wind_Loop", "SW_HG_Birds_Loop", "SW_HG_Tyre_Loop")
+         "SW_HG_Wind_Loop", "SW_HG_Birds_Loop", "SW_HG_Tyre_Loop", "SW_HG_Khen_Loop", "SW_HG_WaterLap_Loop")
+ONESHOTS = ("SW_HG_Horn",)
 
 
 def import_loops(force: bool = False) -> dict:
@@ -234,6 +235,11 @@ def import_loops(force: bool = False) -> dict:
     for n in LOOPS:
         snd = import_sound(n, force)
         snd.set_editor_property("looping", True)
+        unreal.EditorAssetLibrary.save_loaded_asset(snd)
+        out[n] = snd
+    for n in ONESHOTS:   # round 6A: horn
+        snd = import_sound(n, force)
+        snd.set_editor_property("looping", False)
         unreal.EditorAssetLibrary.save_loaded_asset(snd)
         out[n] = snd
     return out

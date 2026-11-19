@@ -71,6 +71,8 @@ protected:
 	virtual void BeginPlay() override;
 	virtual void OnConstruction(const FTransform& Transform) override;
 	virtual void UpdateVisuals(float DeltaSeconds, float Steer) override;
+	virtual bool WantsViewpointStops() const override { return TourGroup >= 0; }
+	virtual void OnViewpointStop(bool bStart, const FVector& LookAt) override;
 	virtual void OnAutoDriveChanged(bool bNowAutoDriving) override;
 	virtual void PossessedBy(AController* NewController) override;
 	void UpdateScreaming(float DeltaSeconds);
@@ -168,6 +170,8 @@ private:
 	float LeanDeg = 0.f;
 	float WheelAngle = 0.f;
 	float PrevSpeed = 0.f;
+	float DiveDeg = 0.f;
+	TWeakObjectPtr<AActor> PhotoRider;
 	FVector2D SwayAngle = FVector2D::ZeroVector;     // x = roll, y = pitch (deg)
 	FVector2D SwayVelocity = FVector2D::ZeroVector;
 };

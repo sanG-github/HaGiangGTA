@@ -12,6 +12,9 @@
 #include "GameFramework/SpringArmComponent.h"
 #include "GameFramework/Controller.h"
 #include "HGAudio.h"
+#include "HGTouristNPC.h"
+#include "Camera/PlayerCameraManager.h"
+#include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Sound/SoundBase.h"
 #include "Materials/MaterialInstanceDynamic.h"
@@ -42,6 +45,7 @@ AHGBikePawn::AHGBikePawn()
 	ConcreteSpeedScale = 0.7f;
 	OffRoadSpeedScale = 0.4f;
 	ChaseCamPitch = -12.f;
+	GearTopsKmh = { 22.f, 38.f, 55.f, 85.f };   // Honda Win 110: 4-speed
 	// Bikes hold their line tighter than trucks (the rim stretch drifted 0.5 m+ towards the cliff edge).
 	LaneKeepGain = 2.2f;
 
@@ -441,7 +445,11 @@ void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
 		? FMath::Clamp(FMath::RadiansToDegrees(FMath::Atan2(LateralAccel, G)), -MaxLeanDeg, MaxLeanDeg)
 		: LeanDeg * 0.9f;
 	LeanDeg = FMath::FInterpTo(LeanDeg, TargetLean, DeltaSeconds, LeanInterpSpeed);
-	LeanRoot->SetRelativeRotation(FRotator(0.f, 0.f, LeanDeg));
+	// Round 6A: braking dive / acceleration squat on the forks (nose down up to 3.5 deg under hard braking).
+	const float LongAccelNow = DeltaSeconds > KINDA_SMALL_NUMBER ? (CurSpeed - PrevSpeed) / DeltaSeconds : 0.f;
+	const float TargetDive = IsGrounded() ? FMath::Clamp(LongAccelNow / G * 6.f, -3.5f, 1.5f) : 0.f;
+	DiveDeg = FMath::FInterpTo(DiveDeg, TargetDive, DeltaSeconds, 6.f);
+	LeanRoot->SetRelativeRotation(FRotator(DiveDeg, 0.f, LeanDeg));
 
 	// Wheels.
 	WheelAngle = FMath::Fmod(WheelAngle - FMath::RadiansToDegrees(CurSpeed * DeltaSeconds / WheelRadius), 360.f);
@@ -472,7 +480,10 @@ void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
 	// wind, the passenger looks around and waves now and then (FHGPersonRig, off past ~60 m).
 	const float Wind = FMath::Clamp(FMath::Abs(CurSpeed) / 1800.f, 0.f, 1.f);
 	RiderRig.Steer = FMath::Clamp(Steer, -1.f, 1.f);
-	RiderRig.LeanDeg = LeanDeg;
+	// Round 6A: in slow tight bends (the Tham Ma hairpins at 30-40 km/h) the rider shifts his weight further in
+	// than the bike leans - up to 8 deg more.
+	const float HairpinShift = FMath::Clamp(FMath::Abs(GetYawRate()) / 45.f, 0.f, 1.f) * FMath::Clamp((1300.f - FMath::Abs(CurSpeed)) / 600.f, 0.f, 1.f) * 8.f;
+	RiderRig.LeanDeg = LeanDeg + FMath::Sign(LeanDeg) * HairpinShift;
 	RiderRig.Wind = Wind;
 	RiderRig.Animate(this, DeltaSeconds);
 	if (bHasPassenger)
@@ -497,4 +508,38 @@ void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
 	}
 	PrevSpeed = CurSpeed;
 	UpdateScreaming(DeltaSeconds);
+}
+
+void AHGBikePawn::OnViewpointStop(bool bStart, const FVector& LookAt)
+{
+	if (!bStart)
+	{
+		if (AActor* R = PhotoRider.Get())
+		{
+			R->Destroy();
+		}
+		PhotoRider = nullptr;
+		SetNpcRiderVisible(true);
+		return;
+	}
+	// Riders get off and take photos of the view - only where someone can see it (within 350 m of the camera).
+	const APlayerController* PC = GetWorld()->GetFirstPlayerController();
+	if (!PC || !PC->PlayerCameraManager || FVector::DistSquared(PC->PlayerCameraManager->GetCameraLocation(), GetActorLocation()) > FMath::Square(35000.f))
+	{
+		return;
+	}
+	const FVector Off = GetActorRightVector() * 140.f + GetActorForwardVector() * (FMath::FRand() * 120.f - 60.f);
+	const FTransform T(FRotator(0.f, (LookAt - GetActorLocation()).Rotation().Yaw, 0.f), GetActorLocation() + Off + FVector(0.f, 0.f, 60.f));
+	AHGTouristNPC* Npc = GetWorld()->SpawnActorDeferred<AHGTouristNPC>(AHGTouristNPC::StaticClass(), T, nullptr, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+	if (!Npc)
+	{
+		return;
+	}
+	Npc->Style = EHGTouristStyle::EasyRider;
+	Npc->bWander = false;
+	Npc->LookAtPoint = LookAt;
+	Npc->FinishSpawning(T);
+	Npc->SetActorEnableCollision(false);   // standing by the bike, not in anyone's way
+	PhotoRider = Npc;
+	SetNpcRiderVisible(false);
 }

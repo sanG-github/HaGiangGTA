@@ -152,6 +152,28 @@ def build_cows(ctx, at_m, count, rng, tag, prefix):
         cow.set_editor_property("wander_radius", 400.0)
 
 
+def build_roadside_life(ctx, tag, prefix):
+    """Round 6A (agent A): goats on the Ma Pi Leng road, kids waving by the hamlets, locals on the shoulder."""
+    life = placements.roadside_life(ctx)
+    goat_coats = [unreal.LinearColor(0.9, 0.88, 0.82, 1), unreal.LinearColor(0.08, 0.07, 0.06, 1),
+                  unreal.LinearColor(0.45, 0.3, 0.18, 1)]
+    for i, (x, y, z, yaw) in enumerate(life["goats"]):
+        g = hg.spawn_actor(unreal.HGCowActor, f"Goat_MPL_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Goats")
+        g.set_editor_property("goat", True)
+        g.set_editor_property("coat_color", goat_coats[i % len(goat_coats)])
+        g.set_editor_property("wander_radius", 600.0)
+    for i, (x, y, z, yaw) in enumerate(life["kids"]):
+        k = hg.spawn_actor(unreal.HGTouristNPC, f"Kid_{i}", (x, y, z), (0, yaw + 90.0, 0), tag, f"{prefix}/Roadside")
+        k.set_editor_property("style", unreal.HGTouristStyle.LOCAL)
+        k.set_editor_property("kid", True)
+        k.set_editor_property("wander", False)
+    for i, (x, y, z, yaw) in enumerate(life["walkers"]):
+        w = hg.spawn_actor(unreal.HGTouristNPC, f"ShoulderWalker_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Roadside")
+        w.set_editor_property("style", unreal.HGTouristStyle.LOCAL)
+        w.set_editor_property("shoulder_walker", True)
+    hg.log(f"Roadside life: {len(life['goats'])} goats, {len(life['kids'])} kids, {len(life['walkers'])} shoulder walkers")
+
+
 def build_happy_water(ctx, rng, tag, prefix):
     for label, x, y, z in placements.happy_water(ctx, rng):
         hg.spawn_actor(unreal.HGHappyWaterPickup, label, (x, y, z), (0, 0, 0), tag, f"{prefix}/HappyWater")
@@ -169,3 +191,4 @@ def build_living_world(base: dict, tag: str, prefix: str) -> None:
     for at_m, count in placements.living_world_cows(ctx):
         build_cows(ctx, at_m, count, rng, tag, prefix)
     build_happy_water(ctx, rng, tag, prefix)
+    build_roadside_life(ctx, tag, prefix)

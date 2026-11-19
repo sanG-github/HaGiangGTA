@@ -682,3 +682,36 @@ terrain vs 61.4 without. validate_layout: 0 FAIL.
   50_boat_MaPiLeng_bend: no slabs in the sky; guardrails / chevrons / stone walls / cliffs unchanged in the road shots.
   Playtest: all PASS, 1 AI stop (bike behind a parked bike at the Tham Ma viewpoint), 0 re-placements, 75 FPS avg.
   -hgperf (load ~6): SUMMARY PASS, min 75 FPS (TuSan_boat 75, ThamMa eye 78, MomDa 82, others 84-120).
+
+---
+
+## Round 6A - window size, riding feel, audio, roadside life (`improve/polish-2`)
+
+1. **Window size**: the old guard pinned a hard-coded 1019x573 and resized the window by screen deltas (20-fix cap,
+   so later shots came out at 676 px). Now (EnforceViewport): the size the window settles at in its first 2 s is
+   held - 1280x720 when the OS allows it, 1019x573 when macOS fits a 1280 window down at start-up - and every
+   outside change is put back through UGameUserSettings (windowed, SetScreenResolution, ApplyResolutionSettings),
+   checked 4x a second, never with a screenshot pending. A refit the OS repeats three times is adopted instead of
+   fought in a loop. For players the same guard runs, but a resize made while the game window is focused is the
+   player's own and becomes the saved size (GameUserSettings).
+2. **Riding feel** (Honda Win, HGVehicleBase / HGBikePawn / HGGroundVehicle):
+   - 4-speed box (tops 22 / 38 / 55 / 85 km/h, down at 42 % of the band): rpm and engine note fall on every
+     upshift, 0.18 s clutch dip in volume; shifts logged ([HG_FEEL]).
+   - Braking dive / acceleration squat on the forks (up to 3.5 deg nose-down), on top of the physics lean.
+   - Rider weight shift into slow tight bends (up to +8 deg beyond the bike's lean below ~45 km/h).
+   - Camera shake by surface and speed (asphalt 0.08, concrete 0.45, dirt 1.0 x up to 3 cm).
+   - Not done: dust trail on dirt (no particle system / translucent material in the project yet - B's side).
+3. **Audio**: Doppler on every other vehicle's engine from the camera (measured 0.92-1.10 in the playtest); AI horn
+   (two-tone beep, synthesized in gen_assets) before blind hairpins - convoy leaders and trucks, 6 s cooldown;
+   khen-like reed drone loop near H'Mong houses and viewpoints (0.1-0.18 there); river lapping loop on the boat;
+   engine "echo" (a lagging, quieter copy of the engine note) when walls are within 80 m on both sides (gorge,
+   cuttings: 0.14-0.25 measured); boat engine pitch already follows speed.
+4. **World life**: goat herd (HGCowActor bGoat, half size, quicker, higher voice) on the road 260 m past the Ma Pi
+   Leng Panorama; kids (HGTouristNPC bKid) by three hamlets wave at every rider within 25 m; locals walk the
+   shoulder along the road spline (bShoulderWalker, +-60 m) between hamlets; Easy Rider convoys pull over at the
+   viewpoints (half the passes, 18 s): riders get off (a photographer NPC by each bike within 350 m of the camera),
+   then ride on. Placements: roadside_life() with its own RNG (validate_layout's replays unchanged).
+5. **Last dead stop**: parked vehicles (no rider, no AI) now come to rest and stay (the handbrake fought the slope
+   term every frame and a parked bike crept onto the Doc Tham Ma road at 250 m); going round a small still
+   obstacle needs 35 m of clear oncoming road instead of 60 m; a cow or goat the box hits beside the probe is shooed
+   off too (a truck sat at the 3.24 km herd with "cruise" as its reason).

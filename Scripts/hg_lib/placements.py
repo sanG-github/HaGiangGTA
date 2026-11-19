@@ -711,6 +711,41 @@ def cow_spots(ctx, at_m, count, rng):
     return out
 
 
+def shoulder_spots(ctx, at_m, count, rng, lat_min=90.0, lat_max=160.0, spread_m=40.0):
+    """Spots just off the road edge (on the shoulder, flat enough to walk) around at_m. [(x, y, z, yaw_along)]."""
+    road = ctx.road
+    out, tries = [], 0
+    while len(out) < count and tries < 2000:
+        tries += 1
+        m = at_m + rng.uniform(-spread_m, spread_m)
+        x0, y0, z0, fx, fy, rx, ry = road.frame(m)
+        side = rng.choice((1, -1))
+        lat = road.half_width_at(m) + rng.uniform(lat_min, lat_max)
+        x, y = x0 + rx * side * lat, y0 + ry * side * lat
+        if ctx.ground_ok(x, y, max_slope=25.0, foot_cm=80.0, ref_z=z0, max_dz=120.0, road_clear_cm=60.0):
+            continue
+        if any(math.hypot(x - o[0], y - o[1]) < 250.0 for o in out):
+            continue
+        out.append((x, y, ctx.terrain.z(x, y) + 95.0, math.degrees(math.atan2(fy, fx))))
+    return out
+
+
+def roadside_life(ctx):
+    """Round 6A: goats on the Ma Pi Leng road, kids by the hamlets, locals walking the shoulder between hamlets.
+    Own RNG (seed 606) so the crowd / cow / pickup draws that validate_layout replays are unchanged."""
+    rng = random.Random(606)
+    mpl = ctx.viewpoint_road_m("ma_pi_leng")
+    link_mid = 0.5 * (ctx.sec_m("tham_ma") + ctx.sec_m("link"))
+    rim_mid = 0.5 * (mpl + ctx.sec_m("rim"))
+    descent_mid = 0.5 * (ctx.sec_m("rim") + ctx.sec_m("descent"))
+    return {
+        "goats": cow_spots(ctx, mpl + 260.0, 7, rng),
+        "kids": [p for at in (link_mid + 70.0, descent_mid + 90.0, rim_mid) for p in shoulder_spots(ctx, at, 2, rng)],
+        "walkers": [p for at in (link_mid - 150.0, rim_mid - 300.0, rim_mid + 400.0, descent_mid - 120.0)
+                    for p in shoulder_spots(ctx, at, 1, rng)],
+    }
+
+
 def pickup_near(ctx, center, rng, r_min=300.0, r_max=700.0, max_dz=150.0):
     cx, cy, cz = center
     for _ in range(800):

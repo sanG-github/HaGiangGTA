@@ -72,6 +72,11 @@ void AHGCowActor::BeginPlay()
 	Super::BeginPlay();
 	HGPaint::LimitDrawDistance(this);
 	BuildKit();
+	if (bGoat)
+	{
+		SetActorScale3D(FVector(0.5f));
+		WalkSpeed *= 1.4f;
+	}
 	Home = GetActorLocation();
 	Target = Home;
 	Phase = FMath::FRand() * 10.f;
@@ -232,7 +237,7 @@ void AHGCowActor::Tick(float DeltaSeconds)
 			if (FVector::DistSquared(Player->GetActorLocation(), Loc) < FMath::Square(2500.f))
 			{
 				MooCooldown = FMath::FRandRange(8.f, 16.f);
-				HGAudio::PlayAt(this, LoadedMoo, Loc, 1.f, FMath::FRandRange(0.85f, 1.1f), 6000.f);
+				HGAudio::PlayAt(this, LoadedMoo, Loc, bGoat ? 0.6f : 1.f, FMath::FRandRange(0.85f, 1.1f) * (bGoat ? 2.1f : 1.f), 6000.f);
 			}
 		}
 	}
