@@ -239,7 +239,6 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         rock_n = g.scan(scan["rock"]["nor"], g.world_uv(wp, 380.0), "nor")
     else:
         rock_n = g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 420.0), normal=True)
-    far_t = g.cam_far(wp, 2500.0, 9000.0) if scan else None
     rock_d = g.scan_biplanar(scan["rock"]["diff"], wp, 380.0, steep) if "rock" in scan else None
 
     # 1 = lush Tham Ma valley, ~0.5 = dry canyon / karst plateau.
@@ -268,7 +267,8 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     dry = g.lerp(dry, g.color("DryMauve", (0.2, 0.13, 0.115)), g.mul(g.saturate(g.mul(g.sub((n_far, "G"), 0.45), 3.0)), 0.6))
     if "grass" in scan:
         # Scanned dry grass: near (3 m) and far (14 m) tiling blended by camera distance, palette-tinted.
-        gd = g.lerp(g.scan(scan["grass"]["diff"], g.world_uv(wp, 300.0)), g.scan(scan["grass"]["diff"], g.world_uv(wp, 1400.0)), far_t)
+        # (budget: one sample at 4.5 m; the n_far / n_mid macro tints already break up the repeat)
+        gd = g.scan(scan["grass"]["diff"], g.world_uv(wp, 450.0))
         dry = g.scanned(dry, gd, 0.245, g.scalar("GrassScanMix", 0.45), "GrassScanGain")
     if "ground" in scan:
         # Thin rocky soil showing through on the slopes.
@@ -392,7 +392,7 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         under = g.saturate(g.mul(g.sub(water_z_cm - 40.0, z), 1.0 / 150.0))
         bed = g.mul(g.mask(g.scan(scan["riverbed"]["diff"], g.world_uv(wp, 250.0)), r=True, g=True, b=True), g.color("RiverbedGain", (0.8, 0.8, 0.8)))
         base = g.lerp(base, bed, under)
-    if "grass" in scan and scan["grass"].get("nor") is not None:
+    if False:   # budget: grass normal dropped (no visible gain at 720p, ~0.3 ms)
         ground_n = g.scan(scan["grass"]["nor"], g.world_uv(wp, 300.0), "nor")
         normal = g.normalize(g.lerp(g.lerp(g.const3((0.0, 0.0, 1.0)), ground_n, 0.6), rock_n, g.add(g.mul(rocky, 0.6), 0.4)))
     else:
