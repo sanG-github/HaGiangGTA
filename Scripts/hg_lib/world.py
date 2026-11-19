@@ -339,7 +339,7 @@ def build_scatter(scatter, meshes, mats, tag, folder):
             else:
                 spawn_scatter(f"Scatter_{name}_{v + 1}", mesh, mats["rock"], items[v::4], tag, folder, cull)
     if sc["cliff"]:
-        spawn_scan_scatter("Scatter_spur", cliff_meshes[0], sc["cliff"][2:3], scatter["spur"], tag, folder,
+        spawn_scan_scatter("Scatter_spur", cliff_meshes[0], sc["cliff"][-1:], scatter["spur"], tag, folder,
                            mode="axes", sink=0.04)
     else:
         spawn_scatter("Scatter_spur", cliff_meshes[0], mats["rock"], scatter["spur"], tag, folder)
@@ -354,7 +354,7 @@ def build_scatter(scatter, meshes, mats, tag, folder):
     bushes = [meshes["SM_HG_Bush_01"], meshes["SM_HG_Bush_02"]]
     bush_items = [b for i, b in enumerate(scatter["bushes"]) if not m1 or i % 3 != 2]
     for v, mesh in enumerate(bushes):
-        bcull = (14000.0, 20000.0) if m1 else (18000.0, 26000.0)
+        bcull = (11000.0, 15000.0) if m1 else (18000.0, 26000.0)   # 7A budget on the merged build (was 140-200 m)
         if sc["shrub"]:
             bcull = (9000.0, 12000.0)   # masked scan foliage: cull hard (overdraw), the slopes beyond keep the rocks
             spawn_scan_scatter(f"Scatter_bushes_{v + 1}", mesh, sc["shrub"][v::2], bush_items[v::2], tag, folder,

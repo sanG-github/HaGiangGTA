@@ -227,7 +227,9 @@ def _masked_not_translucent(mesh):
 # Small pebbles (rock_07 / rock_09 / stone_01 / namaqualand_rocks_01, 10-25 cm) are not scaled up into 2-4 m
 # outcrops (x20 texel stretch); the moss rock sets are 2-3 m already.
 PIECES = {
-    "cliff": ["rock_face_01", "rock_face_02", "mountainside", "namaqualand_cliff_01", "namaqualand_cliff_02"],
+    # mountainside (80k verts) and namaqualand_cliff_02 (105k) left out of the scatter: the gorge walls from the
+    # boat (VP3_TuSan_boat) went under budget on the merged build (median 65 FPS).
+    "cliff": ["rock_face_01", "rock_face_02", "namaqualand_cliff_01"],
     # boulder_05 / _06 (0.7-1.4 m) left out: scaled to the 3 m boulders their texture smeared (review 75_rim_180).
     "boulder": ["namaqualand_boulder_02", "namaqualand_boulder_03", "namaqualand_boulder_04", "boulder_01"],
     "outcrop": ["rock_moss_set_01", "rock_moss_set_02"],

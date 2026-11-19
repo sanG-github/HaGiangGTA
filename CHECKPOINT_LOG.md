@@ -895,3 +895,24 @@ varies the load):
 | Scans, before the cover pass | 100 / 82 | Viewpoint_0 81 / 72 |
 | Cover pass with the 150 m macro sample | 57 / 70 | Viewpoint_3 65 / 69 |
 | Locked (macro from the 32 m noise) | 74 / 70 (median 72) | Viewpoint_0 57 / 81 (median 69, at the 70 limit) |
+
+## Round 7A - Poly Haven CC0 scans: cliffs, boulders, outcrops; denser ground cover (agent A)
+- Download: `Scripts/Tools/fetch_polyhaven.py`. Stdlib only, generic User-Agent, md5-checked, idempotent, 1 GB cap, dl.polyhaven.org only. 40 assets, 557 MB, plus 5 plant alpha maps (1.2 MB, approved separately) into `Data/PolyHaven/` (gitignored). The manifest is in `Data/polyhaven_manifest.json`, the CC0 note in `Data/POLYHAVEN_CREDITS.md`. fir_tree_01 (238 MB FBX, every needle modelled) took 47 min to build LODs and timed the import out, so it is not imported.
+- Import: `Scripts/hg_lib/scan_meshes.py` (renamed from scans.py to avoid clashing with B's texture module).
+  - Folders: /Game/HaGiang/PolyHaven/<id>/, reimported only when the source sha1 changes.
+  - M1 LOD chains, NDOP26 hull collision on rocks.
+  - The base colour of the rock scans is multiplied by (0.80, 0.84, 0.90), pulling the warm Namaqualand scans towards grey limestone.
+  - `Scripts/Tools/prep_scan_alpha.py` merges the alpha maps into RGBA PNGs and writes a `_alpha.gltf` copy (the glTF set ships JPG diffuse maps without alpha).
+- Placement (`world.spawn_scan_scatter`): each scan piece is fitted to the procedural mesh it replaces and re-centred (the multi-piece sets are laid out away from the origin), then sunk.
+  - Cliffs, summits and spur: 5 scan rock faces, per-axis fit within 0.6-1.8x.
+  - Boulders: 4 scans, sunk by 30 %. The small boulder_05/06 were dropped because their texture smeared at 3 m (the standing boulder in B's 75_rim_180 is gone).
+  - Outcrops: KarstOutcrop_03/04 replaced by 8 moss rock-set pieces, sunk by 30 %. B's blade clusters (01/02) stay.
+- Plants stay procedural:
+  - Scanned firs are 480-780k verts each and read as bare sticks once decimated.
+  - The alpha-cut scan shrubs and grass read as dark thin spikes at review distance.
+  - Instead, the verge and slope grass is clumped and denser (6-14 tufts per clump, 70k tufts, culled at 70-90 m), with scrub in every fourth clump. All tufts use the grass-green material (the dark dry tufts read as black spikes).
+- Merge of B (907ab07) and final checks (all generators regenerated, CP05 rebuilt):
+  - validate_layout: 0 FAIL (119 pass, 3 warn).
+  - -hgplaytest: every check PASS, 0 AI dead stops, average 73.3 FPS.
+  - -hgperf runs and the per-camera median: see the report numbers below.
+- Not done: the cone firs and the kapok "lollipop" trees near the road are unchanged; the scan foliage needs a proper material pass (two-sided foliage lighting, colour) before it can replace them.
