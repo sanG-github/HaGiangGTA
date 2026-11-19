@@ -957,53 +957,9 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	{
 		LaneShiftTarget = 0.f;
 	}
-	// Round 6A: Easy Rider convoys pull over at the viewpoints for ~18 s - riders off, photos, back on, ride on.
-	// The leader decides (half the passes); its riders stop behind it on the edge of the road.
-	if (!bViewpointsCached)
-	{
-		bViewpointsCached = true;
-		for (TActorIterator<AHGViewpointActor> It(GetWorld()); It; ++It)
-		{
-			const float D = AutoDriveRoad->GetDistanceAlongRoad(It->GetActorLocation());
-			const FVector P = Spline->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
-			if (FVector::Dist2D(P, It->GetActorLocation()) < 6000.f && D > 3000.f && D < Len - 20000.f)
-			{
-				ViewpointRoadD.Add(D);
-				ViewpointLook.Add(It->OrbitCenter.IsNearlyZero() ? It->GetActorLocation() : It->OrbitCenter);
-			}
-		}
-	}
-	if (ViewpointStopTime > 0.f)
-	{
-		ViewpointStopTime -= DeltaSeconds;
-		if (ViewpointStopTime <= 0.f)
-		{
-			OnViewpointStop(false, FVector::ZeroVector);
-		}
-	}
-	else if (WantsViewpointStops() && TurnState == EHGTurnState::None && !IsPlayerControlled())
-	{
-		const AHGGroundVehicle* L = AutoDriveLeader.Get();
-		const bool bLeaderStopping = L && L->IsViewpointStopping() && L->GetAutoDriveDirection() == AutoDriveDirection
-			&& (L->GetRoadDistance() - RoadDistance) * Dir < ConvoyGap * 2.5f;
-		for (int32 i = 0; i < ViewpointRoadD.Num(); ++i)
-		{
-			const float VpAhead = (ViewpointRoadD[i] - RoadDistance) * Dir;
-			if (i == LastViewpointStop || VpAhead > 600.f || VpAhead < -2500.f)
-			{
-				continue;
-			}
-			LastViewpointStop = i;
-			const bool bStop = bLeaderStopping || (!L && FMath::FRand() < 0.5f);
-			if (bStop)
-			{
-				ViewpointStopTime = bLeaderStopping ? FMath::Max(L->ViewpointStopTime - 1.f, 6.f) : 18.f;
-				++ViewpointStops;
-				OnViewpointStop(true, ViewpointLook[i]);
-			}
-			break;
-		}
-	}
+	// Round 6A/6C: Easy Rider convoys pull over at the viewpoints for 30-60 s - riders off, photos, back on, ride
+	// on. The leader decides (most passes); its riders stop in line behind it wherever they are.
+	UpdateViewpointStop(DeltaSeconds);
 	if (ViewpointStopTime > 0.f)
 	{
 		LaneShiftTarget = 250.f;   // pull in to the edge (clamped by GetLaneOffsetAt)
@@ -1028,6 +984,16 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		{
 			const float CowLat = FVector::DotProduct(Cow->GetActorLocation() - RoadP, Right);
 			Cow->ShooOff(Right * (CowLat >= 0.f ? 1.f : -1.f), 4.f);
+			CowBoxWait = SameCow == Cow ? CowBoxWait + DeltaSeconds : 0.f;
+			SameCow = Cow;
+			if (CowBoxWait > 2.5f && !SqueezePastActor.IsValid())
+			{
+				SqueezePastActor = Cow;
+				SqueezePastTime = 12.f;
+				Collision->IgnoreActorWhenMoving(Cow, true);
+				CowBoxWait = 0.f;
+				UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s squeezes past %s (box blocked)"), *GetName(), *Cow->GetName());
+			}
 		}
 	}
 	if (ViewpointStopTime > 0.f)
@@ -1068,6 +1034,21 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 	const FVector P1 = LanePoint(NoseCm + Probe * 0.5f);
 	const FVector P2 = LanePoint(NoseCm + Probe);
 	FCollisionQueryParams Params(SCENE_QUERY_STAT(HGAutoDriveProbe), false, this);
+	// Round 6C: a goat that was shooed but cannot leave (cliff edge on both sides, Goat_MPL_1 at 0.0 m held a bike
+	// for the whole stage) is squeezed past: neither the probe nor our box sees it for 12 s.
+	if (AActor* Squeeze = SqueezePastActor.Get())
+	{
+		SqueezePastTime -= DeltaSeconds;
+		if (SqueezePastTime > 0.f)
+		{
+			Params.AddIgnoredActor(Squeeze);
+		}
+		else
+		{
+			Collision->IgnoreActorWhenMoving(Squeeze, false);
+			SqueezePastActor.Reset();
+		}
+	}
 	FHitResult Hit;
 	// As wide as the vehicle (trucks: a cow at the lane edge was outside a 70 cm probe and inside the 2.5 m box).
 	const float ProbeRadius = FMath::Max(70.f, Collision->GetScaledBoxExtent().Y + 10.f);
@@ -1097,6 +1078,16 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 				const float CowLat = FVector::DotProduct(Cow->GetActorLocation() - RoadP, Right);
 				Cow->ShooOff(Right * (CowLat >= 0.f ? 1.f : -1.f), FMath::Max(2.f, (AutoDriveRoad->GetWidthAtDistance(RoadDistance) * 0.5f - FMath::Abs(CowLat)) / 100.f + 2.5f));
 				CowWaitTime = 0.f;
+				CowShoos = SameCow == Cow ? CowShoos + 1 : 1;
+				SameCow = Cow;
+				if ((CowShoos >= 2 || HitDist < 150.f) && !SqueezePastActor.IsValid())
+				{
+					SqueezePastActor = Cow;
+					SqueezePastTime = 12.f;
+					Collision->IgnoreActorWhenMoving(Cow, true);
+					CowShoos = 0;
+					UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s squeezes past %s (it would not leave the lane)"), *GetName(), *Cow->GetName());
+				}
 			}
 		}
 		if (IsPlayerControlled() && GetWorld()->GetTimeSeconds() - LastBlockLogTime > 1.0)
@@ -1109,6 +1100,14 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		const AActor* Obstacle = Hit.GetActor();
 		const bool bStill = Obstacle && Obstacle->GetVelocity().Size() < 50.f;
 		BlockedTime = (bStill && FMath::Abs(Speed) < 150.f) ? BlockedTime + DeltaSeconds : 0.f;
+		// Round 6C: a bike pulled over at a viewpoint stays there 30-60 s - don't queue behind it (a dead stop
+		// behind a photo stop at Ma Pi Leng), go round it after ~1 s.
+		const AHGGroundVehicle* ObstacleV = Cast<AHGGroundVehicle>(Obstacle);
+		const bool bPhotoStop = ObstacleV && ObstacleV->IsViewpointStopping() && ObstacleV != AutoDriveLeader.Get();
+		if (bPhotoStop && BlockedTime > 0.f)
+		{
+			BlockedTime += DeltaSeconds * 2.f;
+		}
 		// Nose to nose with an oncoming vehicle that is also stopped (one of them strayed into the other's lane on a
 		// hairpin): both squeeze to their own edge, which opens the gap - going "round" to the left would only meet
 		// head-on again, and waiting for the other never ends.
@@ -1121,7 +1120,7 @@ void AHGGroundVehicle::ComputeAutoDriveInput(float DeltaSeconds, float& OutThrot
 		}
 		const bool bHeadOn = Other && Other->HasRoadPosition() && Other->GetTravelDirection() != AutoDriveDirection;
 		// Going round a small still obstacle (a parked bike, a person) needs less clear road than a truck-sized one.
-		const bool bSmallObstacle = Obstacle && Obstacle->GetComponentsBoundingBox().GetExtent().Size2D() < 200.f;
+		const bool bSmallObstacle = bPhotoStop || (Obstacle && Obstacle->GetComponentsBoundingBox().GetExtent().Size2D() < 200.f);
 		if (BlockedTime > 2.f && bHeadOn && GoAroundTime <= 0.f)
 		{
 			GoAroundTime = 8.f;
@@ -1367,6 +1366,86 @@ void AHGGroundVehicle::TickTurnaround(float DeltaSeconds)
 	}
 }
 
+// Round 6C: the viewpoint stop runs for near and far-LOD vehicles alike (convoys are mostly > 450 m from the camera
+// and on the kinematic path - the stop never fired there, 0 stops in the round 6 playtests).
+void AHGGroundVehicle::UpdateViewpointStop(float DeltaSeconds)
+{
+	USplineComponent* Spline = AutoDriveRoad->GetSpline();
+	const float Len = Spline->GetSplineLength();
+	const float Dir = float(AutoDriveDirection);
+	if (!bViewpointsCached)
+	{
+		bViewpointsCached = true;
+		for (TActorIterator<AHGViewpointActor> It(GetWorld()); It; ++It)
+		{
+			const float D = AutoDriveRoad->GetDistanceAlongRoad(It->GetActorLocation());
+			const FVector P = Spline->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
+			if (FVector::Dist2D(P, It->GetActorLocation()) < 6000.f && D > 3000.f && D < Len - 20000.f)
+			{
+				ViewpointRoadD.Add(D);
+				ViewpointLook.Add(It->OrbitCenter.IsNearlyZero() ? It->GetActorLocation() : It->OrbitCenter);
+			}
+		}
+		if (WantsViewpointStops() && !AutoDriveLeader.IsValid())
+		{
+			UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s (convoy leader) knows %d viewpoint stops (road %s m), turns at %.0f / %.0f m"), *GetName(), ViewpointRoadD.Num(),
+				*FString::JoinBy(ViewpointRoadD, TEXT(","), [](float D) { return FString::FromInt(FMath::RoundToInt(D / 100.f)); }), TurnPointLo / 100.f, TurnPointHi / 100.f);
+		}
+	}
+	if (ViewpointStopTime > 0.f)
+	{
+		ViewpointStopTime -= DeltaSeconds;
+		if (ViewpointStopTime <= 0.f)
+		{
+			OnViewpointStop(false, FVector::ZeroVector);
+		}
+	}
+	else if (WantsViewpointStops() && TurnState == EHGTurnState::None && !IsPlayerControlled())
+	{
+		const AHGGroundVehicle* L = AutoDriveLeader.Get();
+		if (L)
+		{
+			// A rider: stop when the leader (or the rider in front) has pulled over just ahead.
+			// (Or a bike of our tour stopped right in front of us - the convoy order shuffles after overtakes.)
+			const AHGGroundVehicle* Front = CachedAhead.Get();
+			if (!L->IsViewpointStopping() && Front && Front->IsViewpointStopping() && Front->TourGroupKey() == TourGroupKey())
+			{
+				L = Front;
+			}
+			const float Gap = (L->GetRoadDistance() - RoadDistance) * Dir;
+			if (L->IsViewpointStopping() && L->GetAutoDriveDirection() == AutoDriveDirection && Gap > 0.f && Gap < ConvoyGap * 3.f
+				&& L->ViewpointStopTime > 2.f)
+			{
+				ViewpointStopTime = L->ViewpointStopTime - FMath::FRandRange(0.5f, 2.f);
+				OnViewpointStop(true, L->ViewpointLookNow);
+				ViewpointLookNow = L->ViewpointLookNow;
+			}
+		}
+		else
+		{
+			for (int32 i = 0; i < ViewpointRoadD.Num(); ++i)
+			{
+				const float VpAhead = (ViewpointRoadD[i] - RoadDistance) * Dir;
+				if (i == LastViewpointStop || VpAhead > 1500.f || VpAhead < -3000.f)
+				{
+					continue;
+				}
+				LastViewpointStop = i;
+				const bool bStop = FMath::FRand() < 0.75f;
+				UE_LOG(LogHaGiang, Log, TEXT("[HG_VEH] %s at viewpoint %d (road %.0f m): %s"), *GetName(), i, RoadDistance / 100.f, bStop ? TEXT("pulls over") : TEXT("rides on"));
+				if (bStop)
+				{
+					ViewpointStopTime = FMath::FRandRange(30.f, 60.f);
+					ViewpointLookNow = ViewpointLook[i];
+					++ViewpointStops;
+					OnViewpointStop(true, ViewpointLook[i]);
+				}
+				break;
+			}
+		}
+	}
+}
+
 void AHGGroundVehicle::TickFarLOD(float DeltaSeconds)
 {
 	USplineComponent* Spline = AutoDriveRoad->GetSpline();
@@ -1378,6 +1457,11 @@ void AHGGroundVehicle::TickFarLOD(float DeltaSeconds)
 	}
 	// Speed: cruise, curves, the convoy leader.
 	float Target = FMath::Min(AutoDriveCruise, FMath::Sqrt(AutoDriveLateralAccel * FMath::Max(GetMinRadiusAhead(2400.f, 600.f), 150.f)));
+	UpdateViewpointStop(DeltaSeconds);
+	if (ViewpointStopTime > 0.f)
+	{
+		Target = 0.f;
+	}
 	if (const AHGGroundVehicle* Leader = AutoDriveLeader.Get())
 	{
 		const float Gap = (Leader->GetRoadDistance() - RoadDistance) * float(AutoDriveDirection);

@@ -389,7 +389,7 @@ void AHGGtaGameMode::PlayTrafficTick(float DeltaSeconds)
 		// at a turn-round spot for the road to clear, or in line behind one, counts after 20 s).
 		float& Stop = PlayStopTime.FindOrAdd(Key);
 		const float Before = Stop;
-		const float Limit = V->IsViewpointStopping() ? 30.f : V->IsWaitingForTurn() ? 20.f : 4.f;
+		const float Limit = V->IsViewpointStopping() ? 70.f : V->IsWaitingForTurn() ? 20.f : 4.f;
 		Stop = (FMath::Abs(V->GetSpeed()) < 50.f && !V->IsYielding()) ? Stop + DeltaSeconds : 0.f;
 		if (Before < Limit && Stop >= Limit)
 		{

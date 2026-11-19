@@ -814,3 +814,10 @@ Round 6B budget pass (merged with B's 3e104f6, regenerated, CP05 rebuilt, perf l
 - Bisect: -hghide=HmongHouse -> min 75 (ThamMa eye 81: B's house platforms cost ~7 FPS there);
   -hghide of all A's round 6 actors (vegetation, dogs, milestones, goats, kids, walkers, flags) -> min 74.
   No change made to B's house files: both are inside the 70 budget now.
+
+## Round 6C - convoy viewpoint stops, hip lean, goat squeeze (agent A)
+- Playtest on 42403c7 (lock held): every check PASS; 1 AI dead stop (a bike held by Goat_MPL_1 at 0.0 m that could not leave the lane); 0 viewpoint stops. All 59 shots viewed: no regressions (the restart-at-viewpoint shot still starts against the Ma Pi Leng rock pillar).
+- Viewpoint stops never fired because convoys > 450 m from the camera run the kinematic far-LOD path, which skipped the logic. Now `UpdateViewpointStop` runs in both paths. Leaders pull over (75 %) at Tham Ma (road 248 m) and Ma Pi Leng (2823 m) for 30-60 s, riders stop in line behind them (or behind a stopped bike of their tour), photographers spawn within 350 m, then they ride on. Other traffic goes round a photo stop after about 1 s.
+- Cows and goats that are shooed but cannot leave the lane are squeezed past: probe and box ignore them for 12 s.
+- Rider weight shift: the driver seat (pivot at the saddle) rolls up to 6 deg into hairpins, eased in and out. The rig's own lean is no longer driven, so the body leans from the hips and stays on the seat.
+- Playtest after the fix (lock held): all PASS, 0 AI dead stops, 0 re-placements, 4 viewpoint stops, 19 kid waves, dogs 72 chases / 273 barks, average 88.7 FPS.

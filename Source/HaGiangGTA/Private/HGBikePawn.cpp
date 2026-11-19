@@ -483,9 +483,12 @@ void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
 	// Round 6A: in slow tight bends (the Tham Ma hairpins at 30-40 km/h) the rider shifts his weight further in
 	// than the bike leans - up to 8 deg more.
 	const float HairpinShift = FMath::Clamp(FMath::Abs(GetYawRate()) / 45.f, 0.f, 1.f) * FMath::Clamp((1300.f - FMath::Abs(CurSpeed)) / 600.f, 0.f, 1.f) * 8.f;
-	// (Review 03_keys_6s: driving RiderRig.LeanDeg past the bike's lean bent the rider sideways off the seat - the
-	// rig already leans with LeanRoot. Kept to a gentle 3 deg until the rig has a proper hip offset.)
-	RiderRig.LeanDeg = LeanDeg + FMath::Sign(LeanDeg) * FMath::Min(HairpinShift, 3.f);
+	// Round 6C: the shift is a lean from the hips - the driver seat (pivot at the saddle, 84 cm up) rolls up to 6 deg
+	// further into the bend, carrying the rider (NPC rig or the player) with it. Driving RiderRig.LeanDeg instead
+	// bent the rig's head / torso against each other and the rider looked broken off the seat (03_keys_6s).
+	RiderRig.LeanDeg = LeanDeg;
+	HipShiftDeg = FMath::FInterpTo(HipShiftDeg, FMath::Sign(LeanDeg) * HairpinShift * 0.75f, DeltaSeconds, 4.f);
+	DriverSeat->SetRelativeRotation(FRotator(0.f, 0.f, HipShiftDeg));
 	RiderRig.Wind = Wind;
 	RiderRig.Animate(this, DeltaSeconds);
 	if (bHasPassenger)

@@ -227,16 +227,24 @@ private:
 	void BeginTurnaround();
 	void TickTurnaround(float DeltaSeconds);
 	void TickFarLOD(float DeltaSeconds);
+	void UpdateViewpointStop(float DeltaSeconds);
 	bool bFarHandbrakeScratch = false;
 	float CowWaitTime = 0.f;
+	float CowBoxWait = 0.f;
+	int32 CowShoos = 0;
+	TWeakObjectPtr<AActor> SameCow;
+	TWeakObjectPtr<AActor> SqueezePastActor;
+	float SqueezePastTime = 0.f;
 	float ParkedRestTime = 0.f;
 	float ViewpointStopTime = 0.f;
 	int32 LastViewpointStop = INDEX_NONE;
 	TArray<float> ViewpointRoadD;
 	TArray<FVector> ViewpointLook;
+	FVector ViewpointLookNow = FVector::ZeroVector;
 	bool bViewpointsCached = false;
 protected:
 	/** Tour convoys stop at the viewpoints (bikes with a tour group). */
+	virtual int32 TourGroupKey() const { return -1; }
 	virtual bool WantsViewpointStops() const { return false; }
 	/** Riders get off for photos (bStart) / back on. LookAt = the view. */
 	virtual void OnViewpointStop(bool bStart, const FVector& LookAt) {}
