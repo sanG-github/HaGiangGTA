@@ -745,6 +745,11 @@ def roadside_life(ctx):
                     for p in shoulder_spots(ctx, at, 1, rng)],
         "dogs": village_dogs(ctx, rng),
         "milestones": milestones(ctx),
+        # National flags on poles by the road at Doc Tham Ma and the Ta Lang dock road (Ma Pi Leng has B's pole):
+        # the red flag with the yellow star along the road is a first-glance Vietnam cue.
+        "flags": [p for at in (ctx.viewpoint_road_m("doc_tham_ma") + 25.0, ctx.viewpoint_road_m("doc_tham_ma") - 60.0,
+                               ctx.road.length_m - 160.0)
+                  for p in shoulder_spots(ctx, at, 1, rng, lat_min=250.0, lat_max=400.0, spread_m=15.0)],
     }
 
 

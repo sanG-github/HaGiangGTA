@@ -181,6 +181,10 @@ def build_roadside_life(ctx, tag, prefix):
             d = hg.spawn_actor(unreal.HGDogActor, f"Dog_{mode}_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Dogs")
             d.set_editor_property("coat_color", coats[i % len(coats)])
             d.set_editor_property("mode", unreal.HGDogMode.TROT if mode == "trot" else unreal.HGDogMode.LIE)
+    if hasattr(unreal, "HGDressingProp"):
+        for i, (x, y, z, yaw) in enumerate(life["flags"]):
+            fp = hg.spawn_actor(unreal.HGDressingProp, f"RoadFlag_{i}", (x, y, z - 95.0), (0, yaw, 0), tag, f"{prefix}/Roadside")
+            fp.set_editor_property("kind", unreal.HGDressingKind.FLAG_POLE)
     if hasattr(unreal, "HGMilestoneActor"):
         for i, (x, y, z, yaw, town, km) in enumerate(life["milestones"]):
             ms = hg.spawn_actor(unreal.HGMilestoneActor, f"Milestone_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Milestones")

@@ -483,7 +483,9 @@ void AHGBikePawn::UpdateVisuals(float DeltaSeconds, float Steer)
 	// Round 6A: in slow tight bends (the Tham Ma hairpins at 30-40 km/h) the rider shifts his weight further in
 	// than the bike leans - up to 8 deg more.
 	const float HairpinShift = FMath::Clamp(FMath::Abs(GetYawRate()) / 45.f, 0.f, 1.f) * FMath::Clamp((1300.f - FMath::Abs(CurSpeed)) / 600.f, 0.f, 1.f) * 8.f;
-	RiderRig.LeanDeg = LeanDeg + FMath::Sign(LeanDeg) * HairpinShift;
+	// (Review 03_keys_6s: driving RiderRig.LeanDeg past the bike's lean bent the rider sideways off the seat - the
+	// rig already leans with LeanRoot. Kept to a gentle 3 deg until the rig has a proper hip offset.)
+	RiderRig.LeanDeg = LeanDeg + FMath::Sign(LeanDeg) * FMath::Min(HairpinShift, 3.f);
 	RiderRig.Wind = Wind;
 	RiderRig.Animate(this, DeltaSeconds);
 	if (bHasPassenger)

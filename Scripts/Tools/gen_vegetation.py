@@ -239,26 +239,32 @@ def place(ctx, layout, scatter, rng):
         # Clustered "rock gardens": smooth noise over the map, stronger on steeper and higher ground.
         return 0.5 + 0.5 * math.sin(x / 9100.0 + 1.3 * math.sin(y / 13300.0)) * math.sin(y / 7700.0 + 0.7 * math.cos(x / 11900.0))
 
-    # 1) Limestone outcrops: dense within 900 m of the road (what the rider sees), clustered, on 8-45 deg slopes.
+    # 1) Limestone outcrops - the strongest Ha Giang cue: "rock gardens" of grey blocks and pinnacles covering a
+    #    good part of every slope near the road (review of the first pass: 14k small rocks over the whole map read
+    #    as a few pebbles). Clusters of 3-8 blocks, 0.8-2.8 x the 1.2-3.4 m meshes, within 700 m of the road.
     tries = 0
-    while sum(len(out[n]) for n in rocks) < 14000 and tries < 220000:
+    while sum(len(out[n]) for n in rocks) < 42000 and tries < 400000:
         tries += 1
         x, y = rng.uniform(-half, half), rng.uniform(-half, half)
         d = road_d(x, y)
-        if d > 90000 or not off_road(x, y, 350.0):
+        if d > 70000 or not off_road(x, y, 450.0):
             continue
         z = t.z(x, y)
         if z < water_z + 600.0:
             continue
         s_deg = slope(x, y)
-        if s_deg < 6 or s_deg > 48:
+        if s_deg < 5 or s_deg > 50:
             continue
-        p = rock_field(x, y) * (0.5 + s_deg / 60.0) * (1.4 if d < 25000 else 1.0)
+        p = rock_field(x, y) ** 1.3 * (0.45 + s_deg / 45.0) * (1.8 if d < 25000 else 1.0)
         if rng.random() > p:
             continue
-        name = rocks[rng.integers(0, len(rocks))]
-        s = rng.uniform(0.55, 1.5) * (1.2 if "_3" in name else 1.0)
-        out[name].append(item(x, y, z - 15.0, s, tilt=6.0))
+        for _ in range(rng.integers(3, 9)):
+            rx, ry = x + rng.normal(0, 450), y + rng.normal(0, 450)
+            if not off_road(rx, ry, 400.0):
+                continue
+            name = rocks[rng.integers(0, len(rocks))]
+            s = rng.uniform(0.8, 2.2) * (1.3 if rng.random() < 0.15 else 1.0)
+            out[name].append(item(rx, ry, t.z(rx, ry) - 25.0 * s, s, tilt=8.0))
         # Scrub and grass in the cracks around the rock.
         if rng.random() < 0.35 and d < 60000:
             a = rng.uniform(0, 2 * np.pi)
