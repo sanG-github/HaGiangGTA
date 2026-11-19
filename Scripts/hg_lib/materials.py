@@ -240,6 +240,10 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     else:
         rock_n = g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 420.0), normal=True)
     rock_d = g.scan_biplanar(scan["rock"]["diff"], wp, 380.0, steep) if "rock" in scan else None
+    # Round 7B (user: slopes looked ragged / noisy): a 150 m macro noise for broad hue / value patches, and a
+    # camera-distance fade so the fine speckle and the scan detail settle into a coherent tone far away.
+    n_macro = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 15000.0))
+    far_fade = g.cam_far(wp, 3000.0, 12000.0)
 
     # 1 = lush Tham Ma valley, ~0.5 = dry canyon / karst plateau.
     if lush_center_cm is not None:
@@ -260,6 +264,7 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # Shrub dots re-use channels already sampled: n_mid.B (7 m clumps) + n_fine.B (1 m specks).
     dots = g.saturate(g.mul(g.sub((n_mid, "B"), g.sub(0.45, g.mul(lush, 0.2))), 2.0))
     dots = g.saturate(g.add(dots, g.mul(g.saturate(g.mul(g.sub((n_fine, "B"), 0.5), 4.0)), 0.5)))
+    dots = g.mul(dots, g.mul(g.sub(1.0, far_fade), 0.45))
     # Greener lower slopes near the water (photos): +shrubs below ~800 m.
     low = g.saturate(g.mul(g.sub(water_z_cm + 10000.0, z), 1.0 / 8000.0))
     green_amt = g.saturate(g.add(g.add(green_amt, dots), g.mul(low, 0.35)))
@@ -269,15 +274,20 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         # Scanned dry grass: near (3 m) and far (14 m) tiling blended by camera distance, palette-tinted.
         # (budget: one sample at 4.5 m; the n_far / n_mid macro tints already break up the repeat)
         gd = g.scan(scan["grass"]["diff"], g.world_uv(wp, 450.0))
-        dry = g.scanned(dry, gd, 0.245, g.scalar("GrassScanMix", 0.6), "GrassScanGain")
+        dry = g.lerp(g.scanned(dry, gd, 0.245, g.scalar("GrassScanMix", 0.6), "GrassScanGain"), dry, g.mul(far_fade, 0.8))
         # The shrubby / lush green carries the same scanned grass detail (it read as flat procedural blotches).
-        green = g.mul(green, g.lerp(1.0, g.mul(g.lum(gd), 1.0 / 0.245), 0.8))
+        green = g.mul(green, g.lerp(1.0, g.mul(g.lum(gd), 1.0 / 0.245), g.mul(g.sub(1.0, far_fade), 0.8)))
     if "ground" in scan:
         # Thin rocky soil showing through on the slopes.
         sl = g.saturate(g.mul(g.sub(0.97, up), 4.0))
         gnd = g.scan(scan["ground"]["diff"], g.world_uv(wp, 350.0))
-        dry = g.lerp(dry, g.scanned(dry, gnd, 0.204, 0.5, "GroundScanGain"), g.mul(sl, g.scalar("RockySoil", 0.55)))
-    veg = g.lerp(dry, green, g.mul(green_amt, g.lerp(0.72, 1.0, lush_w)))
+        dry = g.lerp(dry, g.scanned(dry, gnd, 0.204, 0.5, "GroundScanGain"), g.mul(g.mul(sl, g.scalar("RockySoil", 0.2)), g.sub(1.0, far_fade)))
+    # Continuous green-brown grass and scrub (Ha Giang slopes): a green floor everywhere, broad 150 m patches of
+    # greener / browner cover, far hills one coherent green-grey.
+    green_amt = g.saturate(g.add(g.mul(green_amt, 0.55), g.add(0.38, g.mul(g.sub((n_macro, "R"), 0.5), 0.5))))
+    veg = g.lerp(dry, green, green_amt)
+    veg = g.mul(veg, g.add(0.9, g.mul((n_macro, "G"), 0.22)))                          # broad value patches
+    veg = g.lerp(veg, g.color("FarHillTone", (0.075, 0.085, 0.05)), g.mul(far_fade, 0.55))
 
     # Bare terraced corn plots on gentler ground (striped by contour lines).
     flat = remap_mask(g, up, 0.82, 8.0)
@@ -337,7 +347,7 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     out_n = g.add(g.add(g.mul((n_mid, "R"), 0.62), g.mul((n_fine, "G"), 0.28)), g.mul((n_far, "R"), 0.22))
     # (first pass too timid: specks only) - clustered by the 32 m macro noise, frequent on any slope
     out_th = g.sub(g.sub(0.88, g.mul((n_far, "B"), 0.1)), g.mul(slope, g.mul(0.17, g.sub(1.0, g.mul(lush_w, 0.6)))))
-    outcrop = g.saturate(g.mul(g.sub(out_n, out_th), 12.0))
+    outcrop = g.mul(g.saturate(g.mul(g.sub(out_n, out_th), 8.0)), g.saturate(g.mul(g.sub(g.add(0.88, g.mul(g.sub((n_mid, "G"), 0.5), 0.12)), up), 5.0)))
     soil_ring = g.saturate(g.sub(g.saturate(g.mul(g.sub(out_n, g.sub(out_th, 0.045)), 12.0)), outcrop))
     out_col = g.mul(g.color("OutcropLime", (0.215, 0.212, 0.2)), g.add(0.68, g.mul((n_fine, "R"), 0.45)))
     if rock_d is not None:
@@ -348,7 +358,7 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     earth = g.mul(g.color("RedEarth", (0.19, 0.095, 0.058)), g.add(0.8, g.mul((n_fine, "G"), 0.35)))
     if mud_d is not None:
         earth = g.scanned(g.color("RedEarth", (0.19, 0.095, 0.058)), mud_d, 0.119, 0.3, "EarthScanGain")
-    ground = g.lerp(ground, earth, g.mul(soil_ring, 0.85))
+    ground = g.lerp(ground, earth, g.mul(soil_ring, 0.35))
     ground = g.lerp(ground, out_col, outcrop)
     base = g.lerp(ground, rock_col, rock)
 
@@ -830,7 +840,8 @@ def far_terrain(tex) -> unreal.Material:
     steep = g.saturate(g.mul(g.sub(0.72, up), 4.0))
     dry = g.lerp(g.color("Dry", (0.075, 0.075, 0.04)), g.color("Khaki", (0.1, 0.09, 0.05)), (n2, "G"))   # match the landscape's green-khaki
     shrub = g.color("Shrub", (0.022, 0.042, 0.018))
-    col = g.lerp(dry, shrub, g.saturate(g.mul(g.sub(g.add((n, "R"), g.mul((n2, "B"), 0.5)), 0.55), 2.0)))
+    # 7B: broad, low-contrast scrub cover (the 70 m shrub noise read as speckle on the far hills).
+    col = g.lerp(dry, shrub, g.add(0.35, g.mul(g.saturate(g.mul(g.sub((n, "R"), 0.5), 1.5)), 0.4)))
     rock = g.mul(g.color("Rock", (0.16, 0.16, 0.155)), g.add(0.75, g.mul((n2, "R"), 0.5)))
     col = g.lerp(col, rock, g.mul(steep, g.add(0.5, g.mul((n, "G"), 0.5))))
     valley = g.saturate(g.mul(g.sub(g.scalar("HazeTopZ", 90000.0), z), 1.0 / 45000.0))
