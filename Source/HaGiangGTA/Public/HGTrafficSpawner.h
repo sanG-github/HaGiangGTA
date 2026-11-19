@@ -65,16 +65,35 @@ public:
 
 	/** Lateral offset from the road centre (cm, right of travel - Vietnam drives on the right). */
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traffic")
-	float LaneOffset = 170.f;
+	float LaneOffset = 140.f;   // centre of a bike in the right half of the 6 m QL4C, ~1.6 m clear of the edge
 
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traffic")
 	float PassengerChance = 0.8f;
 
+	/**
+	 * Solo traffic kept around the player wherever they ride: bikes coming the other way and a few faster ones
+	 * catching up from behind (they overtake), plus trucks on QL4C. Each is (re)placed out of sight - beyond
+	 * its draw distance, 350-550 m ahead or 250-350 m behind along the road - once it is 900 m away.
+	 */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traffic|Ambient") int32 AmbientBikes = 5;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Traffic|Ambient") int32 AmbientTrucks = 1;
+
 	const TArray<TObjectPtr<AHGGroundVehicle>>& GetSpawnedVehicles() const { return Spawned; }
+
+	virtual void Tick(float DeltaSeconds) override;
 
 protected:
 	virtual void BeginPlay() override;
 
 private:
 	UPROPERTY(Transient) TArray<TObjectPtr<AHGGroundVehicle>> Spawned;
+	UPROPERTY(Transient) TArray<TObjectPtr<AHGGroundVehicle>> Ambient;
+	TArray<bool> AmbientPlaced;
+	float AmbientTimer = 0.f;
+	int32 AmbientFlip = 0;
+	float TruckMinCm = -1.f;
+	float TruckMaxCm = -1.f;
+	bool PlaceAmbient(AHGGroundVehicle* V, bool bTruck, float PlayerDist, int32 PlayerDir);
+	/** Bike model / variant hook (seeded; convoys share a tour group). Wired to the bike builder after merge. */
+	void ConfigureBikeVariant(AHGBikePawn* Bike, bool bConvoy, int32 ConvoyIndex);
 };

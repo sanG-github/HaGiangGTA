@@ -12,7 +12,7 @@ import os
 import unreal
 
 from . import editor_utils as hg
-from . import placements
+from . import dressing, placements
 
 ROAD_MESH_OFFSET_CM = -11.0   # landscape is carved 15 cm under the road profile; asphalt top 4 cm above it
 
@@ -56,11 +56,27 @@ def build_water(layout, material, tag, folder):
     if water.get("bodies"):
         # Real map: rotated planes following the reservoir + one below the dam (gen_heightmap.py).
         actors = []
+        half = layout["heightmap"].get("half_m", 2016.0) * 100.0 - 2000.0
         for b in water["bodies"]:
-            actor = hg.spawn_actor(unreal.HGWaterBody, b["name"], (b["center_cm"][0], b["center_cm"][1], b["z_cm"]),
-                                   (0, b["yaw"], 0), tag, folder)
+            cx, cy, (sx, sy) = b["center_cm"][0], b["center_cm"][1], b["size_cm"]
+            # Keep every plane inside the landscape: the below-dam plane ran 590 m past the map edge, a flat lake
+            # floating beyond the end of the terrain in the rim views. Trim the end that sticks out.
+            yr = math.radians(b["yaw"])
+            ux, uy, vx, vy = math.cos(yr), math.sin(yr), -math.sin(yr), math.cos(yr)
+            for _ in range(400):
+                ends = [max(max(abs(cx + a * sx / 2 * ux + c * sy / 2 * vx), abs(cy + a * sx / 2 * uy + c * sy / 2 * vy)) for c in (-1, 1)) for a in (-1, 1)]
+                if max(ends) <= half or sx < 4000.0:
+                    break
+                a = -1 if ends[0] > ends[1] else 1
+                if ends[0] > half and ends[1] > half:
+                    sy = max(sy - 2000.0, 4000.0)   # too wide for the map at both ends: narrow it
+                    continue
+                sx -= 2000.0
+                cx -= a * ux * 1000.0
+                cy -= a * uy * 1000.0
+            actor = hg.spawn_actor(unreal.HGWaterBody, b["name"], (cx, cy, b["z_cm"]), (0, b["yaw"], 0), tag, folder)
             actor.set_editor_property("water_material", material)
-            actor.set_editor_property("size_cm", unreal.Vector2D(*b["size_cm"]))
+            actor.set_editor_property("size_cm", unreal.Vector2D(sx, sy))
             rerun(actor)
             actors.append(actor)
         return actors[0]
@@ -174,10 +190,15 @@ def build_dock(layout, mat_wood, tag, folder):
 
 
 def build_checkin_rings(layout, mat_ring, tag, folder):
+    # A painted dashed ring on the ground (round 1 was a solid 4 m yellow disc that read as a plastic plate
+    # lying in every check-in photo).
     for key, vp in layout["viewpoints"].items():
         x, y, z = vp["location_cm"]
-        hg.spawn_mesh(f"CheckIn_{key}", hg.CYLINDER, (x, y, z + 3), scale=(4.0, 4.0, 0.03),
-                      material=mat_ring, tag=tag, folder=folder, collision=False)
+        dashes = 14
+        for i in range(dashes):
+            a = 2.0 * math.pi * i / dashes
+            hg.box(f"CheckIn_{key}_{i}", (x + math.cos(a) * 170.0, y + math.sin(a) * 170.0, z + 1.5), (45.0, 11.0, 2.0),
+                   yaw=math.degrees(a) + 90.0, material=mat_ring, tag=tag, folder=folder, collision=False)
 
 
 def build_vehicles(layout, tag, folder):
@@ -190,6 +211,14 @@ def build_vehicles(layout, tag, folder):
         actor = hg.spawn_actor(unreal.HGBikePawn, f"HondaWin_{i:02d}", bike["location_cm"], (0, bike["yaw"], 0),
                                tag, folder)
         actor.set_editor_property("body_color", colors[i % len(colors)])
+        # Parked bikes wait empty: the xe om job puts a backpacker on (traffic bikes keep theirs).
+        actor.set_editor_property("has_passenger", False)
+        # The player's rental at the start: the classic plain Win (the automatic pick could turn a bike with a
+        # passenger into a luggage-laden Easy Rider tour bike that hides the rider in the chase view).
+        actor.set_editor_property("bike_model", unreal.HGBikeModel.WIN)
+        actor.set_editor_property("bike_seed", i * 7 + 1)
+        actor.set_editor_property("model_chosen", True)
+        actor.set_editor_property("paint_chosen", True)
     for i, boat in enumerate(spawns["boats"]):
         x, y, z = boat["location_cm"]
         actor = hg.spawn_actor(unreal.NhoQueBoatPawn, f"Boat_{boat['type']}_{i:02d}", (x, y, z),
@@ -226,6 +255,27 @@ def spawn_scatter(label, mesh, material, instances, tag, folder, cull=(0.0, 0.0)
     if packed:
         actor.add_packed_instances(packed)
     return actor
+
+
+def _seat_houses(terrain, items, max_relief_cm=300.0):
+    """Round 5 (agent A): scatter houses stood at the ground height of their centre, so on a slope the downhill
+    side hung up to 2 m in the air (the blue-roofed house 15 m from the Doc Tham Ma spawn read as a floating brown
+    block over the camera). Seat each on the lowest ground under its footprint (+0.7 m eaves) and drop spots
+    with more than 3 m of relief across it."""
+    out, dropped = [], 0
+    for it in items:
+        x, y, yaw, sx, sy = it[0], it[1], it[3], it[6], it[7]
+        a = math.radians(yaw)
+        ca, sa = math.cos(a), math.sin(a)
+        hx, hy = 450.0 * sx + 70.0, 300.0 * sy + 70.0
+        zs = [terrain.z(x + ca * hx * u - sa * hy * v, y + sa * hx * u + ca * hy * v) for u in (-1, 0, 1) for v in (-1, 0, 1)]
+        if max(zs) - min(zs) > max_relief_cm:
+            dropped += 1
+            continue
+        out.append([x, y, min(zs)] + list(it[3:]))
+    if dropped:
+        hg.log(f"scatter houses: {dropped} on slopes too steep dropped, {len(out)} seated on their lowest ground")
+    return out
 
 
 def build_scatter(scatter, meshes, mats, tag, folder):
@@ -300,6 +350,14 @@ def build_golden_hour(tag, folder):
         ac.set_editor_property("mie_scattering_scale", 0.006)
     except Exception as exc:
         hg.warn(f"SkyAtmosphere: {exc}")
+    # Aerial perspective from the atmosphere (blue in-scatter that grows with distance but keeps the ridges'
+    # light / shade contrast) instead of relying on the flat height-fog colour, which washed the far ranges
+    # out to one grey-blue sheet. Property name has UE's own typo.
+    for k, v in (("aerial_pespective_view_distance_scale", 2.2), ("height_fog_contribution", 0.6)):
+        try:
+            ac.set_editor_property(k, v)
+        except Exception as exc:
+            hg.warn(f"SkyAtmosphere.{k}: {exc}")
 
     sky = hg.spawn_actor(unreal.SkyLight, "SkyLight", (0, 0, 150000), (0, 0, 0), tag, folder)
     skc = sky.get_component_by_class(unreal.SkyLightComponent)
@@ -320,28 +378,47 @@ def build_golden_hour(tag, folder):
     fog = hg.spawn_actor(unreal.ExponentialHeightFog, "Haze", (0, 0, 42000), (0, 0, 0), tag, folder)
     fc = fog.get_component_by_class(unreal.ExponentialHeightFogComponent)
     # UE falloff is per 1000 uu: 0.08 -> density e-folds every ~125 m above the fog actor.
-    for k, v in (("fog_density", 0.0028), ("fog_height_falloff", 0.04),
-                 ("fog_inscattering_luminance", unreal.LinearColor(0.32, 0.38, 0.45, 1.0)),
+    # Round 2B: thinner, bluer haze that starts further out (the near and mid ranges keep their contrast;
+    # the atmosphere's aerial perspective does the depth).
+    for k, v in (("fog_density", 0.002), ("fog_height_falloff", 0.04),
+                 ("fog_inscattering_luminance", unreal.LinearColor(0.26, 0.34, 0.48, 1.0)),
                  ("directional_inscattering_luminance", unreal.LinearColor(0.75, 0.68, 0.55, 1.0)),
                  ("directional_inscattering_exponent", 6.0),
                  ("enable_volumetric_fog", hg.PROFILE == "sm6"), ("volumetric_fog_scattering_distribution", 0.65),
                  ("volumetric_fog_extinction_scale", 1.2), ("volumetric_fog_distance", 25000.0),
-                 ("fog_max_opacity", 0.75), ("start_distance", 1500.0)):
+                 ("fog_max_opacity", 0.62), ("start_distance", 2500.0)):
         try:
             fc.set_editor_property(k, v)
         except Exception as exc:
             hg.warn(f"Fog.{k}: {exc}")
+    # Round 3B - valley haze: a second, low-lying fog layer that settles in the gorges and valley floors (e-folds
+    # every ~200 m above the river) so the distant ranges stand out layer by layer above it, and the shaded
+    # gorge gets some in-scattered light instead of going black.
+    try:
+        second = unreal.ExponentialHeightFogData()
+        second.set_editor_property("fog_density", 0.0018)
+        second.set_editor_property("fog_height_falloff", 0.05)
+        second.set_editor_property("fog_height_offset", 3000.0)
+        fc.set_editor_property("second_fog_data", second)
+    except Exception as exc:
+        hg.warn(f"Fog second layer: {exc}")
 
     ppv = hg.spawn_actor(unreal.PostProcessVolume, "PP_GoldenHour", (0, 0, 100000), (0, 0, 0), tag, folder)
     ppv.set_editor_property("unbound", True)
     s = ppv.get_editor_property("settings")
     for k, v in (("bloom_intensity", 0.55), ("vignette_intensity", 0.32), ("film_grain_intensity", 0.12),
-                 ("auto_exposure_min_brightness", 0.6), ("auto_exposure_max_brightness", 2.5),
+                 ("auto_exposure_min_brightness", -1.2), ("auto_exposure_max_brightness", 2.5),   # 3B: -1.2 (was 0.6) lets the eye adapt in the sky-lit-only Tu San narrows
                  ("white_temp", 6600.0), ("color_saturation", unreal.Vector4(1.04, 1.06, 1.04, 1.0)),
                  ("color_contrast", unreal.Vector4(1.08, 1.08, 1.08, 1.0)),
                  ("color_gain_shadows", unreal.Vector4(0.94, 1.0, 1.08, 1.0)),
                  ("color_gain_highlights", unreal.Vector4(1.03, 1.0, 0.96, 1.0)),
-                 ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0)):
+                 ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0),
+                 # Round 3B - deep gorge shade (Tu San narrows went near-black): sky light leaks a little into
+                 # sky-occluded places (a bounce fill that only matters where Lumen sees no sky), and local
+                 # exposure lifts the shadows without flattening the sunlit walls.
+                 ("lumen_skylight_leaking", 0.16),
+                 ("local_exposure_shadow_contrast_scale", 1.0), ("local_exposure_highlight_contrast_scale", 1.0),
+                 ("local_exposure_detail_strength", 1.0)):
         try:
             s.set_editor_property(k, v)
             s.set_editor_property("override_" + k, True)
@@ -382,21 +459,54 @@ def build_viewpoint_props(layout, scatter, meshes, mats, tag, folder):
     px, py = -oy, ox                              # along the parapet
     yaw = math.degrees(math.atan2(py, px))
     stone = mats.get("stone")
-    for i in range(-2, 3):
-        cx, cy = vp[0] + ox * 900 + px * i * 420, vp[1] + oy * 900 + py * i * 420
-        hg.box(f"Parapet_{i + 2}", (cx, cy, vp[2] + 40), (400, 55, 95), yaw=yaw, material=stone, tag=tag, folder=folder)
+    # Positions from placements.tham_ma_parapet: blocks on/near the road are dropped (validate_layout checks it).
+    blocks, buckets = placements.tham_ma_parapet(placements.ctx_for(layout, scatter))
+    for i, (cx, cy, gz, byaw) in enumerate(blocks):
+        hg.box(f"Parapet_{i}", (cx, cy, gz + 40), (400, 55, 95), yaw=byaw, material=stone, tag=tag, folder=folder)
     red = hg.color_material("MI_GB_BucketRed", (0.6, 0.03, 0.03))
-    for i, (along, flower) in enumerate(((-700, "flowers_white"), (-250, "flowers_yellow"), (450, "flowers_white"))):
-        bx, by = vp[0] + ox * 820 + px * along, vp[1] + oy * 820 + py * along
-        hg.spawn_mesh(f"FlowerBucket_{i}", hg.CYLINDER, (bx, by, vp[2] + 30), scale=(0.55, 0.55, 0.6),
+    for i, ((bx, by, gz), flower) in enumerate(zip(buckets, ("flowers_white", "flowers_yellow", "flowers_white"))):
+        hg.spawn_mesh(f"FlowerBucket_{i}", hg.CYLINDER, (bx, by, gz + 30), scale=(0.55, 0.55, 0.6),
                       material=red, tag=tag, folder=folder)
         bush = hg.spawn_mesh(f"FlowerBunch_{i}", "/Game/HaGiang/Generated/Meshes/SM_HG_Bush_01.SM_HG_Bush_01",
-                             (bx, by, vp[2] + 60), scale=(0.45, 0.45, 0.55), material=mats[flower], tag=tag,
+                             (bx, by, gz + 60), scale=(0.45, 0.45, 0.55), material=mats[flower], tag=tag,
                              folder=folder, collision=False)
     girl = hg.spawn_actor(unreal.HGTouristNPC, "FlowerSeller", (vp[0] + ox * 760 + px * -480, vp[1] + oy * 760 + py * -480, vp[2] + 100),
                           (0, 0, 0), tag, folder)
     girl.set_editor_property("style", unreal.HGTouristStyle.LOCAL)
     girl.set_editor_property("look_at_point", hg.vec(centre))
+
+
+def _cafe_piers(layout, at, yaw, concrete, tag, folder):
+    """Columns under the Panorama cafe wherever the ground is more than 0.4 m below its floor (house mesh
+    footprint 10.4 x 7.6 m scaled x1.25 along the road; columns every ~3.2 m along, 3 rows across)."""
+    try:
+        terrain = placements.ctx_for(layout).terrain
+    except Exception as exc:  # no heightmap next to the layout: skip the piers rather than the whole level
+        hg.warn(f"cafe piers skipped: {exc}")
+        return
+    ca, cu = placements.MPL_CAFE_AT
+    floor = at(ca, cu, -0.1)[2]
+    n = 0
+    lo = floor
+    for i in range(5):
+        along = ca + (-6.2 + 3.1 * i)
+        for up in (cu - 3.5, cu, cu + 3.5):
+            x, y, _ = at(along, up)
+            gz = terrain.z(x, y)
+            drop = floor - gz
+            if drop < 40.0:
+                continue
+            h = drop + 120.0                     # 1.2 m footing into the slope
+            hg.box(f"MPL_PanoramaCafe_Pier_{i}_{n}", (x, y, floor - h * 0.5), (40, 40, h), yaw=yaw,
+                   material=concrete, tag=tag, folder=folder)
+            n += 1
+            lo = min(lo, gz)
+    if n:
+        # Deck slab under the floor so the columns carry something (and the open underside isn't a void).
+        c = at(ca, cu, -0.1)
+        hg.box("MPL_PanoramaCafe_Deck", (c[0], c[1], floor - 15.0), (1340, 780, 30), yaw=yaw,
+               material=concrete, tag=tag, folder=folder)
+    hg.log(f"Panorama cafe: {n} piers (lowest ground {(floor - lo) / 100:.1f} m under the floor)")
 
 
 def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
@@ -428,14 +538,24 @@ def build_landmarks(layout, meshes, mats, mat_wood, tag, folder):
         if "youth_monument" not in marks:
             hg.spawn_mesh("MPL_Monument", mesh_path(meshes["SM_HG_Monument"]), at(6, 2, -0.1), (0, yaw, 0), (1, 1, 1),
                           mats["monument"], tag, folder)
-        # Name stone: a big upright limestone block by the road edge.
-        hg.spawn_mesh("MPL_NameStone", mesh_path(meshes["SM_HG_Boulder_01"]), at(-6, -4, -0.3), (0, yaw + 90, 0),
+        # Name stone: a big upright limestone block by the road edge (the carved kit stone of dressing.py
+        # replaces it when the C++ prop is compiled).
+        if not hasattr(unreal, "HGDressingProp"):
+          hg.spawn_mesh("MPL_NameStone", mesh_path(meshes["SM_HG_Boulder_01"]), at(-6, -4, -0.3), (0, yaw + 90, 0),
                       (1.1, 0.45, 1.0), mats["monument"], tag, folder)
-        building("MPL_PanoramaCafe", at(-15, 4.5, -0.1), yaw, (1.25, 1.0, 1.05), mats["cafe_wall"], mats["roof_green"])
-        stall = at(16, 3.5, 0.0)
+        building("MPL_PanoramaCafe", at(*placements.MPL_CAFE_AT, -0.1), yaw, (1.25, 1.0, 1.05), mats["cafe_wall"], mats["roof_green"])
+        # On the pad now; any corner still over the edge stands on concrete piers like the real cliff-edge cafes.
+        _cafe_piers(layout, at, yaw, mats.get("pole"), tag, folder)
+        stall = at(*placements.MPL_STALL_AT, 0.0)
         hg.box("MPL_DrinkStall", (stall[0], stall[1], stall[2] + 55), (260, 120, 110), yaw=yaw, material=mat_wood, tag=tag, folder=folder)
         hg.box("MPL_StallAwning", (stall[0], stall[1], stall[2] + 240), (320, 220, 8), yaw=yaw,
                material=mats["roof_blue"], tag=tag, folder=folder, collision=False)
+        # Stabilisation (review rim_120: "floating blue bar"): the awning had nothing under it - four posts from
+        # the stall corners up to the awning, and the stall snapped to the plaza ground.
+        ca, sa = math.cos(math.radians(yaw)), math.sin(math.radians(yaw))
+        for px, py in ((-150, -100), (150, -100), (-150, 100), (150, 100)):
+            hg.box(f"MPL_StallPost_{px}_{py}", (stall[0] + ca * px - sa * py, stall[1] + sa * px + ca * py, stall[2] + 118),
+                   (8, 8, 236), yaw=yaw, material=mat_wood, tag=tag, folder=folder, collision=False)
 
     if "youth_monument" in marks:
         at, yaw = frame("youth_monument")
@@ -509,18 +629,70 @@ def build_river_traffic(layout, tag, folder):
         rerun(boat)
 
 
+def layout_for_dressing():
+    return hg.ensure_generated_heightmap()
+
+
 def build_set_dressing(scatter, meshes, mats, tag, folder):
     """Reference-photo dressing: distant blue ranges, chevrons on the bends, utility poles, hamlets."""
+    # Round 3B: layered ridge rings (gen_ranges.py, absolute altitude) instead of the single flat band (3 since 4B).
+    for i in range(3):
+        path = f"/Game/HaGiang/Generated/Meshes/SM_HG_RangeLayer_{i}.SM_HG_RangeLayer_{i}"
+        if unreal.EditorAssetLibrary.does_asset_exist(path.split(".")[0]) and f"range_{i}" in mats:
+            layer = hg.spawn_mesh(f"RangeLayer_{i}", path, (0, 0, 0), material=mats[f"range_{i}"], tag=tag,
+                                  folder=folder, collision=False)
+            layer.static_mesh_component.set_editor_property("cast_shadow", False)
+            try:
+                unreal.EditorStaticMeshLibrary.remove_collisions(layer.static_mesh_component.static_mesh)
+            except Exception as exc:
+                hg.warn(f"RangeLayer_{i} collision: {exc}")
     ranges = hg.spawn_mesh("DistantRanges", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantRanges.SM_HG_DistantRanges",
                            (0, 0, 80000), material=mats["ranges"], tag=tag, folder=folder, collision=False)
+    ranges.set_actor_hidden_in_game(any(f"range_{i}" in mats for i in range(3)))   # kept only as a fallback
     ranges.static_mesh_component.set_editor_property("cast_shadow", False)
+    # Scenery only: its auto-generated collision box would enclose the whole map (170..2060 m) and
+    # swallow every ground trace and the PlayerStart.
+    try:
+        unreal.EditorStaticMeshLibrary.remove_collisions(ranges.static_mesh_component.static_mesh)
+    except Exception as exc:
+        hg.warn(f"DistantRanges collision: {exc}")
     origin, extent = ranges.get_actor_bounds(False)
     hg.log(f"DistantRanges bounds: origin {origin} extent {extent}")
+    # Foothills between the map edge and the ranges, in a dry-grass olive (drawn on top of the ranges' skirt).
+    apron = hg.spawn_mesh("DistantApron", "/Game/HaGiang/Generated/Meshes/SM_HG_DistantApron.SM_HG_DistantApron",
+                          (0, 0, 80000 + 300), material=hg.color_material("MI_GB_Foothills", (0.13, 0.13, 0.065)),
+                          tag=tag, folder=folder, collision=False)
+    apron.static_mesh_component.set_editor_property("cast_shadow", False)
+    # Round 3B: the real DEM terrain beyond the map (gen_farterrain.py) replaces the apron in game (the flat
+    # one-colour sheet read as a hazy lake from the Ma Pi Leng rim); the apron stays as the fallback.
+    far_path = "/Game/HaGiang/Generated/Meshes/SM_HG_FarTerrain"
+    if unreal.EditorAssetLibrary.does_asset_exist(far_path) and "far_terrain" in mats:
+        far = hg.spawn_mesh("FarTerrain", far_path + ".SM_HG_FarTerrain", (0, 0, 0), material=mats["far_terrain"],
+                            tag=tag, folder=folder, collision=False)
+        far.static_mesh_component.set_editor_property("cast_shadow", False)
+        try:
+            unreal.EditorStaticMeshLibrary.remove_collisions(far.static_mesh_component.static_mesh)
+        except Exception as exc:
+            hg.warn(f"FarTerrain collision: {exc}")
+        apron.set_actor_hidden_in_game(True)
+    try:
+        unreal.EditorStaticMeshLibrary.remove_collisions(apron.static_mesh_component.static_mesh)
+    except Exception as exc:
+        hg.warn(f"DistantApron collision: {exc}")
     spawn_scatter("Scatter_chevrons", meshes["SM_HG_Chevron"], mats["chevron"], scatter.get("chevrons", []), tag, folder,
                   cull=(20000.0, 30000.0), collision=True, extra_tags=("RoadPosts",))
     spawn_scatter("Scatter_poles", meshes["SM_HG_UtilityPole"], mats["pole"], scatter.get("poles", []), tag, folder,
                   cull=(50000.0, 70000.0), collision=True)
+    try:
+        terrain = placements.ctx_for(layout_for_dressing()).terrain
+    except Exception as exc:  # heightmap not next to the layout
+        hg.warn(f"house ground seat skipped: {exc}")
+        terrain = None
     for colour, items in scatter.get("houses", {}).items():
+        if colour == "grey":
+            items = dressing.remaining_grey_houses(layout_for_dressing(), items)   # the rest are kit H'Mong houses
+        if terrain is not None:
+            items = _seat_houses(terrain, items)
         spawn_scatter(f"Scatter_houses_{colour}_walls", meshes["SM_HG_HouseWalls"], mats["house_wall"], items, tag, folder,
                       cull=(0.0, 0.0), collision=True)
         spawn_scatter(f"Scatter_houses_{colour}_roofs", meshes["SM_HG_HouseRoof"], mats[f"roof_{colour}"], items, tag, folder,

@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "HGVehicleBase.h"
+#include "HGPeopleBuilder.h"
 #include "NhoQueBoatPawn.generated.h"
 
 class UStaticMeshComponent;
@@ -34,6 +35,13 @@ public:
 	virtual bool IsWaterVehicle() const override { return true; }
 	virtual void ResetToSpawn() override;
 
+	/** [R] on the water: back onto the nearest point of the tourist boats' cruise line, facing along it the way
+	 *  we were heading, stopped. Falls back to the spawn point when there is no cruise line. */
+	void RecoverToRoute();
+
+	/** Cruise line of any auto-cruising boat in the level (the Tu San route), or empty. */
+	static const TArray<FVector>* FindCruiseLine(const UWorld* World);
+
 	UFUNCTION(BlueprintPure, Category = "HaGiang|Boat")
 	EHGBoatType GetBoatType() const { return BoatType; }
 
@@ -59,6 +67,9 @@ public:
 	float CruiseAcceptRadius = 1200.f;
 
 protected:
+	virtual void HandleResetInput() override { RecoverToRoute(); }
+	/** Chase camera for the player: orbit / look-back, never below the water surface. */
+	void UpdateBoatCamera(float DeltaSeconds);
 	virtual void BeginPlay() override;
 	virtual FVector GetExitLocation() const override;
 
@@ -96,6 +107,16 @@ protected:
 	UPROPERTY(EditAnywhere, Category = "Tuning") float TurnRollDeg = 9.f;
 
 private:
+	/** Cruise canoes: boatman at the stern wheel + seated tourists on the benches (HGPeopleBuilder). */
+	void BuildCrew();
+	/** Cano look from the mesh kit (replaces the greybox parts; collision unchanged). */
+	void BuildCanoKit();
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitHull;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitFlag;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitWake;
+	TArray<FHGPersonRig> Crew;
+	bool bCrewBuilt = false;
+
 	bool HasWaterDepthAt(const FVector& Location, float SurfaceZ) const;
 	void ComputeCruiseInput(float& OutThrottle, float& OutSteer);
 	int32 CruiseIndex = 0;
@@ -108,4 +129,5 @@ private:
 	float VisualRoll = 0.f;
 	float PaddlePhase = 0.f;
 	bool bFloating = false;
+	float LastBlockLogTime = -10.f;
 };

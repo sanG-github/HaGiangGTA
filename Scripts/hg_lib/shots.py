@@ -98,4 +98,65 @@ def shots(layout, scatter):
     fx, fy = _norm2(river[g][0] - ahead[0], river[g][1] - ahead[1])
     out.append(("VP3_TuSan_flycam", [river[g][0] + fx * 200.0 - fy * 120.0, river[g][1] + fy * 200.0 + fx * 120.0, water_z + 520.0],
                 [river[max(g - 30, 0)][0], river[max(g - 30, 0)][1], water_z], 55))
-    return out
+    return _clear_of_buildings(out, layout, scatter)
+
+
+def _clear_of_buildings(out, layout, scatter, clear_cm=450.0, max_push_m=15.0):
+    """Move any camera that stands in or right next to a building (the Ta Lang dock camera was inside the ticket
+    booth) forward along its view until it is clear_cm from every footprint (placements.footprints)."""
+    try:
+        from hg_lib import placements as P
+    except ImportError:
+        try:
+            import placements as P  # noqa: F401 - when run from Scripts/hg_lib
+        except ImportError:
+            return out
+    fps = P.footprints(layout, scatter)
+    if not fps:
+        return out
+
+    def clearance(x, y):
+        return min(P.rect_distance(x * 100.0, y * 100.0, f["cx"], f["cy"], f["yaw"], f["hx"], f["hy"]) for f in fps)
+
+    def in_view(x, y, dx, dy, fov):
+        """A building centre within 60 m inside the horizontal view cone (it fills a corner of the frame - the
+        Panorama cafe roof in the Mom Da ledge shot)."""
+        for f in fps:
+            vx, vy = f["cx"] / 100.0 - x, f["cy"] / 100.0 - y
+            d = math.hypot(vx, vy)
+            if 1e-3 < d < 60.0 and (vx * dx + vy * dy) / d > math.cos(math.radians(fov * 0.5 + 10.0)):
+                return True
+        return False
+
+    fixed = []
+    for name, cam, look, fov in out:
+        dx, dy = _norm2(look[0] - cam[0], look[1] - cam[1])
+        c = list(cam)
+        pushed = 0.0
+        while (clearance(c[0], c[1]) < clear_cm or in_view(c[0], c[1], dx, dy, fov)) and pushed < max_push_m:
+            c[0] += dx
+            c[1] += dy
+            pushed += 1.0
+        fixed.append((name, c, look, fov))
+    return fixed
+
+
+def write_review_cameras(gen_dir):
+    """Generated/Heightmaps/HaGiang_review_cameras.json: the review shots in cm for the game's -hgperf mode."""
+    import json
+    import os
+    with open(os.path.join(gen_dir, "HaGiang_layout.json"), encoding="utf-8") as f:
+        layout = json.load(f)
+    with open(os.path.join(gen_dir, "HaGiang_scatter.json"), encoding="utf-8") as f:
+        scatter = json.load(f)
+    cams = [{"name": n, "cam_cm": [c * 100.0 for c in cam], "look_cm": [c * 100.0 for c in look], "fov": fov}
+            for n, cam, look, fov in shots(layout, scatter)]
+    path = os.path.join(gen_dir, "HaGiang_review_cameras.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({"cameras": cams}, f, indent=1)
+    return path, len(cams)
+
+
+if __name__ == "__main__":
+    import sys
+    print(*write_review_cameras(sys.argv[1] if len(sys.argv) > 1 else "Generated/Heightmaps"))

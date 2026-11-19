@@ -101,6 +101,13 @@ class Grid:
     def ground(self, x, y):
         return float(self.patch(self.z, x, y, 0)[0, 0])
 
+    def ground_bilinear(self, x, y):
+        fx, fy = (x + self.half) / self.cell, (y + self.half) / self.cell
+        ix, iy = int(np.clip(math.floor(fx), 0, self.n - 2)), int(np.clip(math.floor(fy), 0, self.n - 2))
+        tx, ty = fx - ix, fy - iy
+        z = self.z
+        return float((z[iy, ix] * (1 - tx) + z[iy, ix + 1] * tx) * (1 - ty) + (z[iy + 1, ix] * (1 - tx) + z[iy + 1, ix + 1] * tx) * ty)
+
     def max_slope(self, x, y, r):
         return float(self.patch(self.slope, x, y, r).max())
 
@@ -378,7 +385,15 @@ def check_spawns(ctx, g, rep, legacy, river):
         bikes, boats = vs["bikes"], vs["boats"]
     for i, b in enumerate(bikes):
         x, y, z = b["location_cm"]
-        rep.check("spawns", f"bike_{i}", ground_problem(ctx, g, x, y, r=100, spawn_z=z, z_band=(-20, 300)))
+        prob = ground_problem(ctx, g, x, y, r=100, spawn_z=z, z_band=(-20, 300))
+        if prob is None and not legacy:
+            # The whole bike outline (1.9 x 0.76 m) stays off the carriageway.
+            a = math.radians(b["yaw"])
+            cl = min(ctx.road.edge_clearance(x + c * 95 * math.cos(a) - s_ * 38 * math.sin(a), y + c * 95 * math.sin(a) + s_ * 38 * math.cos(a))
+                     for c in (-1, 0, 1) for s_ in (-1, 1))
+            if cl < 30.0:
+                prob = f"parked on the road ({cl / 100:+.2f} m from the edge)"
+        rep.check("spawns", f"bike_{i}", prob)
     for i, b in enumerate(boats):
         x, y, _ = b["location_cm"]
         half = P.CANO_HALF if b["type"] == "Cano" else P.KAYAK_HALF
@@ -388,28 +403,70 @@ def check_spawns(ctx, g, rep, legacy, river):
         if ok and clash:
             ok = False
             rep.add("spawns", f"boat_{b['type']}_{i} berth", "FAIL", "overlaps a pontoon / moored boat")
+        if ok and b["type"] == "Cano" and not legacy:
+            # Departure lane: bow along the cruise route, nothing within 1.5 m of the hull.
+            cl = P.hull_clearance(x, y, b["yaw"], half[0], half[1], river_obstacles)
+            if cl < 140.0:
+                ok = False
+                rep.add("spawns", f"boat_{b['type']}_{i} lane", "FAIL", f"{cl / 100:.1f} m from a pontoon / moored boat")
         rep.check("spawns", f"boat_{b['type']}_{i}", None if ok else
                   f"aground: ground {(g.max_z(x, y, half[0]) - ctx.layout['water']['surface_z_cm']) / 100:+.1f} m vs surface",
                   f"afloat (moved {moved:.1f} m from the layout spawn)" if moved > 0.05 else "afloat")
 
 
+ROAD_MIN_RADIUS_CHECK_M = 8.5     # gen_heightmap.ROAD_MIN_RADIUS_M = 9 at the centreline ("about 9 m")
+ROAD_MAX_TURN_DEG_PER_M = math.degrees(1.0 / ROAD_MIN_RADIUS_CHECK_M)
+ROAD_PROFILE_TOL_CM = 30.0
+
+
 def check_road(ctx, g, rep):
-    """Road data problems the gameplay code cannot fix (reported for gen_heightmap.py)."""
+    """Road geometry: minimum radius / maximum turn per metre on the spline points, and the road profile against the
+    landscape (gen_heightmap re-levels the road core 0.15 m under the profile)."""
     road = ctx.road
     cusps = P.road_cusps(road)
+    pts = np.array(ctx.layout["road"]["points_cm"], dtype=float)
+    xy = pts[:, :2] / 100.0
+    a, b, c = xy[:-2], xy[1:-1], xy[2:]
+    ab, bc, ca = (np.linalg.norm(b - a, axis=1), np.linalg.norm(c - b, axis=1), np.linalg.norm(a - c, axis=1))
+    cross = np.abs((b - a)[:, 0] * (c - a)[:, 1] - (b - a)[:, 1] * (c - a)[:, 0])
+    R = ab * bc * ca / np.maximum(2.0 * cross, 1e-9)
+    seg = np.linalg.norm(np.diff(xy, axis=0), axis=1)
+    h = np.unwrap(np.arctan2(np.diff(xy[:, 1]), np.diff(xy[:, 0])))
+    turn = np.degrees(np.abs(np.diff(h))) / np.maximum(0.5 * (seg[:-1] + seg[1:]), 1e-6)
+    k = int(np.argmin(R))
+    m_k = road.closest(*(xy[k + 1] * 100.0))[0]
+    rep.check("road", "minimum radius", None if R.min() >= ROAD_MIN_RADIUS_CHECK_M else
+              f"{(R < ROAD_MIN_RADIUS_CHECK_M).sum()} points under {ROAD_MIN_RADIUS_CHECK_M} m (tightest {R.min():.1f} m at {m_k:.0f} m)",
+              f"tightest {R.min():.1f} m (at {m_k:.0f} m)")
+    rep.check("road", "maximum turn per metre", None if turn.max() <= ROAD_MAX_TURN_DEG_PER_M else
+              f"{turn.max():.1f} deg/m > {ROAD_MAX_TURN_DEG_PER_M:.1f}", f"{turn.max():.1f} deg/m")
+    grade = np.abs(np.diff(pts[:, 2] / 100.0)) / np.maximum(seg, 1e-3)
+    kg = int(np.argmax(grade))
+    rep.check("road", "maximum grade", None if grade.max() <= 0.21 else
+              f"{grade.max():.0%} at {road.closest(*(xy[kg] * 100.0))[0]:.0f} m (DEM under a cliff road: gen_heightmap fit_to_shelf)",
+              f"{grade.max():.0%}, {(grade > 0.15).sum()} segments over 15 %")
+    # Different parts of the route (more than 40 m apart along it) at least 8 m apart: no leg laid onto another.
+    sxy = np.concatenate([[0.0], np.cumsum(seg)])
+    close = []
+    for i in range(0, len(xy), 2):
+        d = np.linalg.norm(xy - xy[i], axis=1)
+        far = np.abs(sxy - sxy[i]) > 40.0
+        if far.any() and d[far].min() < 8.0:
+            close.append((sxy[i], d[far].min()))
+    rep.check("road", "legs apart", None if not close else
+              f"{len(close)} points within 8 m of another part of the route (closest {min(c for _, c in close):.1f} m at {close[0][0]:.0f} m)",
+              "every part of the route >= 8 m from the others")
     if cusps:
-        rep.add("road", "spline cusps (decimated hairpins)", "WARN",
-                f"{len(cusps)} spots turn tighter than 6 m radius - decimated hairpins in road.points_cm (AI and asphalt mesh cut them), e.g. at "
-                + ", ".join(f"{m:.0f}" for m in cusps[:8]) + (" ..." if len(cusps) > 8 else "") + " m")
-    pts = ctx.layout["road"]["points_cm"]
-    dz = np.array([p[2] - g.ground(p[0], p[1]) for p in pts])
-    bad = np.nonzero(np.abs(dz) > 150)[0]
-    if len(bad):
-        k = int(bad[np.argmax(np.abs(dz[bad]))])
-        m = road.closest(pts[k][0], pts[k][1])[0]
-        rep.add("road", "road profile vs terrain", "WARN",
-                f"{len(bad)}/{len(pts)} road points > 1.5 m off the landscape (worst {dz[k] / 100:+.1f} m at {m:.0f} m); "
-                "vehicles drive on the landscape")
+        rep.add("road", "spline cusps (decimated hairpins)", "FAIL",
+                f"{len(cusps)} spots turn tighter than 6 m radius, e.g. at " + ", ".join(f"{m:.0f}" for m in cusps[:8]) + " m")
+    # Landscape under the centreline (bilinear, as UE renders it); the road mesh sits 0.15 m over the carve.
+    dz = np.array([p[2] - g.ground_bilinear(p[0], p[1]) for p in pts])
+    bad = np.nonzero(np.abs(dz) > ROAD_PROFILE_TOL_CM)[0]
+    kk = int(np.argmax(np.abs(dz)))
+    m = road.closest(pts[kk][0], pts[kk][1])[0]
+    rep.check("road", "road profile vs landscape", None if not len(bad) else
+              f"{len(bad)}/{len(pts)} road points > {ROAD_PROFILE_TOL_CM / 100:.1f} m off the landscape (worst {dz[kk] / 100:+.2f} m at {m:.0f} m)",
+              f"all within {ROAD_PROFILE_TOL_CM / 100:.1f} m (worst {dz[kk] / 100:+.2f} m at {m:.0f} m)")
     return cusps
 
 
@@ -456,6 +513,66 @@ def check_pickups(ctx, g, rep, pickups):
         if prob is None and not (-50 <= z - gz <= 250):
             prob = f"floats {(z - gz) / 100:+.1f} m above ground"
         rep.check("pickups", label, prob)
+
+
+def check_props(ctx, g, rep):
+    """Tham Ma parapet blocks must stay off the road (a block across the hairpin stopped every bike)."""
+    blocks, buckets = P.tham_ma_parapet(ctx)
+    half = P.PARAPET_SEG[0] * 0.5
+    for i, (x, y, z, yaw) in enumerate(blocks):
+        a = math.radians(yaw)
+        c = min(ctx.road.edge_clearance(x + math.cos(a) * s * half, y + math.sin(a) * s * half) for s in (-1, 0, 1))
+        rep.check("props", f"parapet block {i}", None if c >= P.PARAPET_ROAD_CLEAR_CM - 1 else f"{c / 100:.1f} m from the road edge")
+    if not blocks:
+        rep.add("props", "parapet", "WARN", "no parapet block fits off the road")
+    for i, (x, y, z) in enumerate(buckets):
+        c = ctx.road.edge_clearance(x, y)
+        rep.check("props", f"flower bucket {i}", None if c >= 50 else f"{c / 100:.1f} m from the road edge")
+    # Landmark buildings stand on their pads: no corner hanging more than 1 m over the slope (the Panorama cafe
+    # stood half off the Ma Pi Leng plaza, 40 m of air under its far end).
+    for fp in P.footprints(ctx.layout):
+        a = math.radians(fp["yaw"])
+        ax, ay, bx, by = math.cos(a), math.sin(a), -math.sin(a), math.cos(a)
+        z0 = g.ground(fp["cx"], fp["cy"])
+        worst = max(z0 - g.ground(fp["cx"] + ax * fp["hx"] * u + bx * fp["hy"] * v, fp["cy"] + ay * fp["hx"] * u + by * fp["hy"] * v)
+                    for u in (-1, 0, 1) for v in (-1, 0, 1))
+        rep.check("props", f"{fp['name']} on solid ground", None if worst <= 100 else f"a corner hangs {worst / 100:.1f} m over the slope",
+                  f"max {worst / 100:.1f} m under a corner")
+
+
+def check_furniture(ctx, rep):
+    """Posts, chevrons, guardrails and rim walls (placements.road_furniture): nothing within road half-width +
+    FURNITURE_MIN_CLEAR_CM of any road centreline; rails / walls hug the edge along every bend (midpoint and both
+    ends 0.35-1.2 m outside it) and their 4 m pieces join end to end (no gaps, no overlaps)."""
+    F = P.road_furniture(ctx)
+    clear = lambda x, y: min(ctx.road.edge_clearance(x, y), ctx.stubs.edge_clearance(x, y))
+    for kind in ("posts", "chevrons", "guardrails", "stone_walls"):
+        items = F[kind]
+        bad = [(i, clear(it[0], it[1])) for i, it in enumerate(items) if clear(it[0], it[1]) < P.FURNITURE_MIN_CLEAR_CM]
+        rep.check("furniture", f"{kind} off the road", None if not bad else
+                  f"{len(bad)}/{len(items)} within {P.FURNITURE_MIN_CLEAR_CM / 100:.2f} m of a road edge (worst {min(c for _, c in bad) / 100:+.2f} m)",
+                  f"{len(items)} items, all >= {P.FURNITURE_MIN_CLEAR_CM / 100:.2f} m outside the edge")
+
+    def ends(r):
+        a, c = math.radians(r[3]), math.cos(math.radians(r[4])) * P.RAIL_LEN_CM
+        return [(r[0], r[1]), (r[0] + c * math.cos(a), r[1] + c * math.sin(a))]
+    for kind in ("guardrails", "stone_walls"):
+        items = F[kind]
+        far = 0
+        for r in items:
+            (x0, y0), (x1, y1) = ends(r)
+            for x, y in ((x0, y0), (x1, y1), (0.5 * (x0 + x1), 0.5 * (y0 + y1))):
+                if not (P.FURNITURE_MIN_CLEAR_CM - 1.0 <= clear(x, y) <= 120.0):
+                    far += 1
+        rep.check("furniture", f"{kind} follow the edge", None if not far else f"{far} piece points off the 0.35-1.2 m band")
+        E = [e for r in items for e in ends(r)]
+        joints = 0
+        for i, e in enumerate(E):
+            d = min((math.hypot(e[0] - f[0], e[1] - f[1]) for j, f in enumerate(E) if j // 2 != i // 2), default=1e9)
+            if 3.0 <= d < 100.0:
+                joints += 1
+        rep.check("furniture", f"{kind} joints", None if not joints else f"{joints} piece ends 3-100 cm from the next piece (gap / overlap)",
+                  f"{len(items)} pieces joined end to end")
 
 
 def check_river(ctx, g, rep, river, legacy):
@@ -682,6 +799,8 @@ def main():
     check_crowds(ctx, g, rep, {"crowds": crowds})
     check_cows(ctx, g, rep, cows)
     check_pickups(ctx, g, rep, pickups)
+    check_props(ctx, g, rep)
+    check_furniture(ctx, rep)
     check_river(ctx, g, rep, river, args.legacy)
     check_traffic(ctx, rep, traffic, args.legacy, not args.no_sim, cusps)
     check_police(ctx, g, rep, args.legacy)

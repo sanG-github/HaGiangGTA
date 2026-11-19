@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "HGPeopleBuilder.h"
 #include "HGPlayerCharacter.generated.h"
 
 class AHGVehicleBase;
@@ -36,6 +37,7 @@ public:
 	AHGPlayerCharacter();
 
 	virtual void Tick(float DeltaSeconds) override;
+	virtual void BeginPlay() override;
 	virtual void SetupPlayerInputComponent(UInputComponent* PlayerInputComponent) override;
 	virtual void PawnClientRestart() override;
 	virtual void UnPossessed() override;
@@ -74,6 +76,7 @@ protected:
 	UPROPERTY(VisibleAnywhere, Category = "Components") TObjectPtr<UStaticMeshComponent> Hat;
 
 	UPROPERTY(EditAnywhere, Category = "Movement") float WalkSpeed = 260.f;
+	float LookIgnoreUntil = 0.f;
 	UPROPERTY(EditAnywhere, Category = "Movement") float SprintSpeed = 620.f;
 	UPROPERTY(EditAnywhere, Category = "Movement") float SwimSpeed = 300.f;
 	UPROPERTY(EditAnywhere, Category = "Movement") float SwimSprintSpeed = 480.f;
@@ -98,6 +101,12 @@ private:
 	void UpdateFocusedVehicle();
 	void ApplyMaxSpeed();
 	void SetSeatedPose(bool bSeated);
+
+	/** Low-poly body (HGPeopleBuilder): standing (non la) and seated (helmet) rigs, procedurally animated. */
+	FHGPersonRig StandRig;
+	FHGPersonRig SeatRig;
+	bool bSeatedVisual = false;
+	void AnimateBody(float DeltaSeconds);
 
 	EHGOnFootState State = EHGOnFootState::Walking;
 	bool bSprinting = false;

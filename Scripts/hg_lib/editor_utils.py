@@ -136,6 +136,8 @@ def spawn_mesh(label: str, mesh_path: str, location: Sequence[float],
     if material is not None:
         smc.set_material(0, material)
     if not collision:
+        # The profile is what the saved level keeps (set_collision_enabled alone is runtime-only).
+        smc.set_collision_profile_name("NoCollision")
         smc.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
     return actor
 

@@ -63,11 +63,49 @@ public:
 	UFUNCTION(BlueprintCallable, Category = "HaGiang|Vehicle")
 	virtual void ResetToSpawn();
 
+	/** After a teleport: skip the spring arm's location / rotation lag for a few frames, so the camera doesn't
+	 *  sweep across the map (or through the terrain) to catch up. */
+	void SnapCamera();
+
+	/** Engine loop state (playtest audio log). */
+	float GetEnginePitch() const { return EnginePitch; }
+	float GetEngineVolumeNow() const;
+
+	/** Scripted playtest: off except while it tests the orbit, so stray OS mouse deltas on the test machine don't
+	 *  swing the camera (a +4 deg pitch-up showed in a key-ridden shot). */
+	static bool bOrbitInputEnabled;
+
+	/** Mouse-orbit offsets of the chase camera (deg) and whether [C] look-back is held. */
+	float GetOrbitYaw() const { return OrbitYaw; }
+	bool IsLookingBack() const { return bLookingBack; }
+
 protected:
 	virtual void BeginPlay() override;
 
+	/** [R] pressed: default puts the vehicle back where it spawned (ground vehicles recover onto the road). */
+	virtual void HandleResetInput() { ResetToSpawn(); }
+
 	/** Where the driver is placed on exit (world space). */
 	virtual FVector GetExitLocation() const;
+
+	/**
+	 * AddActorWorldOffset with sweep that first resolves a starting overlap: if the collision box starts inside
+	 * something (terrain bank, a moored hull, the pontoon) it is pushed out along the minimum translation and
+	 * the move is retried. Without this a starting overlap blocks the sweep at t = 0 every frame for good.
+	 */
+	void SweepMove(const FVector& Delta, FHitResult& OutHit);
+	void ResolvePenetration(const FHitResult& Hit);
+
+	/**
+	 * Chase camera orbit, called by subclasses every tick while player-driven: mouse / right stick orbit the
+	 * camera around the vehicle and it drifts back behind it after OrbitReturnDelay; [C] looks back.
+	 * BasePitch is the world pitch the subclass wants without input; the result is clamped to [MinPitch, MaxPitch].
+	 */
+	void UpdateOrbitCamera(float DeltaSeconds, float BasePitch, float MinPitch, float MaxPitch);
+
+	UPROPERTY(EditAnywhere, Category = "Camera") float OrbitSensitivity = 1.2f;   // deg per mouse unit
+	UPROPERTY(EditAnywhere, Category = "Camera") float OrbitReturnDelay = 1.5f;   // s without input
+	UPROPERTY(EditAnywhere, Category = "Camera") float OrbitReturnSpeed = 2.5f;   // FInterpTo speed
 
 	float ReadAxis(const UInputAction* Action) const;
 	bool ReadButton(const UInputAction* Action) const;
@@ -117,6 +155,8 @@ protected:
 	UPROPERTY(Transient) TObjectPtr<UInputAction> ResetAction;
 	UPROPERTY(Transient) TObjectPtr<UInputAction> InteractAction;
 	UPROPERTY(Transient) TObjectPtr<UInputAction> FlycamAction;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> LookAction;
+	UPROPERTY(Transient) TObjectPtr<UInputAction> LookBackAction;
 
 	FTransform SpawnTransform;
 
@@ -130,4 +170,12 @@ private:
 	TObjectPtr<AHGPlayerCharacter> Driver;
 
 	double EnteredAtSeconds = -1.0;
+
+	float OrbitYaw = 0.f;
+	float OrbitPitch = 0.f;
+	float OrbitIdle = 0.f;
+	bool bLookingBack = false;
+	int32 SnapFrames = 0;
+	bool bDefaultLag = true;
+	bool bDefaultRotLag = true;
 };

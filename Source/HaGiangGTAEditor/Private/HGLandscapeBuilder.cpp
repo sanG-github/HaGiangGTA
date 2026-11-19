@@ -5,6 +5,9 @@
 #include "Landscape.h"
 #include "LandscapeInfo.h"
 #include "LandscapeProxy.h"
+#include "LandscapeComponent.h"
+#include "Engine/Texture2D.h"
+#include "EngineUtils.h"
 #include "Materials/MaterialInterface.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
@@ -120,4 +123,42 @@ void UHGLandscapeBuilder::SetLandscapeMaterial(ALandscape* Landscape, UMaterialI
 		FPropertyChangedEvent Event(MaterialProp);
 		Landscape->PostEditChangeProperty(Event);
 	}
+}
+
+int32 UHGLandscapeBuilder::PinLandscapeTextures()
+{
+	UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+	if (!World)
+	{
+		return 0;
+	}
+	TSet<UTexture2D*> Textures;
+	for (TActorIterator<ALandscapeProxy> It(World); It; ++It)
+	{
+		for (ULandscapeComponent* Comp : It->LandscapeComponents)
+		{
+			if (!Comp)
+			{
+				continue;
+			}
+			Textures.Add(Comp->GetHeightmap(false));
+			for (UTexture2D* W : Comp->GetWeightmapTextures(false))
+			{
+				Textures.Add(W);
+			}
+		}
+	}
+	int32 Changed = 0;
+	for (UTexture2D* T : Textures)
+	{
+		if (T && !T->NeverStream)
+		{
+			T->Modify();
+			T->NeverStream = true;
+			T->UpdateResource();
+			++Changed;
+		}
+	}
+	UE_LOG(LogHGLandscapeBuilder, Log, TEXT("Pinned %d landscape textures (NeverStream) of %d"), Changed, Textures.Num());
+	return Changed;
 }

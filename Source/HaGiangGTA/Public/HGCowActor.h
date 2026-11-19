@@ -43,6 +43,11 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cow")
 	TSoftObjectPtr<USoundBase> MooSound;
 
+	/** A vehicle has waited behind us: trot WalkMeters off the road in direction Away (world, horizontal) and graze
+	 *  there (the herd's home moves with it, so it does not wander straight back). */
+	void ShooOff(const FVector& Away, float WalkMeters = 6.f);
+	bool IsBeingShooed() const { return HurryTime > 0.f; }
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -58,9 +63,18 @@ private:
 	UPROPERTY(Transient) TArray<TObjectPtr<UStaticMeshComponent>> DarkParts;
 	UPROPERTY(Transient) TObjectPtr<USoundBase> LoadedMoo;
 
+	/** Low-poly kit animal (HGMeshKit): body, head on a neck pivot, four legs that swing when walking. */
+	void BuildKit();
+	void SetHeadRotation(const FRotator& R);
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitHead;
+	UPROPERTY(Transient) TObjectPtr<UStaticMeshComponent> KitTail;
+	UPROPERTY(Transient) TArray<TObjectPtr<UStaticMeshComponent>> KitLegs;
+	float StepPhase = 0.f;
+
 	FVector Home = FVector::ZeroVector;
 	FVector Target = FVector::ZeroVector;
 	float IdleTime = 0.f;
 	float MooCooldown = 0.f;
 	float Phase = 0.f;
+	float HurryTime = 0.f;
 };

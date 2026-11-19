@@ -9,10 +9,16 @@
 #include "EngineUtils.h"
 #include "EnhancedInputComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Camera/PlayerCameraManager.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/PlayerController.h"
 #include "GameFramework/SpringArmComponent.h"
 #include "HaGiangGTA.h"
 #include "HGInputFactory.h"
+#include "HGMissionSubsystem.h"
+#include "HGPaint.h"
+#include "HGBikePawn.h"
+#include "HGMeshKit.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGVehicleBase.h"
 #include "HGViewpointActor.h"
@@ -57,35 +63,22 @@ AHGPlayerCharacter::AHGPlayerCharacter()
 	FollowCamera->SetupAttachment(CameraBoom, USpringArmComponent::SocketName);
 	FollowCamera->bUsePawnControlRotation = false;
 
-	// Greybox body, built from engine shapes so no character assets are needed yet.
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> CylMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> SphMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-	static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
-
+	// Body: built at BeginPlay from merged low-poly parts (HGPeopleBuilder); BodyRoot is the feet.
 	BodyRoot = CreateDefaultSubobject<USceneComponent>(TEXT("BodyRoot"));
 	BodyRoot->SetupAttachment(RootComponent);
 	BodyRoot->SetRelativeLocation(FVector(0.f, 0.f, -92.f)); // feet
 
-	auto MakePart = [this](FName Name, UStaticMesh* Mesh, const FVector& Loc, const FVector& SizeCm)
-	{
-		UStaticMeshComponent* C = CreateDefaultSubobject<UStaticMeshComponent>(Name);
-		C->SetupAttachment(BodyRoot);
-		C->SetCollisionEnabled(ECollisionEnabled::NoCollision);
-		C->SetGenerateOverlapEvents(false);
-		C->SetCanEverAffectNavigation(false);
-		C->SetRelativeLocation(Loc);
-		C->SetRelativeScale3D(SizeCm / 100.f);
-		if (Mesh)
-		{
-			C->SetStaticMesh(Mesh);
-		}
-		return C;
-	};
-	Legs = MakePart(TEXT("Legs"), CylMesh.Object, FVector(0.f, 0.f, 45.f), FVector(34.f, 30.f, 90.f));
-	Torso = MakePart(TEXT("Torso"), CylMesh.Object, FVector(0.f, 0.f, 120.f), FVector(44.f, 32.f, 62.f));
-	Head = MakePart(TEXT("Head"), SphMesh.Object, FVector(2.f, 0.f, 166.f), FVector(24.f, 22.f, 27.f));
-	Hat = MakePart(TEXT("Hat"), ConeMesh.Object, FVector(2.f, 0.f, 182.f), FVector(52.f, 52.f, 16.f)); // non la
 	GetMesh()->SetVisibility(false);
+}
+
+void AHGPlayerCharacter::BeginPlay()
+{
+	Super::BeginPlay();
+	// Army-olive jacket and jeans; non la on foot, open-face helmet when riding (the seat point is 90 cm above
+	// the feet in the seated BodyRoot placement, see SetSeatedPose).
+	StandRig = HGPeople::Spawn(this, BodyRoot, EHGPersonLook::Player, EHGPersonPose::Standing, 0, TEXT("PlayerBody"));
+	SeatRig = HGPeople::Spawn(this, BodyRoot, EHGPersonLook::Player, EHGPersonPose::Rider, 0, TEXT("PlayerSeated"), FVector(0.f, 0.f, 90.f), true);
+	SeatRig.SetVisible(false);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,6 +145,21 @@ void AHGPlayerCharacter::PawnClientRestart()
 	EnsureInputObjects();
 	Super::PawnClientRestart();
 	HGInput::AddContext(this, OnFootContext, 0);
+	if (APlayerController* PC = Cast<APlayerController>(Controller))
+	{
+		// Third-person limits: looking straight up swings the boom under the character (camera in the
+		// ground, sky only). Start level, slightly looking down the road.
+		if (PC->PlayerCameraManager)
+		{
+			PC->PlayerCameraManager->ViewPitchMin = -70.f;
+			PC->PlayerCameraManager->ViewPitchMax = 30.f;
+		}
+		LookIgnoreUntil = GetWorld()->GetTimeSeconds() + 0.6f;
+		FRotator R = PC->GetControlRotation();
+		R.Pitch = -12.f;
+		R.Roll = 0.f;
+		PC->SetControlRotation(R);
+	}
 }
 
 void AHGPlayerCharacter::UnPossessed()
@@ -184,6 +192,12 @@ void AHGPlayerCharacter::Move(const FInputActionValue& Value)
 void AHGPlayerCharacter::Look(const FInputActionValue& Value)
 {
 	const FVector2D Axis = Value.Get<FVector2D>();
+	// When the window grabs the cursor (startup, focus) macOS reports one huge mouse delta that slams the
+	// camera to its pitch limit (sky-only / ground-only view). Ignore it.
+	if (GetWorld()->GetTimeSeconds() < LookIgnoreUntil || Axis.Size() > 40.f)
+	{
+		return;
+	}
 	AddControllerYawInput(Axis.X);
 	AddControllerPitchInput(-Axis.Y);
 }
@@ -238,6 +252,10 @@ void AHGPlayerCharacter::Interact(const FInputActionValue& /*Value*/)
 	{
 		FocusedVehicle->EnterVehicle(this);
 	}
+	else if (UHGMissionSubsystem* Missions = GetWorld()->GetSubsystem<UHGMissionSubsystem>())
+	{
+		Missions->TryBoatHire(this);   // at the Ta Lang dock: pay the boatman, board the cano
+	}
 }
 
 // ---------------------------------------------------------------------------
@@ -262,6 +280,7 @@ float AHGPlayerCharacter::GetSpeedKmh() const
 void AHGPlayerCharacter::Tick(float DeltaSeconds)
 {
 	Super::Tick(DeltaSeconds);
+	AnimateBody(DeltaSeconds);
 	if (State == EHGOnFootState::InVehicle)
 	{
 		return;
@@ -365,8 +384,10 @@ void AHGPlayerCharacter::StopSwimming()
 
 void AHGPlayerCharacter::SetSeatedPose(bool bSeated)
 {
-	// Seated: hide the legs and drop the upper body onto the seat point.
-	Legs->SetVisibility(!bSeated);
+	// Seated: swap the standing body for the riding one (hands on the grips) and drop it onto the seat point.
+	bSeatedVisual = bSeated;
+	StandRig.SetVisible(!bSeated);
+	SeatRig.SetVisible(bSeated);
 	BodyRoot->SetRelativeLocation(bSeated ? FVector(0.f, 0.f, -92.f - 90.f) : FVector(0.f, 0.f, -92.f));
 	BodyRoot->SetRelativeRotation(FRotator::ZeroRotator);
 }
@@ -412,4 +433,20 @@ void AHGPlayerCharacter::OnExitedVehicle(AHGVehicleBase* Vehicle, const FVector&
 	MoveComp->SetMovementMode(MOVE_Falling);
 	MoveComp->Velocity = FVector::ZeroVector;
 	ApplyMaxSpeed();
+}
+
+void AHGPlayerCharacter::AnimateBody(float DeltaSeconds)
+{
+	if (bSeatedVisual)
+	{
+		const AHGBikePawn* Bike = Cast<AHGBikePawn>(CurrentVehicle.Get());
+		const float Lean = Bike ? Bike->GetLeanDeg() : 0.f;
+		SeatRig.LeanDeg = Lean;
+		SeatRig.Steer = FMath::Clamp(Lean / 25.f, -1.f, 1.f);
+		SeatRig.Wind = Bike ? FMath::Clamp(Bike->GetVelocity().Size() / 1800.f, 0.f, 1.f) : 0.f;
+		SeatRig.Animate(this, DeltaSeconds);
+		return;
+	}
+	StandRig.WalkSpeed = State == EHGOnFootState::Walking ? GetVelocity().Size2D() : 0.f;
+	StandRig.Animate(this, DeltaSeconds);
 }

@@ -52,6 +52,9 @@ public:
 
 	void AddMoney(int32 Delta) { Money = FMath::Max(0, Money + Delta); }
 
+	/** Times the player has been busted this session (missions detect a bust with it). */
+	int32 GetBustCount() const { return BustCount; }
+
 private:
 	void UpdateStars();
 	void ManagePolice(float DeltaTime);
@@ -67,6 +70,7 @@ private:
 	float Heat = 0.f;
 	int32 Stars = 0;
 	int32 Money = 500000;
+	int32 BustCount = 0;
 	bool bSpotted = false;
 	float UnseenTime = 0.f;
 	float SpawnCooldown = 0.f;

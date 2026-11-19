@@ -173,6 +173,12 @@ def write_obj(path, v, f, n=None, uv=None):
         theta = np.arctan2(v[:, 1], v[:, 0])
         zr = (v[:, 2] - v[:, 2].min()) / max(np.ptp(v[:, 2]), 1e-6)
         uv = np.stack([(theta / (2 * np.pi)) + 0.5, zr], axis=1)
+    # Round 5B (agent B): the OBJ import (right-handed file -> left-handed Unreal) mirrors Y - the far terrain came
+    # in north-south mirrored in round 3B. Write Y negated with the winding reversed so every mesh arrives as built
+    # here (normals / UVs computed above, before the flip).
+    v = np.asarray(v, float) * np.array([1.0, -1.0, 1.0])
+    n = np.asarray(n, float) * np.array([1.0, -1.0, 1.0])
+    f = np.asarray(f)[:, [0, 2, 1]]
     lines = ["# HaGiangGTA procedural mesh (cm)"]
     lines += [f"v {a:.3f} {b:.3f} {c:.3f}" for a, b, c in v]
     lines += [f"vt {a:.5f} {b:.5f}" for a, b in uv]
@@ -481,6 +487,63 @@ def make_loops(rng, sr=44100):
     _loop_wav(out / "SW_HG_Heli_Loop.wav", heli, sr)
 
 
+def _lowpass(x, cutoff_hz, sr):
+    """One-pole low-pass (run twice for 12 dB/oct)."""
+    a = math.exp(-2.0 * math.pi * cutoff_hz / sr)
+    y = np.empty_like(x)
+    for _ in range(2):
+        acc = 0.0
+        for i in range(len(x)):
+            acc = (1.0 - a) * x[i] + a * acc
+            y[i] = acc
+        x = y.copy()
+    return y
+
+
+def make_ambience(rng, sr=44100):
+    """Round 2 loops: wind (speed / altitude), mountain birds + insects (slow / on foot), tyres on the road."""
+    out = OUT / "Audio"
+    n = int(6.0 * sr)
+    t = np.arange(n) / sr
+    # Wind: low-passed noise with slow gusts (integer cycles per loop -> seamless amplitude).
+    noise = rng.normal(size=n)
+    body = _lowpass(noise, 500.0, sr)
+    hiss = _lowpass(noise, 3000.0, sr) - body
+    gust = 0.6 + 0.25 * np.sin(2 * np.pi * t / 6.0) + 0.15 * np.sin(2 * np.pi * 3 * t / 6.0 + 1.3)
+    wind = (body * 3.0 + 0.4 * hiss) * gust
+    _loop_wav(out / "SW_HG_Wind_Loop.wav", np.tanh(wind / (np.abs(wind).max() + 1e-6) * 1.2) * 0.8, sr)
+
+    # Birds + insects: a soft cicada bed, bulbul-like two-note calls and short trills at random times.
+    birds = 0.03 * _lowpass(rng.normal(size=n), 6000.0, sr) * (0.7 + 0.3 * np.sin(2 * np.pi * 37.0 * t))
+    for _ in range(14):
+        t0 = rng.uniform(0.2, 5.5)
+        f0 = rng.uniform(2200.0, 3800.0)
+        kind = rng.integers(0, 3)
+        notes = [(0.0, f0, 0.09), (0.13, f0 * 1.25, 0.12)] if kind == 0 else \
+                [(k * 0.045, f0 * (1.0 + 0.04 * (k % 2)), 0.03) for k in range(rng.integers(5, 10))] if kind == 1 else \
+                [(0.0, f0 * 0.8, 0.25)]
+        amp = rng.uniform(0.08, 0.2)
+        for dt0, f, dur in notes:
+            i0 = int((t0 + dt0) * sr)
+            m = int(dur * sr)
+            if i0 + m >= n:
+                continue
+            tt = np.arange(m) / sr
+            env = np.sin(np.pi * tt / dur) ** 2
+            sweep = f * (1.0 + 0.15 * np.sin(np.pi * tt / dur)) if kind != 2 else f * (1.0 - 0.3 * tt / dur)
+            birds[i0:i0 + m] += amp * env * np.sin(2 * np.pi * np.cumsum(sweep) / sr)
+    _loop_wav(out / "SW_HG_Birds_Loop.wav", birds / (np.abs(birds).max() + 1e-6) * 0.7, sr)
+
+    # Tyres: rolling road noise (band-passed noise) + a faint periodic thump (slab joints / tread).
+    roll = _lowpass(rng.normal(size=n), 1200.0, sr) - _lowpass(rng.normal(size=n), 150.0, sr) * 0.5
+    thump = np.zeros(n)
+    period = int(sr / 4.0)
+    for i in range(0, n - 800, period):
+        thump[i:i + 800] += np.exp(-np.arange(800) / 120.0) * np.sin(2 * np.pi * 70.0 * np.arange(800) / sr)
+    tyre = roll / (np.abs(roll).max() + 1e-6) + 0.35 * thump
+    _loop_wav(out / "SW_HG_Tyre_Loop.wav", np.tanh(tyre) * 0.7, sr)
+
+
 # ---------------------------------------------------------------------------
 # Trees (reference photos): bombax / kapok (hoa gao, red), broadleaf, pine.
 # Each tree = trunk mesh + crown mesh sharing one transform (two materials, no vertex colours).
@@ -595,9 +658,11 @@ def make_road_furniture():
         bf = np.array([(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4), (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)])
         return bv, bf
     parts.append(box(0, 0, 35, 12, 12, 110))                    # post (buried 20 cm)
-    parts.append(box(200, 9, 62, 400, 4, 14))                   # upper rib of the W
-    parts.append(box(200, 11, 52, 400, 3, 8))                   # valley of the W
-    parts.append(box(200, 9, 42, 400, 4, 14))                   # lower rib
+    # Rail on local -Y: that is where it always showed in game (the import mirrored Y) and where gen_scatter's
+    # yaw puts the road side; round 5B removed the mirror, so the model states it directly.
+    parts.append(box(200, -9, 62, 400, 4, 14))                  # upper rib of the W
+    parts.append(box(200, -11, 52, 400, 3, 8))                  # valley of the W
+    parts.append(box(200, -9, 42, 400, 4, 14))                  # lower rib
     vs, fs, off = [], [], 0
     for bv, bf in parts:
         vs.append(bv); fs.append(bf + off); off += len(bv)
@@ -615,16 +680,46 @@ def make_set_dressing(rng):
     seg, rings = 256, 18
     ang = np.linspace(0, 2 * np.pi, seg, endpoint=False)
     radii = np.linspace(520000.0, 1400000.0, rings)
+    # Apron from just outside the 5.9 km landscape (half 2.95 km) to the ranges, 450 m below the mesh pivot
+    # (placed at z 800 m -> 350 m, under the river and every map edge): from the Ma Pi Leng rim the player looked
+    # past the map edge into empty haze; now a low valley floor runs out to the distant ranges.
+    APRON_Z = 10000.0            # 900 m: at the height of the map edges (a 350 m floor read as a flat sea)
+    apron = np.array([300000.0, 380000.0, 450000.0, 515000.0])
     # One coherent noise field over (angle, ring) so ridges continue between neighbouring vertices.
     A, J = np.meshgrid(ang, np.arange(rings))
     pts = np.stack([np.cos(A).ravel() * 2.2, np.sin(A).ravel() * 2.2, J.ravel() * 0.35], axis=1)
     ridge = wave_noise(pts, rng, octaves=4, waves=7, base=2.5, ridged=True).reshape(rings, seg)
     envelope = np.sin(np.pi * np.arange(rings) / (rings - 1)) ** 0.6
     verts, faces = [], []
+    # The apron rises from the valley floor into rolling foothills (a flat one read as a lake in the haze).
+    foot = wave_noise(np.stack([np.cos(ang) * 1.7, np.sin(ang) * 1.7, np.zeros_like(ang)], axis=1), rng,
+                      octaves=3, waves=6, base=2.0, ridged=False)
+    # Never inside the square landscape (half 2.95 km; its corners reach 4.17 km): each apron vertex stays 50 m
+    # outside the map boundary along its angle, or the 900 m apron would float over the low corners of the map.
+    edge_r = 296000.0 / np.maximum(np.abs(np.cos(ang)), np.abs(np.sin(ang))) + 5000.0
+    for k, r in enumerate(apron):
+        t = k / (len(apron) - 1)
+        for i, a in enumerate(ang):
+            rr = max(r, edge_r[i]) if k < len(apron) - 1 else max(r, edge_r[i] + 2000.0)
+            verts.append((np.cos(a) * rr, np.sin(a) * rr, APRON_Z + t * (30000.0 + 40000.0 * foot[i])))
     for j, r in enumerate(radii):
         for i, a in enumerate(ang):
             h = (60000.0 + 150000.0 * ridge[j, i]) * envelope[j]
+            if j < 4:   # rise out of the apron instead of dipping to the pivot height first
+                h = max(h, (APRON_Z + 30000.0 + 40000.0 * foot[i]) * (1.0 - j / 4.0))
             verts.append((np.cos(a) * r, np.sin(a) * r, h))
+    # The apron also goes out as its own mesh with a land material (with the hazy "ranges" material it read as a
+    # flat lake beyond the map edge); in the ranges mesh it stays only as the skirt the ranges rise from.
+    na = len(apron) * seg
+    av = np.array(verts[:na])
+    af = []
+    for j in range(len(apron) - 1):
+        for i in range(seg):
+            a0, a1 = j * seg + i, j * seg + (i + 1) % seg
+            b0, b1 = a0 + seg, a1 + seg
+            af += [(a0, b0, b1), (a0, b1, a1)]
+    write_obj(out / "SM_HG_DistantApron.obj", av, np.array(af))
+    rings += len(apron)
     for j in range(rings - 1):
         for i in range(seg):
             a0, a1 = j * seg + i, j * seg + (i + 1) % seg
@@ -642,7 +737,7 @@ def make_set_dressing(rng):
         return np.vstack(vs), np.vstack(fs)
 
     # Curve chevron sign (black board, the white arrows are painted by UV in the material).
-    v, f = boxes([(0, 0, 60, 6, 6, 140), (0, -4, 150, 60, 3, 45)])
+    v, f = boxes([(0, 0, 60, 6, 6, 140), (0, 4, 150, 60, 3, 45)])   # board on +Y as always seen in game (5B)
     uv = np.stack([(v[:, 0] + 30) / 60.0, (v[:, 2] - 127) / 45.0], axis=1)
     write_obj(out / "SM_HG_Chevron.obj", v, f, uv=uv)
     # Concrete utility pole with a cross-arm.
@@ -676,6 +771,7 @@ def main():
     make_flute(rng)
     make_sfx(rng)
     make_loops(rng)
+    make_ambience(np.random.default_rng(SEED + 23))
     print(f"audio {time.time() - t0:.1f}s -> {OUT}")
 
 

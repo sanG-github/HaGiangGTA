@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import unreal
 
-from . import assets, materials, placements, world
+from . import assets, dressing, materials, placements, world
 from . import editor_utils as hg
 
 GAME_MODE = "/Script/HaGiangGTA.HGOpenWorldGameMode"
@@ -32,7 +32,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
 
     step("Building materials")
     mats = materials.build_all(tex, layout["water"]["surface_z_cm"], layout)
-    mat_ring = hg.color_material("MI_GB_CheckIn", (1.0, 0.75, 0.05))
+    mat_ring = hg.color_material("MI_GB_CheckIn", (0.72, 0.52, 0.06))
     mat_wood = hg.color_material("MI_GB_Wood", (0.25, 0.14, 0.06))
 
     step("Opening level")
@@ -56,6 +56,11 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
     world.build_checkin_rings(layout, mat_ring, tag, f"{prefix}/Viewpoints")
     world.build_vehicles(layout, tag, f"{prefix}/Vehicles")
 
+    # Road furniture (posts, chevrons, guardrails, rim walls) is placed against the UE road spline, not taken
+    # from gen_scatter's older polyline (signs stood on the carriageway, rails missed the hairpin edges).
+    scatter = dict(scatter)
+    scatter.update(placements.road_furniture(placements.ctx_for(layout, world.load_scatter())))
+
     step("Scatter: cliffs, summits, boulders, shrubs, posts")
     world.build_scatter(scatter, meshes, mats, tag, f"{prefix}/Scatter")
 
@@ -67,6 +72,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
     world.build_viewpoint_props(layout, scatter, meshes, mats, tag, f"{prefix}/Viewpoints")
     world.build_landmarks(layout, meshes, mats, mat_wood, tag, f"{prefix}/Landmarks")
     world.build_set_dressing(scatter, meshes, mats, tag, f"{prefix}/Dressing")
+    dressing.build(layout, world.load_scatter(), tag, f"{prefix}/Dressing")
     world.build_river_traffic(layout, tag, f"{prefix}/River")
     world.build_player_start(layout, tag, f"{prefix}/Gameplay")
 
@@ -79,6 +85,9 @@ PHOTOREAL_STEPS = 9
 def finish_level(game_mode: str = GAME_MODE) -> None:
     hg.set_world_game_mode(game_mode)
     hg.editor_world().get_world_settings().set_editor_property("kill_z", 30000.0)   # river is at 420 m
+    # All heightmap mips resident: streamed ones showed stair-stepped terrain after every teleport.
+    if hasattr(unreal, "HGLandscapeBuilder"):
+        hg.log(f"Landscape textures pinned: {unreal.HGLandscapeBuilder.pin_landscape_textures()}")
     hg.save_current_level()
 
 

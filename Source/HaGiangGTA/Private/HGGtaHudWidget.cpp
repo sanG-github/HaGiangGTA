@@ -8,6 +8,9 @@
 #include "Framework/Application/SlateApplication.h"
 #include "GameFramework/PlayerController.h"
 #include "HGCowActor.h"
+#include "HGGroundVehicle.h"
+#include "HGMissionSubsystem.h"
+#include "NhoQueBoatPawn.h"
 #include "HGHappyWaterPickup.h"
 #include "HGHappyWaterSubsystem.h"
 #include "HGPlayerCharacter.h"
@@ -111,6 +114,13 @@ void UHGGtaHudWidget::CacheRoad()
 		Roads.Add(*It);
 	}
 	Roads.Sort([](const AHGRoadSplineActor& A, const AHGRoadSplineActor& B) { return A.GetRoadLength() > B.GetRoadLength(); });
+	if (const TArray<FVector>* River = ANhoQueBoatPawn::FindCruiseLine(GetWorld()))
+	{
+		for (const FVector& P : *River)
+		{
+			RiverLine.Add(FVector2D(P.X, P.Y));
+		}
+	}
 	for (const AHGRoadSplineActor* Road : Roads)
 	{
 		const USplineComponent* Spline = Road->GetSpline();
@@ -128,7 +138,13 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
 	Super::NativeTick(MyGeometry, InDeltaTime);
 	Time += InDeltaTime;
-	CardTime = FMath::Max(0.f, CardTime - InDeltaTime);
+	// The location card waits while the intro card is up (they overlapped at the dock in -hgplayboat).
+	const UHGMissionSubsystem* IntroMS = GetWorld() ? GetWorld()->GetSubsystem<UHGMissionSubsystem>() : nullptr;
+	const bool bIntroUp = IntroMS && IntroMS->IsIntroOpen();
+	if (!bIntroUp)
+	{
+		CardTime = FMath::Max(0.f, CardTime - InDeltaTime);
+	}
 
 	UWorld* World = GetWorld();
 	APlayerController* PC = GetOwningPlayer();
@@ -146,10 +162,20 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 
 	// Mode, speed, prompts.
 	Prompt.Reset();
+	SurfaceName.Reset();
+	bDriving = false;
+	bOnWater = false;
 	if (const AHGVehicleBase* Vehicle = Cast<AHGVehicleBase>(Pawn))
 	{
+		bDriving = true;
+		bOnWater = Vehicle->IsWaterVehicle();
 		ModeName = Vehicle->GetVehicleDisplayName().ToString();
 		SpeedKmh = FMath::Abs(Vehicle->GetSpeedKmh());
+		if (const AHGGroundVehicle* Ground = Cast<AHGGroundVehicle>(Vehicle))
+		{
+			const EHGSurface Surf = Ground->GetSurface();
+			SurfaceName = Surf == EHGSurface::Concrete ? TEXT("đường bê tông") : Surf == EHGSurface::OffRoad ? TEXT("đường đất") : TEXT("");
+		}
 	}
 	else if (const AHGPlayerCharacter* Player = Cast<AHGPlayerCharacter>(Pawn))
 	{
@@ -164,8 +190,10 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	// Viewpoints: GTA location card on arrival, [V] prompt.
 	AHGViewpointActor* Near = AHGViewpointActor::FindNearby(World, Loc);
 	ViewpointPrompt = Near ? FString::Printf(TEXT("Nhấn  V  -  Flycam %s"), *Near->ViewpointName.ToString()) : FString();
-	if (Near && LastViewpoint.Get() != Near)
+	// Once per viewpoint per session: walking in and out of the ring (or circling the plaza) re-showed it.
+	if (Near && LastViewpoint.Get() != Near && !CardsShown.Contains(Near->ViewpointName.ToString()))
 	{
+		CardsShown.Add(Near->ViewpointName.ToString());
 		CardName = Near->ViewpointName.ToString();
 		CardAltitude = Near->AltitudeM;
 		CardTime = 5.f;
@@ -202,8 +230,66 @@ void UHGGtaHudWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 	const float WantRange = FMath::GetMappedRangeValueClamped(FVector2D(25.f, 90.f), FVector2D(35000.f, 75000.f), SpeedKmh);
 	MapRange = FMath::FInterpTo(MapRange, WantRange, InDeltaTime, 1.5f);
 
-	// Minimap blips.
+	if (const UHGMissionSubsystem* M = World->GetSubsystem<UHGMissionSubsystem>())
+	{
+		Objective = M->GetObjective();
+		MissionBanner = M->GetBanner();
+		MissionBannerTime = M->GetBannerTime();
+		FlashTime = M->GetFlashTime();
+		if (Prompt.IsEmpty())
+		{
+			Prompt = M->GetPrompt();
+		}
+	}
+
+	// Minimap blips: rebuilt 10x a second (walking every actor in the level each frame cost game-thread time
+	// on the busy viewpoints).
+	BlipTimer -= InDeltaTime;
+	if (BlipTimer > 0.f)
+	{
+		return;
+	}
+	BlipTimer = 0.1f;
 	Blips.Reset();
+	if (const UHGMissionSubsystem* MS = World->GetSubsystem<UHGMissionSubsystem>())
+	{
+		// Active job: its target (magenta diamond, pinned to the map edge); otherwise the job offers (yellow).
+		if (const FHGMission* Job0 = MS->GetActive())
+		{
+			FBlip B;
+			B.World = FVector2D(Job0->Target.X, Job0->Target.Y);
+			B.Color = FLinearColor(1.f, 0.2f, 0.85f);
+			B.Size = 9.f;
+			B.bDiamond = true;
+			B.bClampToEdge = true;
+			Blips.Add(B);
+		}
+		else
+		{
+			for (const FHGMission& Job : MS->GetMissions())
+			{
+				if (Job.State == EHGMissionState::Available)
+				{
+					FBlip B;
+					B.World = FVector2D(Job.Start.X, Job.Start.Y);
+					B.Color = FLinearColor(1.f, 0.9f, 0.1f);
+					B.Size = 7.f;
+					B.bDiamond = true;
+					B.bClampToEdge = true;
+					Blips.Add(B);
+				}
+			}
+		}
+		if (!MS->GetBoatHirePoint().IsNearlyZero())
+		{
+			FBlip B;
+			B.World = FVector2D(MS->GetBoatHirePoint().X, MS->GetBoatHirePoint().Y);
+			B.Color = FLinearColor(0.2f, 0.6f, 1.f);
+			B.Size = 6.f;
+			B.bSquare = true;
+			Blips.Add(B);
+		}
+	}
 	const float RangeSq = FMath::Square(MapRange * 1.5f);
 	const bool bBlink = FMath::Fmod(Time, 0.5f) < 0.25f;
 	for (TActorIterator<AActor> It(World); It; ++It)
@@ -342,6 +428,23 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	{
 		// Only the parts of each road near the player (the route alone is ~3,200 samples).
 		const float CullSq = FMath::Square(MapRange * 1.6f);
+		{
+			TArray<FVector2f> Run;
+			for (const FVector2D& P : RiverLine)
+			{
+				if (FVector2D::DistSquared(P, PlayerXY) <= CullSq * 1.5f)
+				{
+					Run.Add(ToMap(P));
+				}
+				else if (Run.Num() > 0)
+				{
+					Run.Add(ToMap(P));
+					Lines(Out, L + 2, G, Run, FLinearColor(0.15f, 0.55f, 0.75f), 9.f * S);
+					Run.Reset();
+				}
+			}
+			Lines(Out, L + 2, G, Run, FLinearColor(0.15f, 0.55f, 0.75f), 9.f * S);
+		}
 		for (int32 R = 0; R < RoadLines.Num(); ++R)
 		{
 			const float Width = R == 0 ? 1.f : 0.75f;   // QL4C stubs a little thinner than the route
@@ -376,7 +479,13 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 				P.Y = FMath::Clamp(P.Y, float(MY + 8.f * S), float(MY + MapSize - 8.f * S));
 			}
 			const float R = B.Size * S;
-			if (B.bSquare)
+			if (B.bDiamond)
+			{
+				const TArray<FVector2f> D = { FVector2f(P.X, P.Y - R), FVector2f(P.X + R, P.Y), FVector2f(P.X, P.Y + R), FVector2f(P.X - R, P.Y), FVector2f(P.X, P.Y - R) };
+				Lines(Out, L + 4, G, D, FLinearColor::Black, 5.f * S);
+				Lines(Out, L + 5, G, D, B.Color, 3.f * S);
+			}
+			else if (B.bSquare)
 			{
 				Box(Out, L + 4, G, P.X - R - 1.f, P.Y - R - 1.f, 2.f * R + 2.f, 2.f * R + 2.f, FLinearColor::Black);
 				Box(Out, L + 5, G, P.X - R, P.Y - R, 2.f * R, 2.f * R, B.Color);
@@ -441,10 +550,14 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 	const FVector2D SpeedSize = Measure(SpeedStr, SpeedFont);
 	Text(Out, L + 4, G, SpeedStr, SX - SpeedSize.X * 0.5f, SY + 10.f * S, SpeedFont, FLinearColor::White);
 	Text(Out, L + 4, G, TEXT("km/h"), SX - 20.f * S, SY + 70.f * S, Font(int32(14 * S)), FLinearColor(0.85f, 0.85f, 0.85f));
-	TextR(Out, L + 4, G, ModeName, W - 50.f * S, SY - SR - 40.f * S, Font(int32(18 * S)), FLinearColor(0.85f, 0.95f, 1.f));
+	TextR(Out, L + 4, G, ModeName, W - 50.f * S, SY - SR - 40.f * S, Font(int32(20 * S)), FLinearColor(0.85f, 0.95f, 1.f));
+	if (!SurfaceName.IsEmpty())
+	{
+		TextR(Out, L + 4, G, SurfaceName, W - 50.f * S, SY - SR - 66.f * S, Font(int32(17 * S)), FLinearColor(1.f, 0.8f, 0.35f));
+	}
 
 	// ---------------- Location card (GTA style, on arrival) ----------------
-	if (CardTime > 0.f)
+	if (CardTime > 0.f && !(GetWorld() && GetWorld()->GetSubsystem<UHGMissionSubsystem>() && GetWorld()->GetSubsystem<UHGMissionSubsystem>()->IsIntroOpen()))
 	{
 		const float A = FMath::Clamp(CardTime / 0.8f, 0.f, 1.f) * FMath::Clamp((5.f - CardTime) / 0.5f, 0.f, 1.f);
 		TextR(Out, L + 5, G, CardName, W - 70.f * S, H * 0.55f, Font(int32(40 * S)), FLinearColor(1.f, 1.f, 1.f, A));
@@ -479,7 +592,142 @@ int32 UHGGtaHudWidget::NativePaint(const FPaintArgs& Args, const FGeometry& G, c
 		const FSlateFontInfo F2 = Font(int32(34 * S));
 		Text(Out, L + 7, G, Fine, (W - Measure(Fine, F2).X) * 0.5f, H * 0.38f + BS.Y, F2, FLinearColor(1.f, 1.f, 1.f, FMath::Clamp(BustedTime, 0.f, 1.f)));
 	}
-	Text(Out, L + 5, G, TEXT("WASD/chuột  ·  F lên/xuống xe  ·  V flycam  ·  SHIFT tăng tốc  ·  R đặt lại"),
-		MX + MapSize + 30.f * S, H - 40.f * S, Font(int32(13 * S), true, TEXT("Regular")), FLinearColor(1.f, 1.f, 1.f, 0.6f));
-	return L + 9;
+	if (!Objective.IsEmpty())
+	{
+		const FSlateFontInfo OF = Font(int32(22 * S));
+		const FVector2D OS = Measure(Objective, OF);
+		// Below the viewpoint prompt row (top left), so a long flycam prompt never runs into it.
+		Box(Out, L + 5, G, (W - OS.X) * 0.5f - 16.f * S, 82.f * S, OS.X + 32.f * S, OS.Y + 14.f * S, FLinearColor(0.f, 0.f, 0.f, 0.45f));
+		Text(Out, L + 6, G, Objective, (W - OS.X) * 0.5f, 89.f * S, OF, FLinearColor(1.f, 0.85f, 0.3f));
+	}
+	const UHGMissionSubsystem* MenuMS = GetWorld() ? GetWorld()->GetSubsystem<UHGMissionSubsystem>() : nullptr;
+	const bool bMenuUp = MenuMS && (MenuMS->IsListOpen() || MenuMS->IsPauseOpen());
+	if (MissionBannerTime > 0.f && !MissionBanner.IsEmpty() && !bMenuUp)
+	{
+		const float A = FMath::Clamp(MissionBannerTime / 0.6f, 0.f, 1.f);
+		const FSlateFontInfo BF = Font(int32(38 * S));
+		const FVector2D BS = Measure(MissionBanner, BF);
+		Text(Out, L + 7, G, MissionBanner, (W - BS.X) * 0.5f, H * 0.3f, BF, FLinearColor(0.45f, 1.f, 0.45f, A));
+	}
+	if (FlashTime < 0.4f)
+	{
+		Box(Out, L + 8, G, 0.f, 0.f, W, H, FLinearColor(1.f, 1.f, 1.f, 0.85f * (1.f - FlashTime / 0.4f)));   // camera shutter
+	}
+	{
+		// Controls for what the player is doing now; was one 9 px line at 720p that nobody could read.
+		const FString Help = bOnWater
+			? TEXT("W ga  ·  S lùi  ·  A/D lái  ·  SHIFT tăng tốc  ·  R về luồng  ·  chuột / C nhìn  ·  F lên bờ  ·  V flycam")
+			: bDriving
+			? TEXT("W ga  ·  S phanh  ·  A/D lái  ·  SPACE phanh tay  ·  SHIFT tăng tốc  ·  R về đường  ·  chuột / C nhìn  ·  F xuống xe  ·  V flycam")
+			: TEXT("WASD đi  ·  chuột nhìn  ·  SHIFT chạy  ·  SPACE nhảy  ·  F lên xe  ·  V flycam");
+		const FSlateFontInfo HF = Font(FMath::Max(int32(17 * S), 11), true, TEXT("Regular"));
+		const FVector2D HS = Measure(Help, HF);
+		const float HX = MX + MapSize + 30.f * S;
+		const float HY = H - 30.f * S - HS.Y;
+		Box(Out, L + 5, G, HX - 10.f * S, HY - 5.f * S, HS.X + 20.f * S, HS.Y + 10.f * S, FLinearColor(0.f, 0.f, 0.f, 0.35f));
+		Text(Out, L + 6, G, Help, HX, HY, HF, FLinearColor(1.f, 1.f, 1.f, 0.9f));
+	}
+	if (const UHGMissionSubsystem* MS = GetWorld() ? GetWorld()->GetSubsystem<UHGMissionSubsystem>() : nullptr)
+	{
+		PaintMenus(*MS, Out, G, L + 9, W, H, S);
+	}
+	return L + 13;
+}
+
+void UHGGtaHudWidget::PaintMenus(const UHGMissionSubsystem& MS, FSlateWindowElementList& Out, const FGeometry& G, int32 L, float W, float H, float S) const
+{
+	const FLinearColor Panel(0.02f, 0.03f, 0.03f, 0.86f);
+	const FLinearColor Gold(1.f, 0.82f, 0.25f);
+	const FLinearColor Dim(0.8f, 0.8f, 0.8f);
+	auto Centered = [&](const FString& Str, float Y, const FSlateFontInfo& F, const FLinearColor& C)
+	{
+		Text(Out, L + 2, G, Str, (W - Measure(Str, F).X) * 0.5f, Y, F, C);
+	};
+
+	// ---- Mission list + upgrade (Tab / M) ----
+	if (MS.IsListOpen() && !MS.IsPauseOpen())
+	{
+		const float PW = 980.f * S, PX = (W - PW) * 0.5f, PY = H * 0.16f;
+		const FSlateFontInfo TF = Font(int32(30 * S)), RF = Font(int32(20 * S)), SF = Font(int32(17 * S), true, TEXT("Regular"));
+		const int32 Rows = MS.GetMissions().Num();
+		const float PH = (150.f + 44.f * Rows + 150.f) * S;
+		Box(Out, L, G, PX, PY, PW, PH, Panel);
+		Box(Out, L + 1, G, PX, PY, PW, 4.f * S, Gold);
+		Text(Out, L + 2, G, TEXT("NHIỆM VỤ"), PX + 30.f * S, PY + 22.f * S, TF, Gold);
+		TextR(Out, L + 2, G, TEXT("Tab / M  đóng"), PX + PW - 30.f * S, PY + 32.f * S, SF, Dim);
+		float Y = PY + 82.f * S;
+		for (const FHGMission& M : MS.GetMissions())
+		{
+			const bool bDone = M.State == EHGMissionState::Done;
+			const bool bActive = M.State == EHGMissionState::Active;
+			const FString State = bDone ? TEXT("xong") : bActive ? TEXT("đang làm") : TEXT("nhận ở ô vàng");
+			const FLinearColor C = bDone ? FLinearColor(0.5f, 0.85f, 0.5f) : bActive ? Gold : FLinearColor::White;
+			Text(Out, L + 2, G, M.Title, PX + 30.f * S, Y, RF, C);
+			FString Pay = FString::FromInt(M.Reward / 1000) + TEXT(".000 VNĐ");
+			TextR(Out, L + 2, G, Pay, PX + PW - 230.f * S, Y, RF, FLinearColor(0.35f, 0.85f, 0.35f));
+			TextR(Out, L + 2, G, State, PX + PW - 30.f * S, Y + 2.f * S, SF, C);
+			Y += 44.f * S;
+		}
+		Y += 16.f * S;
+		Box(Out, L + 1, G, PX + 30.f * S, Y, PW - 60.f * S, 2.f * S, FLinearColor(1.f, 1.f, 1.f, 0.25f));
+		Y += 18.f * S;
+		Text(Out, L + 2, G, TEXT("NÂNG CẤP"), PX + 30.f * S, Y, RF, Gold);
+		Y += 34.f * S;
+		TextR(Out, L + 2, G, MS.HasGripTyres() ? TEXT("ĐÃ LẮP") : TEXT("200.000 VNĐ  ·  B mua"), PX + PW - 30.f * S, Y, SF,
+			MS.HasGripTyres() ? FLinearColor(0.5f, 0.85f, 0.5f) : Gold);
+		Text(Out, L + 2, G, TEXT("Lốp gai: bám đường bê tông Tà Làng & đường đất (giữ 90% tốc độ)"), PX + 30.f * S, Y + 30.f * S, SF, FLinearColor::White);
+	}
+
+	// ---- Pause menu (Esc) ----
+	if (MS.IsPauseOpen())
+	{
+		Box(Out, L, G, 0.f, 0.f, W, H, FLinearColor(0.f, 0.f, 0.f, 0.55f));
+		const FSlateFontInfo TF = Font(int32(56 * S)), RF = Font(int32(30 * S)), SF = Font(int32(17 * S), true, TEXT("Regular"));
+		Centered(TEXT("TẠM DỪNG"), H * 0.26f, TF, FLinearColor::White);
+		const FString Rows[] = {
+			TEXT("Tiếp tục"),
+			FString::Printf(TEXT("Về điểm ngắm:   <  %s  >"), *MS.GetRestartName()),
+			TEXT("Thoát game"),
+		};
+		for (int32 i = 0; i < 3; ++i)
+		{
+			const bool bSel = int32(MS.GetPauseItem()) == i;
+			const float Y = H * 0.42f + i * 62.f * S;
+			if (bSel)
+			{
+				const float RW = Measure(Rows[i], RF).X + 60.f * S;
+				Box(Out, L + 1, G, (W - RW) * 0.5f, Y - 8.f * S, RW, 50.f * S, FLinearColor(1.f, 0.82f, 0.25f, 0.9f));
+			}
+			Centered(Rows[i], Y, RF, bSel ? FLinearColor(0.05f, 0.05f, 0.05f) : FLinearColor::White);
+		}
+		Centered(TEXT("W/S chọn  ·  A/D đổi điểm ngắm  ·  Enter xác nhận  ·  Esc tiếp tục"), H * 0.42f + 3.f * 62.f * S + 20.f * S, SF, Dim);
+	}
+
+	// ---- Intro / tutorial card (first spawn) ----
+	if (MS.IsIntroOpen() && !MS.IsPauseOpen())
+	{
+		const float A = FMath::Clamp(MS.GetIntroTime() / 0.8f, 0.f, 1.f);
+		const float PW = 900.f * S, PX = (W - PW) * 0.5f, PY = H * 0.14f, PH = 520.f * S;
+		Box(Out, L, G, PX, PY, PW, PH, FLinearColor(0.02f, 0.03f, 0.03f, 0.88f * A));
+		Box(Out, L + 1, G, PX, PY, PW, 5.f * S, FLinearColor(0.85f, 0.1f, 0.1f, A));
+		const FSlateFontInfo TF = Font(int32(40 * S)), SubF = Font(int32(20 * S)), RF = Font(int32(19 * S), true, TEXT("Regular"));
+		Centered(TEXT("HÀ GIANG - CUNG ĐƯỜNG HẠNH PHÚC"), PY + 26.f * S, TF, FLinearColor(1.f, 1.f, 1.f, A));
+		Centered(TEXT("Dốc Thẩm Mã  ·  Mã Pí Lèng  ·  hẻm Tu Sản  ·  bến Tà Làng"), PY + 84.f * S, SubF, FLinearColor(Gold.R, Gold.G, Gold.B, A));
+		const TCHAR* Lines[] = {
+			TEXT("W A S D  đi bộ / lái xe   ·   SHIFT  chạy, tăng tốc   ·   SPACE  phanh tay"),
+			TEXT("F  lên / xuống xe, thuê cano ở bến Tà Làng (100.000 VNĐ)"),
+			TEXT("Chuột  xoay camera   ·   C  nhìn phía sau   ·   R  về làn đường / luồng sông"),
+			TEXT("V  flycam ở điểm ngắm   ·   P  chụp ảnh khi làm nhiệm vụ"),
+			TEXT("Tab / M  nhiệm vụ & nâng cấp   ·   Esc  tạm dừng"),
+			TEXT("Ô vàng trên bản đồ là việc kiếm tiền. Đi đúng làn phải, nhường xe ở khúc cua tay áo,"),
+			TEXT("đừng vượt ẩu - CSGT đang theo dõi!"),
+		};
+		float Y = PY + 140.f * S;
+		for (const TCHAR* Line : Lines)
+		{
+			Text(Out, L + 2, G, Line, PX + 50.f * S, Y, RF, FLinearColor(1.f, 1.f, 1.f, 0.95f * A));
+			Y += 40.f * S;
+		}
+		Centered(TEXT("Nhấn  Space  hoặc  Enter  để bắt đầu"), PY + PH - 56.f * S, SubF, FLinearColor(Gold.R, Gold.G, Gold.B, A * (0.6f + 0.4f * FMath::Sin(Time * 4.f))));
+	}
 }

@@ -16,6 +16,8 @@ class UStaticMesh;
  * mesh floats a few cm above it. Later checkpoints reuse the spline for
  * posts, convoy AI and the minimap.
  */
+class UMaterialInstanceDynamic;
+
 UCLASS()
 class HAGIANGGTA_API AHGRoadSplineActor : public AActor
 {
@@ -80,4 +82,14 @@ protected:
 
 	UPROPERTY()
 	TArray<TObjectPtr<USplineMeshComponent>> Segments;
+
+protected:
+	/** Draw distance (cm) of the road segments at runtime: the gorge views drew 280 separate road segments (each
+	 *  with its own material instance since round 3B) for road that is a few pixels up on the rim. 0 = no limit;
+	 *  -hgroadcull=<m> overrides it (A/B). */
+	UPROPERTY(EditAnywhere, Category = "Road") float RuntimeCullDistance = 90000.f;
+	virtual void BeginPlay() override;
+
+	/** Round 4B: road MIDs shared by marking phase (see BuildSegments). */
+	UPROPERTY(Transient) TMap<FString, TObjectPtr<UMaterialInstanceDynamic>> SharedMIDs;
 };

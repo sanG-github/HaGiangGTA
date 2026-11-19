@@ -15,14 +15,21 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
           "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost",
           "SM_HG_Kapok_Trunk", "SM_HG_Kapok_Bloom", "SM_HG_Tree_Trunk", "SM_HG_Tree_Crown",
           "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
-          "SM_HG_DistantRanges", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
+          "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron", "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof",
           "SM_HG_StoneWall", "SM_HG_Monument"]
-PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_Chevron",
-         "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument")
+# Round 3B: layered distant ranges (Scripts/Tools/gen_ranges.py) replace the single SM_HG_DistantRanges ring.
+RANGE_LAYERS = [f"SM_HG_RangeLayer_{i}" for i in range(3)]
+MESHES += RANGE_LAYERS + ["SM_HG_FarTerrain"]
+PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron",
+         "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument",
+         *RANGE_LAYERS, "SM_HG_FarTerrain")
 NANITE = {m for m in MESHES if m not in PROPS}
+DISTANT = set(RANGE_LAYERS) | {"SM_HG_FarTerrain", "SM_HG_DistantApron", "SM_HG_DistantRanges"}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
 COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
-TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask", "T_HG_PathMask": "mask"}
+TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask", "T_HG_PathMask": "mask",
+            "T_HG_ShoulderMask": "mask", "T_HG_Sign_MaPiLeng": "mask", "T_HG_Sign_ThamMa": "mask",
+            "T_HG_Sign_TuSan": "mask"}
 
 
 def _python():
@@ -49,6 +56,9 @@ def run_generator(script: str, check_file: str) -> None:
 def ensure_generated() -> None:
     run_generator("gen_assets.py", "Generated/Assets/Meshes/SM_HG_Monument.obj")
     run_generator("gen_scatter.py", "Generated/Assets/Textures/T_HG_PathMask.png")
+    run_generator("gen_ranges.py", "Generated/Assets/Meshes/SM_HG_RangeLayer_2.obj")
+    run_generator("gen_farterrain.py", "Generated/Assets/Meshes/SM_HG_FarTerrain.obj")
+    run_generator("gen_signs.py", "Generated/Assets/Textures/T_HG_Sign_TuSan.png")
 
 
 def _import(src: str, dest_folder: str, name: str):
@@ -116,6 +126,14 @@ LOD_CHAINS = {
 def _apply_profile(mesh: unreal.StaticMesh, name: str) -> None:
     """Nanite on SM6 hardware; on M1 (SM5) Nanite is unavailable, so build reduced LODs instead."""
     if name not in NANITE:
+        if name in DISTANT and not hg.USE_NANITE:
+            # Round 4B: distant scenery must render its full mesh on SM5. An import-time Nanite flag makes SM5
+            # draw the coarse Nanite fallback (big flat triangles: the far terrain's "arch" and sky "slivers").
+            _set_nanite(mesh, False)
+            sm_sub = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
+            nanite = mesh.get_editor_property("nanite_settings").get_editor_property("enabled")
+            hg.log(f"{name}: nanite {nanite}, {sm_sub.get_lod_count(mesh)} LODs, "
+                   f"{sm_sub.get_number_verts(mesh, 0)} verts in LOD0")
         return
     if hg.USE_NANITE:
         _set_nanite(mesh, True)
@@ -140,16 +158,38 @@ def _apply_profile(mesh: unreal.StaticMesh, name: str) -> None:
     hg.log(f"{name}: {lods} LODs (M1 profile, Nanite off)")
 
 
+HASH_TAG = "HGSourceHash"
+
+
+def _file_hash(path: str) -> str:
+    """sha1 of a generated source file ('' if missing)."""
+    import hashlib
+    try:
+        with open(path, "rb") as fh:
+            return hashlib.sha1(fh.read()).hexdigest()
+    except OSError:
+        return ""
+
+
 def import_meshes(force: bool = False) -> dict:
     folder = f"{DEST}/Meshes"
     sm_sub = unreal.get_editor_subsystem(unreal.StaticMeshEditorSubsystem)
     out = {}
     for name in MESHES:
         path = f"{folder}/{name}"
+        src = os.path.join(hg.project_dir(), "Generated", "Assets", "Meshes", f"{name}.obj")
+        src_hash = _file_hash(src)
         mesh = None if force else (unreal.EditorAssetLibrary.load_asset(path) if unreal.EditorAssetLibrary.does_asset_exist(path) else None)
+        if mesh is not None and src_hash and unreal.EditorAssetLibrary.get_metadata_tag(mesh, HASH_TAG) != src_hash:
+            # Round 5B: an existing asset was never refreshed when its OBJ changed - the main checkout kept the
+            # round-3B (mirrored) far terrain through every regenerate + CP05. Reimport in place when the OBJ's
+            # content differs from the one the asset was imported from (assets without the tag: once).
+            hg.log(f"{name}: OBJ changed since import -> reimport")
+            mesh = None
         if mesh is None:
-            src = os.path.join(hg.project_dir(), "Generated", "Assets", "Meshes", f"{name}.obj")
             mesh = _import(src, folder, name)
+            if src_hash:
+                unreal.EditorAssetLibrary.set_metadata_tag(mesh, HASH_TAG, src_hash)
             body = mesh.get_editor_property("body_setup")
             if name in COMPLEX_COLLISION and body is not None:
                 body.set_editor_property("collision_trace_flag", unreal.CollisionTraceFlag.CTF_USE_COMPLEX_AS_SIMPLE)
@@ -184,7 +224,8 @@ def import_sfx(force: bool = False) -> dict:
     return {n: import_sound(n, force) for n in ("SW_HG_AirHorn", "SW_HG_Scream", "SW_HG_Moo")}
 
 
-LOOPS = ("SW_HG_BikeEngine_Loop", "SW_HG_TruckEngine_Loop", "SW_HG_BoatMotor_Loop", "SW_HG_Siren_Loop", "SW_HG_Heli_Loop")
+LOOPS = ("SW_HG_BikeEngine_Loop", "SW_HG_TruckEngine_Loop", "SW_HG_BoatMotor_Loop", "SW_HG_Siren_Loop", "SW_HG_Heli_Loop",
+         "SW_HG_Wind_Loop", "SW_HG_Birds_Loop", "SW_HG_Tyre_Loop")
 
 
 def import_loops(force: bool = False) -> dict:

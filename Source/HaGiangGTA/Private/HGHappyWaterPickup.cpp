@@ -1,4 +1,5 @@
 #include "HGHappyWaterPickup.h"
+#include "HGPaint.h"
 
 #include "Components/PointLightComponent.h"
 #include "Components/SphereComponent.h"
@@ -42,10 +43,14 @@ AHGHappyWaterPickup::AHGHappyWaterPickup()
 	Cap = Make(TEXT("Cap"), FVector(0.f, 0.f, 56.f), FVector(13.f, 13.f, 6.f));
 
 	Glow = CreateDefaultSubobject<UPointLightComponent>(TEXT("Glow"));
+	// Small gameplay light: no Lumen GI (Lumen lit every one of ~30 bike / pickup lights with offscreen
+	// shadow traces, ~2.8 ms of the 17 ms GPU frame on the M1) and culled past 50 m.
+	Glow->bAffectGlobalIllumination = false;
+	Glow->MaxDrawDistance = 5000.f;
 	Glow->SetupAttachment(Spinner);
 	Glow->SetIntensityUnits(ELightUnits::Candelas);
-	Glow->SetIntensity(30.f);
-	Glow->SetAttenuationRadius(400.f);
+	Glow->SetIntensity(3.f);   // 30 cd vs the 10 lux sun lit a 4 m yellow pool on the grass; a faint glint is enough
+	Glow->SetAttenuationRadius(180.f);
 	Glow->SetLightColor(FLinearColor(1.f, 0.8f, 0.3f));
 	Glow->SetCastShadows(false);
 }
@@ -56,7 +61,7 @@ void AHGHappyWaterPickup::BeginPlay()
 	Trigger->OnComponentBeginOverlap.AddDynamic(this, &AHGHappyWaterPickup::OnOverlap);
 	auto Paint = [](UStaticMeshComponent* C, const FLinearColor& Color)
 	{
-		if (UMaterialInstanceDynamic* MID = C->CreateAndSetMaterialInstanceDynamic(0))
+		if (UMaterialInstanceDynamic* MID = HGPaint::MakeMID(C))
 		{
 			MID->SetVectorParameterValue(TEXT("Color"), Color);
 		}

@@ -44,4 +44,9 @@ public:
 protected:
 	UPROPERTY(VisibleAnywhere, BlueprintReadOnly, Category = "Components")
 	TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Instances;
+
+protected:
+	/** Runtime overrides for A/B (-hgtreecull=<m>, -hgtreeshadow=0): trees are the bulk of the instances drawn at
+	 *  the Doc Tham Ma spawn view (and their shadow passes). */
+	virtual void BeginPlay() override;
 };

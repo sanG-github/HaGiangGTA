@@ -31,12 +31,22 @@ private:
 		float Size = 6.f;
 		bool bSquare = false;
 		bool bClampToEdge = false;
+		bool bDiamond = false;
 	};
 
 	void CacheRoad();
+	void PaintMenus(const class UHGMissionSubsystem& MS, FSlateWindowElementList& Out, const FGeometry& G, int32 L, float W, float H, float S) const;
+	TSet<FString> CardsShown;
 
 	/** Main route first, then the QL4C stubs - one polyline per road actor (cm, world XY). */
 	TArray<TArray<FVector2D>> RoadLines;
+	/** Nho Que river (the tour boats' cruise line), drawn under the roads. */
+	TArray<FVector2D> RiverLine;
+	// Missions (UHGMissionSubsystem).
+	FString Objective;
+	FString MissionBanner;
+	float MissionBannerTime = 0.f;
+	float FlashTime = 10.f;
 	/** World distance (cm) from the player to the minimap edge: zooms out with speed. */
 	float MapRange = 35000.f;
 	TArray<FBlip> Blips;
@@ -45,6 +55,11 @@ private:
 	float SpeedKmh = 0.f;
 	float AltitudeM = 0.f;
 	FString ModeName;
+	/** Road surface under a ground vehicle ("bê tông", "đường đất"), empty on asphalt / on foot. */
+	FString SurfaceName;
+	bool bDriving = false;
+	bool bOnWater = false;
+	float BlipTimer = 0.f;
 	FString Prompt;
 	FString ViewpointPrompt;
 
