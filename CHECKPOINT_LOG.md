@@ -920,3 +920,6 @@ varies the load):
   - 7A alone, before the merge (load about 6): min 72 and min 79.
   - Merged 907ab07 + 5d3a4e7, 3 runs (load 6.7-8): per-camera median Spawn 80, ThamMa eye 70, ThamMa drone 104, MomDa 71, MPL plaza 77, MPL drone 106, NhoQue rim 69, TaLang 80, TuSan boat 65, TuSan flycam 116. Two cameras are under 70.
   - Budget cut 894b89c (two heaviest cliff scans out, bushes culled at 110-150 m): 4 runs at load 7-14.6 (other apps), unusable (even the drone views fell from about 119 to 61-97). It must be re-measured on a quiet machine. If TuSan boat is still under 70 there, the next step is the procedural gorge cliffs (scan cliffs off).
+- Coordinator re-measure of 894b89c on a quieter machine (load 6-8, perf lock held), 2 runs of -hgperf: PASS, min 75 and min 80 FPS.
+  - Per-camera median: TuSan boat 78, NhoQue rim 82, ThamMa eye 81, MomDa 84, TaLang 81, Spawn 85.
+  - The budget cut holds; the earlier sub-70 numbers were machine load.
