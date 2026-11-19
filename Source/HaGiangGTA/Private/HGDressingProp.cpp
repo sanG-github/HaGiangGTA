@@ -28,26 +28,79 @@ namespace HGDressingKit
 		K.Frustum(Xf, FVector2D(Rx, Ry), FVector2D(Rx, Ry), X1 - X0, 3, true);
 	}
 
-	void StoneCourse(FHGMeshKit& K, const FVector& A, const FVector& B, float BaseZ, int32 Courses, uint32 Seed, float Thick = 34.f)
+	/** Round 6B: dry-stone rubble wall from A to B (the coursed boxes read as bricks up close): faceted
+	 *  irregular stones of mixed sizes in rough courses, small gaps showing a dark core, a ragged top line, moss
+	 *  on top and grass at the foot. Height ~ Courses * 22 cm. */
+	void RubbleWall(FHGMeshKit& K, const FVector& A, const FVector& B, float BaseZ, int32 Courses, uint32 Seed, float Thick)
 	{
 		const FVector D = (B - A).GetSafeNormal2D();
 		const float Len = FVector::Dist2D(A, B);
 		const float Yaw = FMath::RadiansToDegrees(FMath::Atan2(D.Y, D.X));
+		const FVector Nrm(-D.Y, D.X, 0.f);
 		FRandomStream R{int32(Seed)};
+		const float H = Courses * 22.f;
+		// Dark core: the gaps between the stones show shadow, not daylight.
+		K.Paint(FColorL(0.035f, 0.033f, 0.03f), HGSurf::Matte);
+		const FVector Mid = (A + B) * 0.5f;
+		K.Box(FVector(Mid.X, Mid.Y, BaseZ + H * 0.45f), FVector(Len, Thick * 0.62f, H * 0.85f), FRotator(0.f, Yaw, 0.f));
 		for (int32 c = 0; c < Courses; ++c)
 		{
-			float t = (c & 1) ? 18.f : 0.f;
-			while (t < Len)
+			float t = R.FRandRange(0.f, 14.f);
+			while (t < Len - 6.f)
 			{
-				const float L = R.FRandRange(28.f, 46.f);
-				const float Tone = R.FRandRange(0.15f, 0.27f);
-				K.Paint(FColorL(Tone, Tone * 0.98f, Tone * 0.93f), HGSurf::Matte);
-				const FVector P = A + D * FMath::Min(t + L * 0.5f, Len - 10.f);
-				K.Box(FVector(P.X, P.Y, BaseZ + c * 24.f + 12.f), FVector(L - 3.f, Thick + R.FRandRange(-5.f, 5.f), R.FRandRange(19.f, 26.f)),
-					FRotator(R.FRandRange(-3.f, 3.f), Yaw + R.FRandRange(-4.f, 4.f), R.FRandRange(-3.f, 3.f)));
-				t += L;
+				const float L = R.FRandRange(16.f, 36.f) * (c == 0 ? 1.25f : 1.f);   // bigger stones at the foot
+				const float Top = H * (0.86f + 0.14f * FMath::Sin(t * 0.021f + Seed));   // ragged top line
+				const float Z = BaseZ + c * 22.f + 11.f;
+				if (Z > BaseZ + Top || R.FRand() < 0.06f)
+				{
+					t += L * 0.7f;   // gap
+					continue;
+				}
+				const float Tone = R.FRandRange(0.07f, 0.2f);
+				const bool bWarm = R.FRand() < 0.25f;
+				K.Paint(FColorL(Tone * (bWarm ? 1.12f : 1.f), Tone * 0.98f, Tone * (bWarm ? 0.82f : 0.92f)), HGSurf::Matte);
+				for (const float S : { -1.f, 1.f })
+				{
+					const FVector P = A + D * FMath::Min(t + L * 0.5f, Len - 8.f) + Nrm * S * (Thick * 0.32f + R.FRandRange(-2.f, 3.f));
+					K.Ellipsoid(FVector(P.X, P.Y, Z + R.FRandRange(-3.f, 3.f)),
+						FVector(L * 0.55f, Thick * R.FRandRange(0.22f, 0.32f), R.FRandRange(8.f, 13.f)),
+						FRotator(R.FRandRange(-12.f, 12.f), Yaw + R.FRandRange(-10.f, 10.f), R.FRandRange(-12.f, 12.f)), 5, 3);
+				}
+				t += L + R.FRandRange(0.f, 3.f);
 			}
 		}
+		// Capstones laid across the top, moss on them, grass tufts at the foot.
+		for (float t = 10.f; t < Len - 10.f; t += R.FRandRange(26.f, 40.f))
+		{
+			const float Top = H * (0.86f + 0.14f * FMath::Sin(t * 0.021f + Seed));
+			const FVector P = A + D * t;
+			const float Tone = R.FRandRange(0.09f, 0.18f);
+			K.Paint(FColorL(Tone, Tone * 0.97f, Tone * 0.9f), HGSurf::Matte);
+			K.Ellipsoid(FVector(P.X, P.Y, BaseZ + Top + 3.f), FVector(R.FRandRange(12.f, 18.f), Thick * 0.48f, R.FRandRange(4.f, 7.f)),
+				FRotator(R.FRandRange(-8.f, 8.f), Yaw + 90.f + R.FRandRange(-15.f, 15.f), R.FRandRange(-6.f, 6.f)), 5, 3);
+			if (R.FRand() < 0.45f)
+			{
+				K.Paint(R.FRand() < 0.5f ? FColorL(0.04f, 0.075f, 0.02f) : FColorL(0.07f, 0.1f, 0.03f), HGSurf::Matte);
+				K.Ellipsoid(FVector(P.X, P.Y, BaseZ + Top + 7.f), FVector(R.FRandRange(6.f, 12.f), Thick * 0.35f, 2.5f),
+					FRotator(0.f, Yaw + R.FRandRange(-30.f, 30.f), 0.f), 6, 3, 0.f);
+			}
+			if (R.FRand() < 0.5f)
+			{
+				K.Paint(FColorL(0.06f, 0.09f, 0.03f), HGSurf::Matte);
+				const float S = R.FRand() < 0.5f ? -1.f : 1.f;
+				const FVector G = P + Nrm * S * (Thick * 0.55f);
+				for (int32 b = 0; b < 3; ++b)
+				{
+					K.Box(FVector(G.X + R.FRandRange(-4.f, 4.f), G.Y + R.FRandRange(-4.f, 4.f), BaseZ + 7.f), FVector(1.f, 1.2f, R.FRandRange(10.f, 18.f)),
+						FRotator(R.FRandRange(-20.f, 20.f), R.FRandRange(0.f, 180.f), R.FRandRange(-20.f, 20.f)));
+				}
+			}
+		}
+	}
+
+	void StoneCourse(FHGMeshKit& K, const FVector& A, const FVector& B, float BaseZ, int32 Courses, uint32 Seed, float Thick = 34.f)
+	{
+		RubbleWall(K, A, B, BaseZ, Courses + 1, Seed, Thick + 10.f);
 	}
 
 	void BuildHouse(FHGMeshKit& K, int32 V)
@@ -235,35 +288,11 @@ namespace HGDressingKit
 		}
 	}
 
-	/** Round 4B: dry-stone fence segment, 250 cm along +X, ~85 cm high, irregular grey limestone blocks. */
+	/** Roadside dry-stone fence segment, 250 cm along +X, ~85 cm high. */
 	void BuildStoneFence(FHGMeshKit& K)
 	{
-		FRandomStream R{ 911 };
-		// Round 5B: finer courses - 4 rows of 15-28 cm stones (3 rows of 26-48 cm boxes read as bricks up close).
-		const float Rows[4][2] = { { 0.f, 24.f }, { 22.f, 22.f }, { 42.f, 21.f }, { 61.f, 19.f } };
-		for (int32 Row = 0; Row < 4; ++Row)
-		{
-			const float W = 58.f - Row * 5.f;
-			float X = -125.f + (Row % 2) * 9.f;
-			while (X < 122.f)
-			{
-				const float L = FMath::Min(R.FRandRange(15.f, 28.f), 125.f - X);
-				if (L < 8.f) { break; }
-				const float G = R.FRandRange(0.06f, 0.15f);   // weathered limestone, darker than fresh cut
-				K.Paint(FColorL(G, G * (0.96f + R.FRand() * 0.06f), G * (0.86f + R.FRand() * 0.08f)), HGSurf::Matte);
-				K.Box(FVector(X + L * 0.5f, R.FRandRange(-4.f, 4.f), Rows[Row][0] + Rows[Row][1] * 0.5f),
-					FVector(L - 2.f, W + R.FRandRange(-6.f, 6.f), Rows[Row][1] + R.FRandRange(-3.f, 4.f)),
-					FRotator(R.FRandRange(-7.f, 7.f), R.FRandRange(-9.f, 9.f), R.FRandRange(-7.f, 7.f)));
-				X += L;
-			}
-		}
-		// Moss / grass tufts on the top and the foot.
-		K.Paint(FColorL(0.05f, 0.08f, 0.025f), HGSurf::Matte);
-		for (int32 i = 0; i < 4; ++i)
-		{
-			K.Ellipsoid(FVector(R.FRandRange(-110.f, 110.f), R.FRandRange(-20.f, 20.f), i < 2 ? 84.f : 4.f),
-				FVector(R.FRandRange(12.f, 22.f), 12.f, 7.f), FRotator::ZeroRotator, 6, 3, 0.f);
-		}
+		// Round 6B: rubble stones with gaps, ragged top, moss and grass (was coursed boxes).
+		RubbleWall(K, FVector(-125.f, 0.f, 0.f), FVector(125.f, 0.f, 0.f), -4.f, 4, 911, 52.f);
 	}
 
 	/** Round 4B: H'Mong corn drying rack - two posts, three rails hung with bundles of yellow-orange cobs. */

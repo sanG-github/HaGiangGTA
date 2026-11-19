@@ -87,6 +87,16 @@ void AHGReviewDirector::BuildShots()
 		Rear.Label = FString::Printf(TEXT("bike_%s_rear"), *Name);
 		Rear.LocalOffset = FVector(-300.f, -170.f, 110.f);
 		Shots.Add(Rear);
+		// Round 6B: detail close-up (mirrors, cables, chain, plate), front and rear quarter at ~1.6 m.
+		FShot Detail = Side;
+		Detail.Label = FString::Printf(TEXT("bike_%s_detail_front"), *Name);
+		Detail.LocalOffset = FVector(175.f, 105.f, 85.f);
+		Detail.LocalLook = FVector(10.f, 0.f, 60.f);
+		Shots.Add(Detail);
+		Detail.Label = FString::Printf(TEXT("bike_%s_detail_rear"), *Name);
+		Detail.LocalOffset = FVector(-150.f, 90.f, 80.f);
+		Detail.LocalLook = FVector(-40.f, 0.f, 45.f);
+		Shots.Add(Detail);
 	}
 	// Two moving NPC bikes, chased and from the front.
 	int32 Moving = 0;
@@ -241,6 +251,23 @@ void AHGReviewDirector::BuildShots()
 				AddActorShot(*It, *(TEXT("sign_") + It->GetName()), FVector(0.f, 650.f, 180.f), FVector(0.f, 0.f, 110.f));
 				break;
 			}
+		}
+	}
+	// Round 6B: people close-ups (2-3 m, as a player walking past): two per style, face and full body.
+	{
+		TMap<uint8, int32> PerStyle;
+		int32 P = 0;
+		for (TActorIterator<AHGTouristNPC> It(World); It && P < 10; ++It)
+		{
+			int32& N = PerStyle.FindOrAdd(uint8(It->Style));
+			if (N >= 2)
+			{
+				continue;
+			}
+			++N;
+			AddActorShot(*It, *FString::Printf(TEXT("person_%d_face"), P), FVector(115.f, 30.f, 70.f), FVector(0.f, 0.f, 66.f));
+			AddActorShot(*It, *FString::Printf(TEXT("person_%d_body"), P), FVector(250.f, -80.f, 45.f), FVector(0.f, 0.f, 5.f));
+			++P;
 		}
 	}
 	// Crowds: grouped by the point they look at; camera in front of them, looking back.

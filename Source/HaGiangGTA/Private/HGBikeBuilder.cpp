@@ -46,6 +46,18 @@ namespace
 					FRotator(FMath::RadiansToDegrees(A), 0.f, 0.f));
 			}
 		}
+		// Round 6B: dried mud and dust on the tyre sidewalls.
+		{
+			FRandomStream Rm{ bFront ? 71 : 72 };
+			for (int32 i = 0; i < 14; ++i)
+			{
+				const float A = Rm.FRandRange(0.f, 2.f * PI);
+				const float Y = (i & 1) ? Minor * 0.85f : -Minor * 0.85f;
+				K.Paint(i % 3 ? FLC(0.11f, 0.075f, 0.045f) : FLC(0.2f, 0.15f, 0.09f), HGSurf::Matte);
+				K.Ellipsoid(FVector(FMath::Cos(A), 0.f, FMath::Sin(A)) * Rm.FRandRange(24.5f, 27.f) + FVector(0.f, Y, 0.f),
+					FVector(Rm.FRandRange(2.f, 4.5f), 0.5f, Rm.FRandRange(1.2f, 2.6f)), FRotator(FMath::RadiansToDegrees(-A) + 90.f, 0.f, 0.f), 6, 3);
+			}
+		}
 		// Rim, hub with brake drum, 2 x 9 spokes.
 		K.Paint(Chrome, HGSurf::Chrome);
 		K.Torus(Id, 21.6f, 1.3f, 28, 5);
@@ -63,6 +75,95 @@ namespace
 		}
 		K.Paint(DarkAlloy, HGSurf::Satin);
 		K.Tube(FVector(0.f, -9.5f, 0.f), FVector(0.f, 9.5f, 0.f), 1.2f, 1.2f, 6, true);   // axle
+	}
+
+	/** Round 6B: close-up detail for every bike - control cables, chain + sprockets, plate lettering, mud on the
+	 *  lower body and a little wear. Plate: centre + tilt of the plate board of that body. */
+	void AddDetail(FHGMeshKit& K, bool bStep, const FVector& PlateC, float PlatePitch, int32 Seed)
+	{
+		const FVector F = HGBikes::FrontAxle();
+		const FVector R = HGBikes::RearAxle();
+		FRandomStream Rs{ 3100 + Seed };
+		// Cables from the levers / throttle looping down to the steering head, front brake cable to the drum.
+		K.Paint(FLC(0.012f, 0.012f, 0.012f), HGSurf::Satin);
+		for (const float S : { -1.f, 1.f })
+		{
+			const FVector A(42.f, 21.f * S, 104.5f), B(52.f, 10.f * S, 99.f), C(48.f, 3.f * S, bStep ? 92.f : 84.f);
+			K.Tube(A, B, 0.38f, 0.38f, 4, false);
+			K.Tube(B, C, 0.38f, 0.38f, 4, false);
+		}
+		K.Tube(FVector(42.f, 18.f, 104.f), FVector(53.f, 6.f, 96.f), 0.38f, 0.38f, 4, false);       // throttle (2nd)
+		K.Tube(FVector(50.f, -7.f, 90.f), F + FVector(4.f, -8.f, 13.f), 0.38f, 0.38f, 4, false);   // front brake
+		// Chain + sprockets on the left.
+		const FVector Fs = bStep ? FVector(-4.f, -11.8f, 34.f) : FVector(4.f, -11.8f, 37.f);
+		const FVector Rs3 = R + FVector(0.f, -11.8f, 0.f);
+		const FLC ChainC(0.05f, 0.042f, 0.035f);
+		K.Paint(FLC(0.09f, 0.085f, 0.08f), HGSurf::Chrome);
+		K.Torus(FTransform(Rs3), 8.2f, 0.9f, 20, 4);                                                  // rear sprocket
+		K.Tube(Rs3 - FVector(0.f, 0.4f, 0.f), Rs3 + FVector(0.f, 0.4f, 0.f), 7.4f, 7.4f, 16, true);
+		for (int32 i = 0; i < 18; ++i)
+		{
+			const float A = 2.f * PI * i / 18.f;
+			K.Box(Rs3 + FVector(FMath::Cos(A), 0.f, FMath::Sin(A)) * 9.2f, FVector(1.1f, 0.7f, 1.4f), FRotator(FMath::RadiansToDegrees(A), 0.f, 0.f));
+		}
+		K.Tube(Fs - FVector(0.f, 0.4f, 0.f), Fs + FVector(0.f, 0.4f, 0.f), 3.4f, 3.4f, 10, true);     // front sprocket
+		K.Paint(ChainC, HGSurf::Satin);
+		for (const float Up : { 1.f, -1.f })
+		{
+			const FVector A = Fs + FVector(0.f, 0.f, 3.8f * Up), B = Rs3 + FVector(0.f, 0.f, 9.4f * Up);
+			K.Tube(A, B, 0.45f, 0.45f, 4, false);
+			const int32 Links = int32((B - A).Size() / 2.6f);
+			const FRotator Dir = (B - A).Rotation();
+			for (int32 l = 0; l <= Links; ++l)
+			{
+				K.Paint(l % 2 ? ChainC : ChainC * 1.6f, HGSurf::Satin);
+				K.Box(FMath::Lerp(A, B, float(l) / FMath::Max(Links, 1)), FVector(2.2f, 1.4f, 1.3f), Dir);
+			}
+		}
+		// Plate lettering: "23-B1 / 123.45" style two rows of seven-segment-ish glyphs.
+		const FQuat PQ = FRotator(PlatePitch, 0.f, 0.f).Quaternion();
+		K.Paint(FLC(0.015f, 0.015f, 0.018f), HGSurf::Satin);
+		for (int32 Row = 0; Row < 2; ++Row)
+		{
+			const int32 N = Row ? 6 : 5;
+			for (int32 g = 0; g < N; ++g)
+			{
+				const float Y = (g - (N - 1) * 0.5f) * 2.8f;
+				const float Z = Row ? -3.1f : 3.1f;
+				const uint32 Mask = (Rs.GetUnsignedInt() & 0x7f) | 0x09;   // always top + bottom bars
+				if ((Row == 0 && g == 2) || (Row == 1 && g == 3))
+				{
+					K.Box(PlateC + PQ.RotateVector(FVector(-0.6f, Y, Z + (Row ? -1.4f : 0.f))), FVector(0.4f, (Row ? 0.6f : 1.5f), (Row ? 0.6f : 0.4f)), FRotator(PlatePitch, 0.f, 0.f));
+					continue;   // dash / dot
+				}
+				const FVector Seg[7][2] = {
+					{ FVector(0.f, 0.f, 1.5f), FVector(0.f, 1.4f, 0.35f) }, { FVector(0.f, 0.f, 0.f), FVector(0.f, 1.4f, 0.35f) },
+					{ FVector(0.f, 0.f, -1.5f), FVector(0.f, 1.4f, 0.35f) }, { FVector(0.f, -0.7f, 0.75f), FVector(0.f, 0.35f, 1.5f) },
+					{ FVector(0.f, 0.7f, 0.75f), FVector(0.f, 0.35f, 1.5f) }, { FVector(0.f, -0.7f, -0.75f), FVector(0.f, 0.35f, 1.5f) },
+					{ FVector(0.f, 0.7f, -0.75f), FVector(0.f, 0.35f, 1.5f) } };
+				for (int32 k = 0; k < 7; ++k)
+				{
+					if (Mask & (1u << ((k == 2) ? 3 : (k == 3 ? 2 : k))))
+					{
+						K.Box(PlateC + PQ.RotateVector(FVector(-0.6f, Y, Z) + Seg[k][0]), Seg[k][1] + FVector(0.4f, 0.f, 0.f), FRotator(PlatePitch, 0.f, 0.f));
+					}
+				}
+			}
+		}
+		// Mud: splashes on the fenders, the lower frame, engine bottom, exhaust and stand (red-brown laterite dust).
+		const FLC Mud(0.13f, 0.085f, 0.05f), MudDry(0.24f, 0.17f, 0.1f);
+		const FVector Spots[14] = {
+			F + FVector(-8.f, 0.f, 26.f), F + FVector(-14.f, 0.f, 22.f), F + FVector(8.f, 6.f, 8.f), F + FVector(8.f, -6.f, 8.f),
+			R + FVector(14.f, 0.f, 30.f), R + FVector(24.f, 0.f, 24.f), R + FVector(-18.f, 0.f, 30.f), R + FVector(6.f, 10.f, 10.f),
+			FVector(10.f, -8.f, 26.f), FVector(10.f, 8.f, 26.f), FVector(-6.f, 0.f, 24.f), FVector(-20.f, 13.f, 24.f),
+			FVector(-26.f, -13.f, 26.f), FVector(22.f, 12.f, 30.f) };
+		for (int32 i = 0; i < 14; ++i)
+		{
+			K.Paint(i % 3 ? Mud : MudDry, HGSurf::Matte);
+			K.Ellipsoid(Spots[i] + FVector(Rs.FRandRange(-2.f, 2.f), 0.f, Rs.FRandRange(-2.f, 2.f)),
+				FVector(Rs.FRandRange(3.f, 6.f), Rs.FRandRange(2.f, 4.f), Rs.FRandRange(1.f, 2.2f)),
+				FRotator(Rs.FRandRange(-30.f, 30.f), Rs.FRandRange(0.f, 180.f), 0.f), 6, 3);
+		}
 	}
 
 	void BuildWin(FHGMeshKit& K)
@@ -236,6 +337,7 @@ namespace
 		}
 		K.Tube(FVector(18.f, 12.f, 34.f), FVector(30.f, 13.f, 30.f), 0.8f, 0.8f, 5, true);         // brake pedal
 		K.Tube(FVector(-4.f, -11.f, 29.f), FVector(-28.f, -14.f, 27.f), 1.1f, 1.1f, 5, true);      // kickstand (up)
+		AddDetail(K, false, FVector(-95.2f, 0.f, 63.f), 8.f, 1);
 	}
 
 	// ---------------------------------------------------------------------------------------------------
@@ -376,6 +478,7 @@ namespace
 		K.Paint(Chrome, HGSurf::Chrome);
 		K.Box(FVector(-40.f, 18.f, 32.f), FVector(28.f, 1.f, 7.f), FRotator(-12.f, 0.f, 0.f));
 		K.Tube(FVector(-4.f, -11.f, 29.f), FVector(-26.f, -13.f, 27.f), 1.f, 1.f, 5, true);
+		AddDetail(K, true, FVector(-88.f, 0.f, 58.f), 8.f, St.bBoxy ? 2 : (St.bSport ? 3 : 4));
 	}
 
 	// ---------------------------------------------------------------------------------------------------
@@ -424,6 +527,32 @@ namespace
 		{
 			K.Paint(Brocade[(Seed + i) % 5]);
 			K.Box(FVector(-80.f, 0.f, 134.f + i * 2.2f), FVector(16.f, 20.f, 2.2f));
+		}
+		// Round 6B: strapped, not glued - criss-crossed bungee cords over the packs hooked onto the rack rails,
+		// cam-strap webbing round each dry bag and its frame.
+		const FLC Bungee[2] = { FLC(0.5f, 0.03f, 0.03f), FLC(0.02f, 0.02f, 0.025f) };
+		for (int32 c = 0; c < 2; ++c)
+		{
+			K.Paint(Bungee[(Seed + c) % 2], HGSurf::Satin);
+			const float Y0 = c ? -15.f : 15.f;
+			const FVector Hook0(-64.f, Y0, 87.f), Hook1(-94.f, -Y0, 87.f);
+			const FVector Over0(-70.f, Y0 * 0.7f, 116.f), Over1(-88.f, -Y0 * 0.7f, 116.f), Top(-79.f, 0.f, 134.f);
+			K.Tube(Hook0, Over0, 0.6f, 0.6f, 5, false);
+			K.Tube(Over0, Top, 0.6f, 0.6f, 5, false);
+			K.Tube(Top, Over1, 0.6f, 0.6f, 5, false);
+			K.Tube(Over1, Hook1, 0.6f, 0.6f, 5, false);
+			K.Paint(FLC(0.5f, 0.5f, 0.48f), HGSurf::Chrome);
+			K.Tube(Hook0, Hook0 + FVector(0.f, 0.f, -2.5f), 0.35f, 0.35f, 4, false);
+			K.Tube(Hook1, Hook1 + FVector(0.f, 0.f, -2.5f), 0.35f, 0.35f, 4, false);
+		}
+		K.Paint(FLC(0.02f, 0.02f, 0.02f), HGSurf::Satin);
+		for (const float S : { -1.f, 1.f })
+		{
+			for (const float X : { -68.f, -86.f })
+			{
+				K.Torus(FTransform(FRotator(0.f, 90.f, 0.f), FVector(X, 25.f * S, 70.f)), 9.3f, 0.55f, 14, 4);
+				K.Box(FVector(X, 25.f * S, 79.8f), FVector(2.f, 3.f, 1.f));                                   // cam buckle
+			}
 		}
 		Straps(K, -70.f, -90.f, 116.f, 16.f);
 	}
