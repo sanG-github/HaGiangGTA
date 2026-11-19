@@ -204,7 +204,7 @@ namespace HGDressingKit
 			int32 i = 0;
 			for (float X = -HL - OH + 12.f; X < HL + OH; X += 24.f, ++i)
 			{
-				K.Paint(((i & 1) ? Tile : TileLight) * R.FRandRange(0.85f, 1.15f), HGSurf::Matte);
+				K.Paint(R.FRand() < 0.18f ? FColorL(0.035f, 0.045f, 0.022f) : ((i & 1) ? Tile : TileLight) * R.FRandRange(0.85f, 1.15f), HGSurf::Matte);   // some mossy rows
 				const FVector Top = FVector(X, 0.f, RidgeZ) + Up * 5.f;
 				K.Tube(Top, Top + Down * SlopeW, (i & 1) ? 5.f : 6.5f, (i & 1) ? 5.f : 6.5f, 6, true);
 			}
@@ -212,9 +212,9 @@ namespace HGDressingKit
 			K.Paint(FColorL(0.025f, 0.024f, 0.022f), HGSurf::Matte);
 			for (float D = 28.f; D < SlopeW - 10.f; D += 28.f)
 			{
-				K.Box(FVector(0.f, 0.f, RidgeZ) + Up * 9.5f + Down * D, FVector(2 * HL + 2 * OH, 2.f, 1.2f), SlopeRot);
+				K.Box(FVector(0.f, 0.f, RidgeZ) + Up * 10.5f + Down * D, FVector(2 * HL + 2 * OH, 3.f, 2.6f), SlopeRot);
 			}
-			for (int32 m = 0; m < 7; ++m)
+			for (int32 m = 0; m < 0; ++m)   // 6B review: flat moss pads read as lily pads - moss is in the tile tones instead
 			{
 				K.Paint(R.FRand() < 0.5f ? FColorL(0.018f, 0.024f, 0.012f) : FColorL(0.026f, 0.032f, 0.014f), HGSurf::Matte);
 				K.Ellipsoid(FVector(R.FRandRange(-HL, HL), 0.f, RidgeZ) + Up * 10.f + Down * R.FRandRange(SlopeW * 0.4f, SlopeW - 15.f),
