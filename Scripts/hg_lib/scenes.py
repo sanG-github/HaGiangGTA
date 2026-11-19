@@ -29,6 +29,9 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
     step("Importing textures, Nanite meshes, audio")
     tex = assets.import_textures()
     meshes = assets.import_meshes()
+    # Round 7A: Poly Haven scans (Data/PolyHaven, CC0) - skipped with a warning when not downloaded.
+    from . import scan_meshes
+    scan_meshes.import_all()
     flute = assets.import_flute()
 
     step("Building materials")

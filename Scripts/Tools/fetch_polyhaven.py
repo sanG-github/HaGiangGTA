@@ -49,6 +49,10 @@ MODEL_RES = "1k"
 MODEL_FORMAT = {"fir_tree_01": "fbx"}
 TEX_RES = "2k"
 TEX_MAPS = ["Diffuse", "nor_gl", "arm"]
+# Alpha maps of the plants (the glTF set references JPG diffuse maps without alpha; prep_scan_alpha.py merges these
+# into RGBA PNGs). Fetched into <id>/textures/ with --alpha only.
+ALPHA_MAPS = {"shrub_02": "Alpha", "fern_02": "Alpha", "grass_medium_01": "Alpha", "grass_medium_02": "Alpha",
+              "fir_sapling_medium": "twigs_alpha"}
 
 
 def get_json(url):
@@ -67,6 +71,9 @@ def plan_files(asset_id, kind):
         out.append((os.path.basename(g["url"]), g["url"], g["size"], g["md5"]))
         for rel, f in g.get("include", {}).items():
             out.append((rel, f["url"], f["size"], f["md5"]))
+    elif kind == "alpha":
+        f = files[ALPHA_MAPS[asset_id]][MODEL_RES]["jpg"]
+        out.append(("textures/" + os.path.basename(f["url"]), f["url"], f["size"], f["md5"]))
     else:
         for m in TEX_MAPS:
             f = files[m][TEX_RES]["jpg"]
@@ -92,10 +99,12 @@ def safe_join(base, rel):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
+    ap.add_argument("--alpha", action="store_true", help="also fetch the plants' alpha maps (ALPHA_MAPS)")
     args = ap.parse_args()
 
     plan = []
-    for kind, ids in (("model", MODELS), ("texture", TEXTURES)):
+    groups = [("model", MODELS), ("texture", TEXTURES)] + ([("alpha", list(ALPHA_MAPS))] if args.alpha else [])
+    for kind, ids in groups:
         for asset_id in ids:
             try:
                 for rel, url, size, md5 in plan_files(asset_id, kind):
@@ -139,6 +148,8 @@ def main():
                 continue
             os.replace(dst + ".part", dst)
             print(f"  got {asset_id}/{rel} ({size / 1e6:.1f} MB)")
+        if kind == "alpha":
+            kind = "model"
         e = manifest.setdefault(asset_id, {"kind": kind, "resolution": MODEL_RES if kind == "model" else TEX_RES,
                                            "format": MODEL_FORMAT.get(asset_id, "gltf") if kind == "model" else "jpg",
                                            "files": [], "bytes": 0, "license": "CC0",

@@ -110,13 +110,14 @@
   "source": "https://polyhaven.com/a/dry_riverbed_rock"
  },
  "fern_02": {
-  "bytes": 1146361,
+  "bytes": 1392399,
   "files": [
    "fern_02_1k.gltf",
    "textures/fern_02_arm_1k.jpg",
    "textures/fern_02_diff_1k.jpg",
    "textures/fern_02_nor_gl_1k.jpg",
-   "fern_02.bin"
+   "fern_02.bin",
+   "textures/fern_02_alpha_1k.jpg"
   ],
   "format": "gltf",
   "kind": "model",
@@ -125,7 +126,7 @@
   "source": "https://polyhaven.com/a/fern_02"
  },
  "fir_sapling_medium": {
-  "bytes": 78056936,
+  "bytes": 78331343,
   "files": [
    "fir_sapling_medium_1k.gltf",
    "textures/fir_sapling_medium_branches_nor_gl_1k.jpg",
@@ -134,7 +135,8 @@
    "textures/fir_sapling_medium_twigs_nor_gl_1k.jpg",
    "textures/fir_sapling_medium_twigs_diff_1k.jpg",
    "textures/fir_sapling_medium_twigs_arm_1k.jpg",
-   "fir_sapling_medium.bin"
+   "fir_sapling_medium.bin",
+   "textures/fir_sapling_medium_twigs_alpha_1k.jpg"
   ],
   "format": "gltf",
   "kind": "model",
@@ -175,13 +177,14 @@
   "source": "https://polyhaven.com/a/forrest_ground_01"
  },
  "grass_medium_01": {
-  "bytes": 3065099,
+  "bytes": 3512636,
   "files": [
    "grass_medium_01_1k.gltf",
    "textures/grass_medium_01_nor_gl_1k.jpg",
    "textures/grass_medium_01_diff_1k.jpg",
    "textures/grass_medium_01_arm_1k.jpg",
-   "grass_medium_01.bin"
+   "grass_medium_01.bin",
+   "textures/grass_medium_01_alpha_1k.jpg"
   ],
   "format": "gltf",
   "kind": "model",
@@ -190,13 +193,14 @@
   "source": "https://polyhaven.com/a/grass_medium_01"
  },
  "grass_medium_02": {
-  "bytes": 801474,
+  "bytes": 916337,
   "files": [
    "grass_medium_02_1k.gltf",
    "textures/grass_medium_02_nor_gl_1k.jpg",
    "textures/grass_medium_02_diff_1k.jpg",
    "textures/grass_medium_02_arm_1k.jpg",
-   "grass_medium_02.bin"
+   "grass_medium_02.bin",
+   "textures/grass_medium_02_alpha_1k.jpg"
   ],
   "format": "gltf",
   "kind": "model",
@@ -508,13 +512,14 @@
   "source": "https://polyhaven.com/a/rocky_terrain_02"
  },
  "shrub_02": {
-  "bytes": 1966425,
+  "bytes": 2083017,
   "files": [
    "shrub_02_1k.gltf",
    "textures/shrub_02_arm_1k.jpg",
    "textures/shrub_02_nor_gl_1k.jpg",
    "shrub_02.bin",
-   "textures/shrub_02_diff_1k.jpg"
+   "textures/shrub_02_diff_1k.jpg",
+   "textures/shrub_02_alpha_1k.jpg"
   ],
   "format": "gltf",
   "kind": "model",

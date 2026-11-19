@@ -274,17 +274,27 @@ def place(ctx, layout, scatter, rng):
                     pool = grass_dry if rng.random() < 0.65 else grass_green
                     out[pool[rng.integers(0, len(pool))]].append(item(gx, gy, t.z(gx, gy) - 3.0, rng.uniform(0.7, 1.4)))
 
-    # 2) Grass tufts along the road shoulders and verges (the near ground the rider looks at).
-    for i in range(0, len(road), 3):
-        for _ in range(4):
+    # 2) Grass and shrub cover on the slopes the rider sees (round 7A, user review: the hills read "ragged"). Clumps,
+    #    not single tufts: 6-14 tufts within ~1.6 m around each clump centre, clump density falling off from the
+    #    road out to 45 m; every fourth clump gets a shrub (or fern) in its middle. Drawn only near the camera
+    #    (grass cull 70-90 m, scrub 250-320 m), so the count is affordable.
+    for i in range(0, len(road), 2):
+        for _ in range(5):
             k = min(len(road) - 1, i + rng.integers(0, 2))
             a = rng.uniform(0, 2 * np.pi)
-            r = rng.uniform(500, 2500)
-            x, y = road[k][0] + math.cos(a) * r, road[k][1] + math.sin(a) * r
-            if not off_road(x, y, 80.0) or slope(x, y) > 40:
+            r = 450 + rng.exponential(1300)
+            if r > 4500:
                 continue
-            pool = grass_dry if rng.random() < 0.5 else grass_green
-            out[pool[rng.integers(0, len(pool))]].append(item(x, y, t.z(x, y) - 3.0, rng.uniform(0.7, 1.5)))
+            x, y = road[k][0] + math.cos(a) * r, road[k][1] + math.sin(a) * r
+            if not off_road(x, y, 80.0) or slope(x, y) > 42:
+                continue
+            pool = grass_dry if rng.random() < 0.45 else grass_green
+            for _ in range(rng.integers(6, 15)):
+                gx, gy = x + rng.normal(0, 70), y + rng.normal(0, 70)
+                if off_road(gx, gy, 60.0):
+                    out[pool[rng.integers(0, len(pool))]].append(item(gx, gy, t.z(gx, gy) - 3.0, rng.uniform(0.7, 1.5), tilt=4.0))
+            if rng.random() < 0.25 and off_road(x, y, 200.0):
+                out[scrub[rng.integers(0, len(scrub))]].append(item(x, y, t.z(x, y) - 8.0, rng.uniform(0.7, 1.3), tilt=3.0))
 
     # 3) Po mu / cypress on ridges and crests (higher than the ground 60 m around), in small stands.
     cyp_c = [n for n in SPECIES if "Cypress_Crown" in n]

@@ -34,6 +34,14 @@ def build(meshes, mats, tag, folder):
     if not data:
         hg.warn("no HaGiang_vegetation.json: run Scripts/Tools/gen_vegetation.py")
         return
+    from . import scan_meshes as scans
+    # Round 7A: Poly Haven moss rock sets stand in for the two shadowless outcrop variants, sunk by 30 % of their
+    # height so none perch on the slope (B's jagged KarstOutcrop_01/02 blades stay: nothing scanned reads as karst
+    # blades). Plants stay procedural: the scanned firs are 480-780k verts each and stick-like when decimated, and
+    # the alpha-cut scan shrubs / grass read as dark thin spikes at review distance - the procedural tufts and scrub
+    # read as green cover, now denser and clumped (gen_vegetation.py).
+    swap = {"SM_HG_KarstOutcrop_03": ("outcrop", "size", 0.3), "SM_HG_KarstOutcrop_04": ("outcrop", "size", 0.3)}
+    pieces = {r: scans.pieces(r) for r in ("outcrop",)}
     total = 0
     for name, spec in data["species"].items():
         items = data["instances"].get(name, [])
@@ -42,6 +50,16 @@ def build(meshes, mats, tag, folder):
         if not items or mesh is None:
             continue
         cull = spec["cull"]
+        role, mode, sink = swap.get(name, ("", "", 0.0))
+        if role and pieces.get(role):
+            # Variant 0 / 1 of a species take alternate pieces so neighbours differ.
+            ps = pieces[role]
+            half = ps[0::2] if name.endswith(("_0", "_03")) else ps[1::2]
+            world.spawn_scan_scatter(f"Veg_{name.replace('SM_HG_', '').replace('Veg_', '')}", mesh, half or ps, items,
+                                     tag, folder, cull=(float(cull[0]), float(cull[1])), collision=False,
+                                     shadows=False, mode=mode, sink=sink)
+            total += len(items)
+            continue
         world.spawn_scatter(f"Veg_{name.replace('SM_HG_', '').replace('Veg_', '')}", mesh, mat, items, tag, folder, cull=(float(cull[0]), float(cull[1])),
                             collision=False, shadows=bool(spec["shadows"]))
         total += len(items)
