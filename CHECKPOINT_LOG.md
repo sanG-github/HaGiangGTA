@@ -715,3 +715,64 @@ terrain vs 61.4 without. validate_layout: 0 FAIL.
    term every frame and a parked bike crept onto the Doc Tham Ma road at 250 m); going round a small still
    obstacle needs 35 m of clear oncoming road instead of 60 m; a cow or goat the box hits beside the probe is shooed
    off too (a truck sat at the 3.24 km herd with "cruise" as its reason).
+
+## Round 6B - visual polish: karst ground, Hmong / Dao people, bikes, houses (agent B, merged main e1754d8 + polish-2)
+
+Re-prioritised mid-round to "make it read as Ha Giang at a glance". Agent A owns vegetation, rock scatter and
+animals; B owns people, bikes, ground / terrain / rock materials, rock meshes and dressing.
+
+- **Karst ground** (terrain material, no extra texture fetch):
+  - grey limestone outcrops break through the thin soil on every slope, clustered by the 32 m macro noise:
+    weathered tops, yellow-green and black lichen, dark joints;
+  - a ring of red-brown earth around the outcrops;
+  - redder laterite on the ploughed terraces;
+  - dry-grass palette pulled to the art bible's mauve / khaki outside the lush Tham Ma valley;
+  - wet green-black seeps down the cliff faces.
+  - The first pass covered almost all slopes white (Review6B_5) and was pulled back to about a quarter.
+- **Rock meshes** (gen_assets, own random stream so A's vegetation meshes are byte-identical):
+  - KarstCliff_01-04 and Boulder_02/03 rebuilt sharper (more fracture planes, deeper karren flutes, rougher crowns);
+  - new SM_HG_KarstOutcrop_01-04: 3-6 fused jagged blades, 1.5-4 m, sunk into the ground, with an LOD chain and
+    complex collision, ready for A's dense scatter.
+- **People**:
+  - faces: cranium + jaw, eye whites / irises / lids, a nose with nostrils, lips, ears, arched brows,
+    hairline + bun;
+  - hands with four curled fingers;
+  - cloth seams, hem, placket, chest pockets, belt;
+  - backpacks with real shoulder / sternum straps and a bottle;
+  - Hmong women: black or indigo tops, embroidered forearm bands, batik / lozenge skirt rows, spiral leg wraps,
+    big wound turban with checks and tassels;
+  - Red Dao variant: black clothes, red pom-pom headdress, silver coins, tassels;
+  - Hmong men: black / indigo with a coloured sash;
+  - five idle styles: hands behind back, hand on strap, arms folded, cocked hip, breathing.
+- **Bikes**:
+  - lever / throttle / brake cables;
+  - chain with links, both sprockets;
+  - two-row plate lettering;
+  - laterite mud on fenders, frame and tyre sidewalls;
+  - Easy Rider: criss-crossed bungees hooked to the rack, cam straps round the dry bags, a rain-covered top
+    bag under a cargo net.
+- **Cano roof**:
+  - sun-faded blue matte canvas on a ridge pole, sewn panels, bleached streaks, red star;
+  - the red satin roof had blown out to salmon in every sun shot.
+- **Walls and houses**:
+  - all dry-stone walls (roadside fences, yard walls) are irregular rubble with gaps over a dark core, a ragged
+    top, capstones, moss and grass;
+  - house platforms and terrace walls are dry-stone faced, built at their real depth (no stretched slabs);
+  - two in three houses are rammed earth (trinh tuong): per-lift tones, lift lines, drip streaks, splash zone;
+  - dark weathered yin-yang tiles with course lines and moss;
+  - packed brown-red earth yards; roadside racks kept off the viewpoint plazas.
+- **Roads**:
+  - rare potholes / spalled slab corners in worn stretches;
+  - tyre-polished wheel paths;
+  - stronger crack network.
+- **Light / grade**: warmer key (5100 K), cooler shade, a little more contrast and warmth in the grade.
+
+Measured (all under the lock, with no other Unreal running; three runs today overlapped A's playtests, read 41-65
+FPS and were discarded):
+- -hgperf before (e1754d8): Spawn 80, viewpoint 80 FPS.
+- After all of B's 6B work (run 6, before merging polish-2): min 74 FPS (Spawn 81, Viewpoint_3 74).
+- After merging A's WIP polish-2 (vegetation: ISM instances 58k -> 78k, scatter actors 25 -> 46):
+  Spawn 63, Viewpoint_0 57 FPS - below 70. The A/B with A's vegetation hidden could not run before the
+  deadline (lock busy).
+- CP05 OK, validate_layout 0 FAIL, no CrashReportClient.
+- The last commit (roof tile courses / no moss pads) was compile-checked only.
