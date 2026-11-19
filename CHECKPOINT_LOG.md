@@ -715,3 +715,30 @@ terrain vs 61.4 without. validate_layout: 0 FAIL.
    term every frame and a parked bike crept onto the Doc Tham Ma road at 250 m); going round a small still
    obstacle needs 35 m of clear oncoming road instead of 60 m; a cow or goat the box hits beside the probe is shooed
    off too (a truck sat at the 3.24 km herd with "cruise" as its reason).
+
+Round 6A results (playtest b, perf b): AI 0 dead stops / 0 re-placements; Doppler 0.92-1.10, ~160 horns per
+session, khen 0.11-0.18 at the viewpoints, lapping 0.25-0.34, echo up to 0.26; 46-50 gear shifts per run; perf
+(quiet run) SUMMARY PASS min 76 FPS. Viewport: still lost to the OS when another Unreal window opens (678x381 for
+a while, adopted after 3 refits, back to 1019 later) - not solved; dropped for the visual round.
+
+## Round 6B - "is this Ha Giang?" visuals: karst vegetation, village dogs, roadside cues (`improve/polish-2`)
+
+User request (via coordinator): people / bikes / ground / terrain / trees should be diverse and real, add dogs - at
+first glance it must read as Ha Giang. Agent B keeps people, bikes, ground and rock materials; A: vegetation
+species and scatter density, animals, viewpoint cues.
+
+- Scripts/Tools/gen_vegetation.py (new) + hg_lib/vegetation.py (new): mesh-kit style OBJ species with variants and
+  their placement (own JSON, HaGiang_vegetation.json), one HISM per mesh, distance culling, LOD chains by name:
+  - limestone outcrops (4 fractured karst blocks, 0.8-2.8x) in clustered "rock gardens" on 5-50 deg slopes
+    within 700 m of the road - 42k instances, denser near the road (the strongest Ha Giang cue);
+  - scrub in the rock cracks (3 variants), dry brown and green grass tufts (4) around the rocks and on the verges;
+  - po mu / cypress columnar conifers (3 trunk + crown variants) in small stands on ridges and crests;
+  - bamboo clumps (2) by the houses; wild banana (2) in the low valleys;
+  - season (late March, ART_BIBLE): no buckwheat bloom; young corn is B's terraces.
+- HGDogActor (new): village dogs (vang / den / ven / white) from the mesh kit - erect ears, curled tail; lie by the
+  houses near the road or trot the shoulder along the road spline; bark (synthesized SW_HG_DogBark) and chase a
+  passing bike up to 8 m along the shoulder, never on the carriageway; no collision (cannot cause an AI stop).
+  Playtest: 85 chases / 324 barks, AI dead stops 0.
+- HGMilestoneActor (new): QL4C kilometre stones (white, red crown, "QL4C", town, km) every 1.5 km on the shoulder,
+  counting down to Dong Van before Ma Pi Leng and to Meo Vac after it. Roadside national flags (B's flag pole
+  kind) at Doc Tham Ma and on the dock road.

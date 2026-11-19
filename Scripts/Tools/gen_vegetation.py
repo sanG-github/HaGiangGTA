@@ -81,18 +81,12 @@ def make_meshes(rng):
     MESH_OUT.mkdir(parents=True, exist_ok=True)
     out = []
 
-    # Limestone outcrops: low, wide, fractured grey blocks half sunk in the slope (the karst "rock garden").
-    for i, (size, aspect) in enumerate(((180, (1.0, 0.8, 0.55)), (260, (1.0, 0.7, 0.45)), (120, (1.0, 0.9, 0.8)),
-                                        (340, (1.0, 0.6, 0.38)))):
-        v, f = ga.karst_rock(rng, 3, size, aspect, flute_count=rng.integers(5, 9), flute_depth=0.06,
-                             bumpiness=0.12, flat_bottom=0.9, cuts=7)
-        v[:, 2] -= size * 0.12                          # sunk into the ground a little
-        name = _reg(f"SM_HG_Veg_Outcrop_Boulder_{i}", "rock", (60000, 80000), True)
-        ga.write_obj(MESH_OUT / f"{name}.obj", v, f)
-        out.append(name)
-
+    # Limestone outcrops: agent B's SM_HG_KarstOutcrop_01..04 (1.5-4 m jagged blade clusters with LODs, pivot at
+    # the ground) - our own round blocks read as "white eggs" from the viewpoints. Shadows only on two of the four.
+    for i in range(1, 5):
+        out.append(_reg(f"SM_HG_KarstOutcrop_0{i}", "rock", (45000, 60000), i <= 2))
     # Po mu / cypress: tall narrow conifer of the ridges - dark, columnar, slightly ragged.
-    for i, (h, r) in enumerate(((1400, 150), (1050, 120), (1700, 170))):
+    for i, (h, r) in enumerate(((1400, 150), (1700, 170))):
         v, f = ga._tube((0, 0, -30), (0, 0, h * 0.35), 14 + i * 3, 9, 6)
         name = _reg(f"SM_HG_Veg_Cypress_Trunk_{i}", "bark", (100000, 130000), True)
         ga.write_obj(MESH_OUT / f"{name}.obj", v, f)
@@ -109,16 +103,16 @@ def make_meshes(rng):
         out.append(name)
 
     # Scrub in the rock cracks: low irregular clusters of small blobs.
-    for i in range(3):
+    for i in range(2):
         parts = [ga._blob(np.array([rng.normal(0, 45), rng.normal(0, 45), rng.uniform(25, 70)]), rng.uniform(35, 70),
                           rng, 1, (1, 1, 0.7), 0.5) for _ in range(rng.integers(4, 7))]
         v, f = ga._merge(parts)
-        name = _reg(f"SM_HG_Veg_Scrub_Bush_{i}", "bush" if i < 2 else "leaf", (30000, 40000), False)
+        name = _reg(f"SM_HG_Veg_Scrub_Bush_{i}", "bush" if i == 0 else "leaf", (25000, 32000), False)
         ga.write_obj(MESH_OUT / f"{name}.obj", v, f)
         out.append(name)
 
     # Bamboo clumps by the hamlets: 12-18 thin culms arching out, feathery leaf masses on the upper half.
-    for i in range(2):
+    for i in range(1):
         culms, leaves = [], []
         for _ in range(rng.integers(12, 19)):
             a = rng.uniform(0, 2 * np.pi)
@@ -141,7 +135,7 @@ def make_meshes(rng):
         out.append(name)
 
     # Wild banana in the valleys: a few pseudostems, big paddle leaves arching out (two-sided slabs, some torn).
-    for i in range(2):
+    for i in range(1):
         stems, leaves = [], []
         for s in range(rng.integers(2, 4)):
             off = rng.normal(0, 40, 2)
@@ -172,11 +166,11 @@ def make_meshes(rng):
         out.append(name)
 
     # Grass tufts: green (in the corn / by water) and dry brown (on the rock ground, late March).
-    for i, (n_bl, h, mat) in enumerate(((18, 45, "bush"), (26, 60, "bush"), (22, 55, "house_wall"), (30, 75, "house_wall"))):
+    for i, (n_bl, h, mat) in enumerate(((24, 55, "bush"), (28, 65, "house_wall"))):
         parts = [_blade(rng, h * rng.uniform(0.6, 1.2), rng.uniform(2.5, 4.5), rng.uniform(8, 30)) for _ in range(n_bl)]
         parts = [(p + np.array([rng.normal(0, 9), rng.normal(0, 9), 0]), f) for p, f in parts]
         v, f = ga._merge(parts)
-        name = _reg(f"SM_HG_Veg_Grass_Bush_{i}", mat, (9000, 13000), False)
+        name = _reg(f"SM_HG_Veg_Grass_Bush_{i}", mat, (7000, 9000), False)
         ga.write_obj(MESH_OUT / f"{name}.obj", v, f)
         out.append(name)
     return out
@@ -230,7 +224,7 @@ def place(ctx, layout, scatter, rng):
                 round(s * rng.uniform(0.85, 1.15), 3)]
 
     out = {name: [] for name in SPECIES}
-    rocks = [n for n in SPECIES if "Outcrop" in n]
+    rocks = [n for n in SPECIES if "KarstOutcrop" in n]
     scrub = [n for n in SPECIES if "Scrub" in n]
     grass_green = [n for n in SPECIES if "Grass" in n and SPECIES[n]["material"] == "bush"]
     grass_dry = [n for n in SPECIES if "Grass" in n and SPECIES[n]["material"] != "bush"]
@@ -243,7 +237,8 @@ def place(ctx, layout, scatter, rng):
     #    good part of every slope near the road (review of the first pass: 14k small rocks over the whole map read
     #    as a few pebbles). Clusters of 3-8 blocks, 0.8-2.8 x the 1.2-3.4 m meshes, within 700 m of the road.
     tries = 0
-    while sum(len(out[n]) for n in rocks) < 42000 and tries < 400000:
+    # Budget (round 6B review: ISM 58k -> 78k cost ~2 ms): 18k blade clusters, falling off with road distance.
+    while sum(len(out[n]) for n in rocks) < 18000 and tries < 400000:
         tries += 1
         x, y = rng.uniform(-half, half), rng.uniform(-half, half)
         d = road_d(x, y)
@@ -255,7 +250,7 @@ def place(ctx, layout, scatter, rng):
         s_deg = slope(x, y)
         if s_deg < 5 or s_deg > 50:
             continue
-        p = rock_field(x, y) ** 1.3 * (0.45 + s_deg / 45.0) * (1.8 if d < 25000 else 1.0)
+        p = rock_field(x, y) ** 1.3 * (0.45 + s_deg / 45.0) * (1.8 if d < 25000 else max(0.15, 1.0 - d / 70000.0))
         if rng.random() > p:
             continue
         for _ in range(rng.integers(3, 9)):
@@ -263,16 +258,16 @@ def place(ctx, layout, scatter, rng):
             if not off_road(rx, ry, 400.0):
                 continue
             name = rocks[rng.integers(0, len(rocks))]
-            s = rng.uniform(0.8, 2.2) * (1.3 if rng.random() < 0.15 else 1.0)
-            out[name].append(item(rx, ry, t.z(rx, ry) - 25.0 * s, s, tilt=8.0))
+            s = rng.uniform(0.6, 1.4) * (1.3 if rng.random() < 0.1 else 1.0)
+            out[name].append(item(rx, ry, t.z(rx, ry) - 10.0 * s, s, tilt=6.0))
         # Scrub and grass in the cracks around the rock.
         if rng.random() < 0.35 and d < 60000:
             a = rng.uniform(0, 2 * np.pi)
             sx, sy = x + math.cos(a) * 160 * s, y + math.sin(a) * 160 * s
             if off_road(sx, sy, 250.0):
                 out[scrub[rng.integers(0, len(scrub))]].append(item(sx, sy, t.z(sx, sy) - 10.0, rng.uniform(0.6, 1.3)))
-        if d < 22000:
-            for _ in range(rng.integers(1, 4)):
+        if d < 15000 and rng.random() < 0.5:
+            for _ in range(rng.integers(1, 3)):
                 a = rng.uniform(0, 2 * np.pi)
                 gx, gy = x + math.cos(a) * rng.uniform(90, 220) * s, y + math.sin(a) * rng.uniform(90, 220) * s
                 if off_road(gx, gy, 120.0):
@@ -280,8 +275,8 @@ def place(ctx, layout, scatter, rng):
                     out[pool[rng.integers(0, len(pool))]].append(item(gx, gy, t.z(gx, gy) - 3.0, rng.uniform(0.7, 1.4)))
 
     # 2) Grass tufts along the road shoulders and verges (the near ground the rider looks at).
-    for i in range(0, len(road), 2):
-        for _ in range(5):
+    for i in range(0, len(road), 3):
+        for _ in range(4):
             k = min(len(road) - 1, i + rng.integers(0, 2))
             a = rng.uniform(0, 2 * np.pi)
             r = rng.uniform(500, 2500)

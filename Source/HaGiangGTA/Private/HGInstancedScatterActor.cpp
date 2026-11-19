@@ -71,6 +71,14 @@ int32 AHGInstancedScatterActor::GetInstanceCount() const
 void AHGInstancedScatterActor::BeginPlay()
 {
 	Super::BeginPlay();
+	// Round 6B: the 42k limestone outcrops cost 15-30 FPS with dynamic shadows out to 800 m (ThamMa_eye 49).
+	// Small rocks on the slopes don't need their own shadow (the rock material's AO reads as contact); keep them to
+	// 550 m. -hgrockshadow=1 brings the shadows back for A/B.
+	if (GetActorNameOrLabel().Contains(TEXT("Veg_Grass")) || GetActorNameOrLabel().Contains(TEXT("Veg_Scrub")))
+	{
+		Instances->SetCastShadow(false);   // small props: no shadow pass (also set in the vegetation data)
+		return;
+	}
 	if (!GetActorNameOrLabel().Contains(TEXT("Scatter_tree")))
 	{
 		return;

@@ -25,7 +25,7 @@ def _load():
 def mesh_names():
     """Vegetation meshes to import (empty when gen_vegetation.py has not run)."""
     data = _load()
-    return sorted(data["species"].keys()) if data else []
+    return sorted(n for n in data["species"].keys() if n.startswith("SM_HG_Veg_")) if data else []   # B imports KarstOutcrop
 
 
 def build(meshes, mats, tag, folder):
@@ -42,7 +42,7 @@ def build(meshes, mats, tag, folder):
         if not items or mesh is None:
             continue
         cull = spec["cull"]
-        world.spawn_scatter(f"Veg_{name[10:]}", mesh, mat, items, tag, folder, cull=(float(cull[0]), float(cull[1])),
+        world.spawn_scatter(f"Veg_{name.replace('SM_HG_', '').replace('Veg_', '')}", mesh, mat, items, tag, folder, cull=(float(cull[0]), float(cull[1])),
                             collision=False, shadows=bool(spec["shadows"]))
         total += len(items)
     hg.log(f"Vegetation: {total} instances in {len(data['species'])} meshes")
