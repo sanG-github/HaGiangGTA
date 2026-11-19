@@ -916,3 +916,7 @@ varies the load):
   - -hgplaytest: every check PASS, 0 AI dead stops, average 73.3 FPS.
   - -hgperf runs and the per-camera median: see the report numbers below.
 - Not done: the cone firs and the kapok "lollipop" trees near the road are unchanged; the scan foliage needs a proper material pass (two-sided foliage lighting, colour) before it can replace them.
+- FPS (-hgperf, perf lock held):
+  - 7A alone, before the merge (load about 6): min 72 and min 79.
+  - Merged 907ab07 + 5d3a4e7, 3 runs (load 6.7-8): per-camera median Spawn 80, ThamMa eye 70, ThamMa drone 104, MomDa 71, MPL plaza 77, MPL drone 106, NhoQue rim 69, TaLang 80, TuSan boat 65, TuSan flycam 116. Two cameras are under 70.
+  - Budget cut 894b89c (two heaviest cliff scans out, bushes culled at 110-150 m): 4 runs at load 7-14.6 (other apps), unusable (even the drone views fell from about 119 to 61-97). It must be re-measured on a quiet machine. If TuSan boat is still under 70 there, the next step is the procedural gorge cliffs (scan cliffs off).
