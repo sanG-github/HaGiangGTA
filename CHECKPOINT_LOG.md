@@ -802,3 +802,15 @@ FPS and were discarded):
   deadline (lock busy).
 - CP05 OK, validate_layout 0 FAIL, no CrashReportClient.
 - The last commit (roof tile courses / no moss pads) was compile-checked only.
+
+Round 6B budget pass (merged with B's 3e104f6, regenerated, CP05 rebuilt, perf lock held):
+- Outcrops are now B's SM_HG_KarstOutcrop_01..04 jagged blade clusters (ours read as "white eggs"): 18k,
+  density falling off with road distance (full within 250 m, down to 15 % at 700 m), cull 450-600 m, shadows on
+  two of the four meshes. Variants cut to 12 own meshes (16 vegetation HISMs instead of 25); grass / scrub without
+  shadows, grass culled at 70-90 m. Vegetation 60.6k -> 26.3k instances. Stale assets of the dropped variants
+  deleted (no reference in the CP05 map).
+- -hgperf, merged build, 2 runs: SUMMARY PASS both, min 71 FPS (Spawn 90 / 74, ThamMa eye 74 / 71, MomDa 80 / 79,
+  MPL plaza 88 / 84, NhoQue rim 76 / 77, TaLang dock 74 / 76, TuSan boat 71 / 72, drones / flycam 116-119).
+- Bisect: -hghide=HmongHouse -> min 75 (ThamMa eye 81: B's house platforms cost ~7 FPS there);
+  -hghide of all A's round 6 actors (vegetation, dogs, milestones, goats, kids, walkers, flags) -> min 74.
+  No change made to B's house files: both are inside the 70 budget now.
