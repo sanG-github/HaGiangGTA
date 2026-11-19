@@ -676,3 +676,9 @@ terrain vs 61.4 without. validate_layout: 0 FAIL.
   - Final playtest: missions 4/4 PASS (boat tour back in 171 s), intro closed with Enter PASS, list + grip tyres
     PASS (48 -> 58 km/h), pause + restart at a viewpoint PASS, profile round trip PASS; traffic 1 AI dead stop,
     0 re-placements; average 75 FPS. CP05 rebuilt 3x with the idle-quit runner: no crash, no reporter.
+- Stale meshes (coordinator review): merged B's 749ef59 (OBJ sha1 tag -> reimport). Regenerated, CP05 rebuilt: 30 meshes
+  reimported ("OBJ changed since import"), incl. SM_HG_FarTerrain and the range layers; unused SM_HG_RangeLayer_3
+  (.uasset + .obj, no references in any map or asset) deleted. 19_mission_photo_aim: no arch / hole beside the ledge;
+  50_boat_MaPiLeng_bend: no slabs in the sky; guardrails / chevrons / stone walls / cliffs unchanged in the road shots.
+  Playtest: all PASS, 1 AI stop (bike behind a parked bike at the Tham Ma viewpoint), 0 re-placements, 75 FPS avg.
+  -hgperf (load ~6): SUMMARY PASS, min 75 FPS (TuSan_boat 75, ThamMa eye 78, MomDa 82, others 84-120).
