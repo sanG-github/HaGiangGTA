@@ -352,7 +352,7 @@ namespace
 		// shaded eye sockets with whites, irises and lid lines, a modelled nose with nostrils, two lips with a
 		// mouth line, shaped ears with a dark inner bowl, arched two-part brows.
 		const FLC Socket = O.Skin * 0.72f;
-		const FLC Cheek = O.Skin * FLC(1.08f, 0.93f, 0.9f, 1.f);
+		const FLC Cheek = O.Skin * FLC(1.02f, 0.9f, 0.86f, 1.f);
 		const FLC Lip = FLC(O.Skin.R * 0.78f, O.Skin.G * 0.44f, O.Skin.B * 0.42f, 1.f);
 		K.Paint(O.Skin);
 		K.Tube(FVector(0.f, 0.f, -2.f), NB, 5.f, 4.6f, 8, false);
@@ -361,7 +361,7 @@ namespace
 		K.Paint(Cheek);
 		for (const float S : { -1.f, 1.f })
 		{
-			K.Ellipsoid(H + FVector(6.6f, S * 4.7f, -2.0f), FVector(2.8f, 2.6f, 2.2f), FRotator::ZeroRotator, 8, 5);
+			K.Ellipsoid(H + FVector(5.9f, S * 4.5f, -1.8f), FVector(2.2f, 2.3f, 1.7f), FRotator::ZeroRotator, 8, 5);
 		}
 		K.Paint(O.Skin);
 		K.Ellipsoid(H + FVector(9.2f, 0.f, -0.9f), FVector(1.8f, 1.4f, 3.1f), FRotator(-10.f, 0.f, 0.f), 8, 5);   // nose bridge
@@ -380,7 +380,7 @@ namespace
 			K.Paint(FLC(0.028f, 0.016f, 0.01f));
 			K.Ellipsoid(H + FVector(8.65f, S * 3.2f, 1.5f), FVector(0.42f, 0.72f, 0.72f), FRotator::ZeroRotator, 6, 4);  // iris
 			K.Paint(FLC(0.012f, 0.01f, 0.009f));
-			K.Box(H + FVector(8.5f, S * 3.3f, 2.3f), FVector(0.7f, 3.1f, 0.42f), FRotator(0.f, 0.f, S * 5.f));         // upper lid
+			K.Box(H + FVector(8.45f, S * 3.3f, 2.25f), FVector(0.45f, 2.5f, 0.3f), FRotator(0.f, 0.f, S * 5.f));        // upper lid
 			K.Paint(FLC(O.Hair.R * 1.2f + 0.008f, O.Hair.G * 1.2f + 0.006f, O.Hair.B * 1.2f + 0.005f, 1.f));
 			K.Box(H + FVector(8.3f, S * 2.4f, 4.2f), FVector(1.0f, 1.9f, 0.85f), FRotator(0.f, 0.f, S * 4.f));       // brow (inner)
 			K.Box(H + FVector(7.9f, S * 4.3f, 4.35f), FVector(1.0f, 2.2f, 0.65f), FRotator(0.f, 0.f, -S * 14.f));    // brow (outer, arched)
@@ -436,9 +436,9 @@ namespace
 			K.Frustum(FTransform(H + FVector(-1.f, 0.f, 2.f)), FVector2D(10.6f, 9.8f), FVector2D(12.4f, 11.4f), 7.f, 16, true);
 			for (int32 t = 0; t < 4; ++t)
 			{
-				K.Paint(t % 2 ? O.HeadGear * 0.62f : O.HeadGear);
-				K.Torus(FTransform(FRotator((t % 2 ? 5.f : -4.f), 0.f, 90.f), H + FVector(-1.f, 0.f, 3.f + t * 2.2f)),
-					11.6f + (t == 1 ? 0.6f : 0.f), 1.6f, 16, 5);
+				K.Paint(t % 2 ? O.HeadGear * 0.82f : O.HeadGear);
+				K.Torus(FTransform(FRotator((t % 2 ? 3.f : -2.5f), 0.f, 90.f), H + FVector(-1.f, 0.f, 3.f + t * 1.7f)),
+					11.4f + (t == 1 ? 0.4f : 0.f), 1.9f, 16, 5);
 			}
 			K.Paint(FLC(0.6f, 0.58f, 0.52f));
 			for (int32 c = 0; c < 10; ++c)

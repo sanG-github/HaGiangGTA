@@ -684,7 +684,7 @@ namespace HGCanoKit
 		{
 			const float X0 = -310.f + Pn * 81.25f;
 			const float Fade = (Pn % 3 == 0) ? 1.12f : ((Pn % 3 == 1) ? 0.94f : 1.f);
-			K.Paint(FC(0.15f * Fade, 0.036f * Fade, 0.03f * Fade), HGSurf::Matte);
+			K.Paint(FC(0.1f * Fade, 0.026f * Fade, 0.022f * Fade), HGSurf::Matte);   // faded oxblood canvas
 			for (const float S : { -1.f, 1.f })
 			{
 				K.Box(FVector(X0 + 40.6f, S * 49.f, 230.f), FVector(80.5f, 101.f, 2.f), FRotator(0.f, 0.f, S * 7.f));
@@ -695,7 +695,7 @@ namespace HGCanoKit
 				K.Box(FVector(X0 + 0.4f, S * 49.f, 231.2f), FVector(1.6f, 101.f, 2.f), FRotator(0.f, 0.f, S * 7.f));   // seam
 			}
 		}
-		K.Paint(FC(0.2f, 0.12f, 0.1f), HGSurf::Matte);
+		K.Paint(FC(0.13f, 0.075f, 0.065f), HGSurf::Matte);
 		for (int32 k = 0; k < 5; ++k)
 		{
 			const float X = -260.f + k * 130.f;
@@ -707,7 +707,7 @@ namespace HGCanoKit
 		K.Box(FVector(341.f, 0.f, 222.f), FVector(3.f, 200.f, 10.f));
 		K.Box(FVector(-311.f, 0.f, 222.f), FVector(3.f, 200.f, 10.f));
 		// Faded yellow star painted on each canvas slope (Round 6B: lies on the cloth, not over the ridge pole).
-		K.Paint(FC(0.62f, 0.46f, 0.05f), HGSurf::Matte);
+		K.Paint(FC(0.42f, 0.31f, 0.04f), HGSurf::Matte);
 		for (const float Sd : { -1.f, 1.f })
 		{
 			const FQuat Tilt = FRotator(0.f, 0.f, Sd * 7.f).Quaternion();
