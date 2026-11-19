@@ -3,6 +3,9 @@
 #include "Camera/CameraComponent.h"
 #include "Components/AudioComponent.h"
 #include "HGAudio.h"
+#include "Kismet/GameplayStatics.h"
+#include "Camera/PlayerCameraManager.h"
+#include "GameFramework/PlayerController.h"
 #include "Sound/SoundBase.h"
 #include "Components/BoxComponent.h"
 #include "Engine/World.h"
@@ -88,17 +91,106 @@ void AHGVehicleBase::Tick(float DeltaSeconds)
 	}
 	if (EngineAudio)
 	{
-		const float SpeedFrac = FMath::Clamp(FMath::Abs(GetSpeedKmh()) / FMath::Max(EngineTopKmh, 1.f), 0.f, 1.2f);
-		// Fake gears: pitch climbs, drops at shift points, climbs again.
-		const float Gear = FMath::Fmod(SpeedFrac * 3.f, 1.f);
-		const float Target = FMath::Lerp(EngineIdlePitch, EngineMaxPitch, 0.55f * SpeedFrac + 0.45f * Gear * FMath::Min(SpeedFrac * 4.f, 1.f));
-		EnginePitch = FMath::FInterpTo(EnginePitch, Target, DeltaSeconds, 6.f);
-		EngineAudio->SetPitchMultiplier(EnginePitch);
-		EngineAudio->SetVolumeMultiplier(EngineVolume * (0.55f + 0.45f * FMath::Min(SpeedFrac * 2.f, 1.f)) * (IsPlayerControlled() ? 1.f : 0.7f));
+		const float Kmh = FMath::Abs(GetSpeedKmh());
+		const float SpeedFrac = FMath::Clamp(Kmh / FMath::Max(EngineTopKmh, 1.f), 0.f, 1.2f);
+		float Target;
+		if (GearTopsKmh.Num() > 0)
+		{
+			// Round 6A: a real 4-speed box. Up a gear near the top of the band, down when the revs fall to ~45 %;
+			// the rpm (and the note) drop on every upshift, with a short dip in volume while the clutch is in.
+			const int32 Prev = Gear;
+			Gear = FMath::Clamp(Gear, 1, GearTopsKmh.Num());
+			if (Gear < GearTopsKmh.Num() && Kmh > GearTopsKmh[Gear - 1] * 0.95f)
+			{
+				++Gear;
+			}
+			else if (Gear > 1 && Kmh < GearTopsKmh[Gear - 1] * 0.42f)
+			{
+				--Gear;
+			}
+			const float Top = GearTopsKmh[Gear - 1];
+			const float Floor = Gear > 1 ? GearTopsKmh[Gear - 2] * 0.35f : 0.f;
+			Rpm = FMath::Clamp((Kmh - Floor) / FMath::Max(Top - Floor, 1.f), 0.f, 1.05f);
+			if (Gear != Prev)
+			{
+				ShiftDip = 0.18f;
+				if (IsPlayerControlled())
+				{
+					++ShiftCount;
+					UE_LOG(LogHaGiang, Log, TEXT("[HG_FEEL] shift %d -> %d at %.0f km/h (rpm %.2f)"), Prev, Gear, Kmh, Rpm);
+				}
+			}
+			Target = FMath::Lerp(EngineIdlePitch, EngineMaxPitch, 0.15f + 0.85f * Rpm * (Kmh > 3.f ? 1.f : 0.f));
+		}
+		else
+		{
+			// Fake gears: pitch climbs, drops at shift points, climbs again.
+			const float FakeGear = FMath::Fmod(SpeedFrac * 3.f, 1.f);
+			Target = FMath::Lerp(EngineIdlePitch, EngineMaxPitch, 0.55f * SpeedFrac + 0.45f * FakeGear * FMath::Min(SpeedFrac * 4.f, 1.f));
+		}
+		ShiftDip = FMath::Max(0.f, ShiftDip - DeltaSeconds);
+		EnginePitch = FMath::FInterpTo(EnginePitch, Target, DeltaSeconds, ShiftDip > 0.f ? 14.f : 6.f);
+
+		// Doppler for other vehicles, from the camera's point of view (passing bikes and trucks drop in pitch).
+		DopplerNow = 1.f;
+		const FVector Loc = GetActorLocation();
+		const FVector Vel = bAudioLocValid && DeltaSeconds > KINDA_SMALL_NUMBER ? (Loc - PrevAudioLoc) / DeltaSeconds : FVector::ZeroVector;
+		PrevAudioLoc = Loc;
+		bAudioLocValid = true;
+		if (!IsPlayerControlled())
+		{
+			if (const APlayerController* PC = GetWorld()->GetFirstPlayerController())
+			{
+				if (PC->PlayerCameraManager)
+				{
+					const FVector L = PC->PlayerCameraManager->GetCameraLocation();
+					const FVector ToL = L - Loc;
+					const float Dist = ToL.Size();
+					const APawn* Me = PC->GetPawn();
+					const FVector LVel = Me ? Me->GetVelocity() : FVector::ZeroVector;
+					if (Dist > 100.f && Dist < 15000.f)
+					{
+						const FVector Dir = ToL / Dist;
+						constexpr float C = 34300.f;
+						const float Vs = FMath::Clamp(FVector::DotProduct(Vel, Dir), -3000.f, 3000.f);    // source towards listener
+						const float Vl = FMath::Clamp(FVector::DotProduct(LVel, -Dir), -3000.f, 3000.f);  // listener towards source
+						DopplerNow = FMath::Clamp((C + Vl) / (C - Vs), 0.8f, 1.25f);
+						if (Dist < 6000.f)
+						{
+							DopplerMin = FMath::Min(DopplerMin, DopplerNow);
+							DopplerMax = FMath::Max(DopplerMax, DopplerNow);
+						}
+					}
+				}
+			}
+		}
+		EngineAudio->SetPitchMultiplier(EnginePitch * DopplerNow);
+		EngineAudio->SetVolumeMultiplier(EngineVolume * (0.55f + 0.45f * FMath::Min(SpeedFrac * 2.f, 1.f)) * (IsPlayerControlled() ? 1.f : 0.7f)
+			* (ShiftDip > 0.f ? 0.6f : 1.f));
 	}
 }
 
 bool AHGVehicleBase::bOrbitInputEnabled = true;
+int32 AHGVehicleBase::ShiftCount = 0;
+int32 AHGVehicleBase::HornCount = 0;
+float AHGVehicleBase::DopplerMin = 1.f;
+float AHGVehicleBase::DopplerMax = 1.f;
+
+void AHGVehicleBase::SoundHorn()
+{
+	const double Now = GetWorld()->GetTimeSeconds();
+	if (Now - LastHornTime < 6.0)
+	{
+		return;
+	}
+	LastHornTime = Now;
+	USoundBase* Horn = LoadObject<USoundBase>(nullptr, TEXT("/Game/HaGiang/Generated/Audio/SW_HG_Horn.SW_HG_Horn"));
+	if (Horn)
+	{
+		UGameplayStatics::PlaySoundAtLocation(this, Horn, GetActorLocation(), 0.8f, FMath::FRandRange(0.95f, 1.08f));
+	}
+	++HornCount;
+}
 
 float AHGVehicleBase::GetEngineVolumeNow() const
 {

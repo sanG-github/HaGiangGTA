@@ -37,6 +37,10 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cow")
 	bool bHorse = false;
 
+	/** Round 6A: a goat (the cow kit at half size, quicker, higher voice) - the herds on the Ma Pi Leng road. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cow")
+	bool bGoat = false;
+
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Cow")
 	FLinearColor CoatColor = FLinearColor(0.32f, 0.17f, 0.07f);
 

@@ -257,6 +257,46 @@ def spawn_scatter(label, mesh, material, instances, tag, folder, cull=(0.0, 0.0)
     return actor
 
 
+def spawn_scan_scatter(label, gen_mesh, pieces, instances, tag, folder, cull=(0.0, 0.0), collision=True, shadows=True,
+                       mode="size", sink=0.0):
+    """Round 7A: place Poly Haven scan pieces where the scatter data has instances of a generated mesh.
+
+    Instances are dealt round-robin over the pieces. Each piece is fitted to the generated mesh it stands in for
+    (mode "size": largest extent, "height": z extent, "axes": per axis within 0.6-1.8x of the uniform fit), keeps
+    its own (re-tinted) materials, and is re-centred: multi-piece glTF sets lay their pieces out in a row away from
+    the origin, so the rotated piece offset is taken off the instance position and its base is put on the ground
+    (generated meshes have their pivot at the ground). `sink` buries that share of the piece's height."""
+    if not pieces or not instances:
+        return 0
+    gb = gen_mesh.get_bounding_box()
+    gdim = (gb.max.x - gb.min.x, gb.max.y - gb.min.y, gb.max.z - gb.min.z)
+    n = len(pieces)
+    for i, (mesh, b) in enumerate(pieces):
+        sub = instances[i::n]
+        if not sub:
+            continue
+        sdim = (max(b.max.x - b.min.x, 1.0), max(b.max.y - b.min.y, 1.0), max(b.max.z - b.min.z, 1.0))
+        if mode == "height":
+            f = (gdim[2] / sdim[2],) * 3
+        elif mode == "axes":
+            u = max(gdim[0], gdim[1]) / max(sdim[0], sdim[1])
+            f = tuple(min(max(g / sd, u * 0.6), u * 1.8) for g, sd in zip(gdim, sdim))   # limit texel smear
+        else:
+            u = max(gdim) / max(sdim)
+            f = (u, u, u)
+        cx, cy = (b.min.x + b.max.x) * 0.5, (b.min.y + b.max.y) * 0.5
+        out = []
+        for it in sub:
+            x, y, z, yaw, pitch, roll, sx, sy, sz = (list(it) + [1.0, 1.0, 1.0])[:9]
+            S = (sx * f[0], sy * f[1], sz * f[2])
+            a = math.radians(yaw)
+            ox, oy = cx * S[0], cy * S[1]
+            dx, dy = ox * math.cos(a) - oy * math.sin(a), ox * math.sin(a) + oy * math.cos(a)
+            out.append([x - dx, y - dy, z - b.min.z * S[2] - sink * sdim[2] * S[2], yaw, pitch, roll, S[0], S[1], S[2]])
+        spawn_scatter(f"{label}_{i + 1}", mesh, None, out, tag, folder, cull, collision, shadows)
+    return len(instances)
+
+
 def _seat_houses(terrain, items, max_relief_cm=300.0):
     """Round 5 (agent A): scatter houses stood at the ground height of their centre, so on a slope the downhill
     side hung up to 2 m in the air (the blue-roofed house 15 m from the Doc Tham Ma spawn read as a floating brown
@@ -284,20 +324,44 @@ def build_scatter(scatter, meshes, mats, tag, folder):
     m1 = not hg.USE_NANITE
     cliff_cull = (180000.0, 220000.0) if m1 else (0.0, 0.0)
     cliff_meshes = [meshes[f"SM_HG_KarstCliff_0{i}"] for i in range(1, 5)]
+    # Round 7A: Poly Haven scans (hg_lib.scans) stand in for the procedural cliffs, boulders, shrubs and pines when
+    # they are imported; the procedural meshes stay the fallback (and the fitting reference for size).
+    from . import scan_meshes as scans
+    sc = {r: scans.pieces(r) for r in ("cliff", "boulder")}
+    sc["shrub"] = []     # scanned shrubs read as dark thin spikes at review distance - procedural bushes stay
+    sc["sapling"] = []   # scanned firs: too heavy (480-780k verts) and stick-like when decimated - pines stay procedural
     for name, cull in (("cliffs", cliff_cull), ("summits", (0.0, 0.0))):
         items = scatter[name]
         for v, mesh in enumerate(cliff_meshes):
-            spawn_scatter(f"Scatter_{name}_{v + 1}", mesh, mats["rock"], items[v::4], tag, folder, cull)
-    spawn_scatter("Scatter_spur", cliff_meshes[0], mats["rock"], scatter["spur"], tag, folder)
+            if sc["cliff"]:
+                spawn_scan_scatter(f"Scatter_{name}_{v + 1}", mesh, sc["cliff"], items[v::4], tag, folder, cull,
+                                   mode="axes", sink=0.04)
+            else:
+                spawn_scatter(f"Scatter_{name}_{v + 1}", mesh, mats["rock"], items[v::4], tag, folder, cull)
+    if sc["cliff"]:
+        spawn_scan_scatter("Scatter_spur", cliff_meshes[0], sc["cliff"][-1:], scatter["spur"], tag, folder,
+                           mode="axes", sink=0.04)
+    else:
+        spawn_scatter("Scatter_spur", cliff_meshes[0], mats["rock"], scatter["spur"], tag, folder)
     boulders = [meshes[f"SM_HG_Boulder_0{i}"] for i in range(1, 4)]
     for v, mesh in enumerate(boulders):
-        spawn_scatter(f"Scatter_boulders_{v + 1}", mesh, mats["rock"], scatter["boulders"][v::3], tag, folder,
-                      cull=(45000.0, 60000.0))
+        if sc["boulder"]:
+            spawn_scan_scatter(f"Scatter_boulders_{v + 1}", mesh, sc["boulder"][v::3],
+                               scatter["boulders"][v::3], tag, folder, cull=(45000.0, 60000.0), sink=0.3)
+        else:
+            spawn_scatter(f"Scatter_boulders_{v + 1}", mesh, mats["rock"], scatter["boulders"][v::3], tag, folder,
+                          cull=(45000.0, 60000.0))
     bushes = [meshes["SM_HG_Bush_01"], meshes["SM_HG_Bush_02"]]
     bush_items = [b for i, b in enumerate(scatter["bushes"]) if not m1 or i % 3 != 2]
     for v, mesh in enumerate(bushes):
-        spawn_scatter(f"Scatter_bushes_{v + 1}", mesh, mats["bush"], bush_items[v::2], tag, folder,
-                      cull=(14000.0, 20000.0) if m1 else (18000.0, 26000.0), collision=False, shadows=not m1)
+        bcull = (11000.0, 15000.0) if m1 else (18000.0, 26000.0)   # 7A budget on the merged build (was 140-200 m)
+        if sc["shrub"]:
+            bcull = (9000.0, 12000.0)   # masked scan foliage: cull hard (overdraw), the slopes beyond keep the rocks
+            spawn_scan_scatter(f"Scatter_bushes_{v + 1}", mesh, sc["shrub"][v::2], bush_items[v::2], tag, folder,
+                               cull=bcull, collision=False, shadows=False, mode="height")
+        else:
+            spawn_scatter(f"Scatter_bushes_{v + 1}", mesh, mats["bush"], bush_items[v::2], tag, folder,
+                          cull=bcull, collision=False, shadows=not m1)
     # Trees: trunk + crown HISMs sharing the same instance transforms.
     tree_parts = {
         "kapok": (("SM_HG_Kapok_Trunk", "kapok_bark"), ("SM_HG_Kapok_Bloom", "kapok_bloom")),
@@ -307,6 +371,12 @@ def build_scatter(scatter, meshes, mats, tag, folder):
     }
     for kind, parts in tree_parts.items():
         items = scatter.get("trees", {}).get(kind, [])
+        if kind == "pine" and sc["sapling"]:
+            # Scanned firs (one mesh: trunk + needles) fitted to the procedural pine's height.
+            spawn_scan_scatter("Scatter_tree_pine", meshes["SM_HG_Pine_Trunk"], sc["sapling"], items, tag, folder,
+                               cull=(110000.0, 150000.0) if m1 else (0.0, 0.0), collision=False, shadows=True,
+                               mode="height")
+            continue
         for mesh_name, mat_name in parts:
             spawn_scatter(f"Scatter_tree_{kind}_{mesh_name[6:]}", meshes[mesh_name], mats[mat_name], items, tag, folder,
                           cull=(110000.0, 150000.0) if m1 else (0.0, 0.0), collision=("Trunk" in mesh_name),
@@ -332,7 +402,7 @@ def build_golden_hour(tag, folder):
     sun = hg.spawn_actor(unreal.DirectionalLight, "Sun", (0, 0, 200000), (-50.0, -157.5, 0), tag, folder)
     sc = sun.get_component_by_class(unreal.DirectionalLightComponent)
     sc.set_mobility(unreal.ComponentMobility.MOVABLE)
-    for k, v in (("intensity", 10.0), ("use_temperature", True), ("temperature", 5600.0),
+    for k, v in (("intensity", 10.0), ("use_temperature", True), ("temperature", 5100.0),   # 6B: warmer key light
                  ("atmosphere_sun_light", True), ("cast_cloud_shadows", True),
                  ("enable_light_shaft_bloom", True), ("enable_light_shaft_occlusion", True),
                  ("bloom_scale", 0.25), ("volumetric_scattering_intensity", 1.6),
@@ -408,10 +478,10 @@ def build_golden_hour(tag, folder):
     s = ppv.get_editor_property("settings")
     for k, v in (("bloom_intensity", 0.55), ("vignette_intensity", 0.32), ("film_grain_intensity", 0.12),
                  ("auto_exposure_min_brightness", -1.2), ("auto_exposure_max_brightness", 2.5),   # 3B: -1.2 (was 0.6) lets the eye adapt in the sky-lit-only Tu San narrows
-                 ("white_temp", 6600.0), ("color_saturation", unreal.Vector4(1.04, 1.06, 1.04, 1.0)),
-                 ("color_contrast", unreal.Vector4(1.08, 1.08, 1.08, 1.0)),
-                 ("color_gain_shadows", unreal.Vector4(0.94, 1.0, 1.08, 1.0)),
-                 ("color_gain_highlights", unreal.Vector4(1.03, 1.0, 0.96, 1.0)),
+                 ("white_temp", 6600.0), ("color_saturation", unreal.Vector4(1.07, 1.06, 1.0, 1.0)),   # 6B grade: richer reds / earth
+                 ("color_contrast", unreal.Vector4(1.11, 1.1, 1.09, 1.0)),
+                 ("color_gain_shadows", unreal.Vector4(0.91, 0.98, 1.1, 1.0)),   # 6B: cooler shade
+                 ("color_gain_highlights", unreal.Vector4(1.07, 1.01, 0.9, 1.0)),   # 6B: golden key
                  ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0),
                  # Round 3B - deep gorge shade (Tu San narrows went near-black): sky light leaks a little into
                  # sky-occluded places (a bounce fill that only matters where Lumen sees no sky), and local

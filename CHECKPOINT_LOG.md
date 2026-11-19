@@ -682,3 +682,244 @@ terrain vs 61.4 without. validate_layout: 0 FAIL.
   50_boat_MaPiLeng_bend: no slabs in the sky; guardrails / chevrons / stone walls / cliffs unchanged in the road shots.
   Playtest: all PASS, 1 AI stop (bike behind a parked bike at the Tham Ma viewpoint), 0 re-placements, 75 FPS avg.
   -hgperf (load ~6): SUMMARY PASS, min 75 FPS (TuSan_boat 75, ThamMa eye 78, MomDa 82, others 84-120).
+
+---
+
+## Round 6A - window size, riding feel, audio, roadside life (`improve/polish-2`)
+
+1. **Window size**: the old guard pinned a hard-coded 1019x573 and resized the window by screen deltas (20-fix cap,
+   so later shots came out at 676 px). Now (EnforceViewport): the size the window settles at in its first 2 s is
+   held - 1280x720 when the OS allows it, 1019x573 when macOS fits a 1280 window down at start-up - and every
+   outside change is put back through UGameUserSettings (windowed, SetScreenResolution, ApplyResolutionSettings),
+   checked 4x a second, never with a screenshot pending. A refit the OS repeats three times is adopted instead of
+   fought in a loop. For players the same guard runs, but a resize made while the game window is focused is the
+   player's own and becomes the saved size (GameUserSettings).
+2. **Riding feel** (Honda Win, HGVehicleBase / HGBikePawn / HGGroundVehicle):
+   - 4-speed box (tops 22 / 38 / 55 / 85 km/h, down at 42 % of the band): rpm and engine note fall on every
+     upshift, 0.18 s clutch dip in volume; shifts logged ([HG_FEEL]).
+   - Braking dive / acceleration squat on the forks (up to 3.5 deg nose-down), on top of the physics lean.
+   - Rider weight shift into slow tight bends (up to +8 deg beyond the bike's lean below ~45 km/h).
+   - Camera shake by surface and speed (asphalt 0.08, concrete 0.45, dirt 1.0 x up to 3 cm).
+   - Not done: dust trail on dirt (no particle system / translucent material in the project yet - B's side).
+3. **Audio**: Doppler on every other vehicle's engine from the camera (measured 0.92-1.10 in the playtest); AI horn
+   (two-tone beep, synthesized in gen_assets) before blind hairpins - convoy leaders and trucks, 6 s cooldown;
+   khen-like reed drone loop near H'Mong houses and viewpoints (0.1-0.18 there); river lapping loop on the boat;
+   engine "echo" (a lagging, quieter copy of the engine note) when walls are within 80 m on both sides (gorge,
+   cuttings: 0.14-0.25 measured); boat engine pitch already follows speed.
+4. **World life**: goat herd (HGCowActor bGoat, half size, quicker, higher voice) on the road 260 m past the Ma Pi
+   Leng Panorama; kids (HGTouristNPC bKid) by three hamlets wave at every rider within 25 m; locals walk the
+   shoulder along the road spline (bShoulderWalker, +-60 m) between hamlets; Easy Rider convoys pull over at the
+   viewpoints (half the passes, 18 s): riders get off (a photographer NPC by each bike within 350 m of the camera),
+   then ride on. Placements: roadside_life() with its own RNG (validate_layout's replays unchanged).
+5. **Last dead stop**: parked vehicles (no rider, no AI) now come to rest and stay (the handbrake fought the slope
+   term every frame and a parked bike crept onto the Doc Tham Ma road at 250 m); going round a small still
+   obstacle needs 35 m of clear oncoming road instead of 60 m; a cow or goat the box hits beside the probe is shooed
+   off too (a truck sat at the 3.24 km herd with "cruise" as its reason).
+
+Round 6A results (playtest b, perf b): AI 0 dead stops / 0 re-placements; Doppler 0.92-1.10, ~160 horns per
+session, khen 0.11-0.18 at the viewpoints, lapping 0.25-0.34, echo up to 0.26; 46-50 gear shifts per run; perf
+(quiet run) SUMMARY PASS min 76 FPS. Viewport: still lost to the OS when another Unreal window opens (678x381 for
+a while, adopted after 3 refits, back to 1019 later) - not solved; dropped for the visual round.
+
+## Round 6B - "is this Ha Giang?" visuals: karst vegetation, village dogs, roadside cues (`improve/polish-2`)
+
+User request (via coordinator): people / bikes / ground / terrain / trees should be diverse and real, add dogs - at
+first glance it must read as Ha Giang. Agent B keeps people, bikes, ground and rock materials; A: vegetation
+species and scatter density, animals, viewpoint cues.
+
+- Scripts/Tools/gen_vegetation.py (new) + hg_lib/vegetation.py (new): mesh-kit style OBJ species with variants and
+  their placement (own JSON, HaGiang_vegetation.json), one HISM per mesh, distance culling, LOD chains by name:
+  - limestone outcrops (4 fractured karst blocks, 0.8-2.8x) in clustered "rock gardens" on 5-50 deg slopes
+    within 700 m of the road - 42k instances, denser near the road (the strongest Ha Giang cue);
+  - scrub in the rock cracks (3 variants), dry brown and green grass tufts (4) around the rocks and on the verges;
+  - po mu / cypress columnar conifers (3 trunk + crown variants) in small stands on ridges and crests;
+  - bamboo clumps (2) by the houses; wild banana (2) in the low valleys;
+  - season (late March, ART_BIBLE): no buckwheat bloom; young corn is B's terraces.
+- HGDogActor (new): village dogs (vang / den / ven / white) from the mesh kit - erect ears, curled tail; lie by the
+  houses near the road or trot the shoulder along the road spline; bark (synthesized SW_HG_DogBark) and chase a
+  passing bike up to 8 m along the shoulder, never on the carriageway; no collision (cannot cause an AI stop).
+  Playtest: 85 chases / 324 barks, AI dead stops 0.
+- HGMilestoneActor (new): QL4C kilometre stones (white, red crown, "QL4C", town, km) every 1.5 km on the shoulder,
+  counting down to Dong Van before Ma Pi Leng and to Meo Vac after it. Roadside national flags (B's flag pole
+  kind) at Doc Tham Ma and on the dock road.
+## Round 6B - visual polish: karst ground, Hmong / Dao people, bikes, houses (agent B, merged main e1754d8 + polish-2)
+
+Re-prioritised mid-round to "make it read as Ha Giang at a glance". Agent A owns vegetation, rock scatter and
+animals; B owns people, bikes, ground / terrain / rock materials, rock meshes and dressing.
+
+- **Karst ground** (terrain material, no extra texture fetch):
+  - grey limestone outcrops break through the thin soil on every slope, clustered by the 32 m macro noise:
+    weathered tops, yellow-green and black lichen, dark joints;
+  - a ring of red-brown earth around the outcrops;
+  - redder laterite on the ploughed terraces;
+  - dry-grass palette pulled to the art bible's mauve / khaki outside the lush Tham Ma valley;
+  - wet green-black seeps down the cliff faces.
+  - The first pass covered almost all slopes white (Review6B_5) and was pulled back to about a quarter.
+- **Rock meshes** (gen_assets, own random stream so A's vegetation meshes are byte-identical):
+  - KarstCliff_01-04 and Boulder_02/03 rebuilt sharper (more fracture planes, deeper karren flutes, rougher crowns);
+  - new SM_HG_KarstOutcrop_01-04: 3-6 fused jagged blades, 1.5-4 m, sunk into the ground, with an LOD chain and
+    complex collision, ready for A's dense scatter.
+- **People**:
+  - faces: cranium + jaw, eye whites / irises / lids, a nose with nostrils, lips, ears, arched brows,
+    hairline + bun;
+  - hands with four curled fingers;
+  - cloth seams, hem, placket, chest pockets, belt;
+  - backpacks with real shoulder / sternum straps and a bottle;
+  - Hmong women: black or indigo tops, embroidered forearm bands, batik / lozenge skirt rows, spiral leg wraps,
+    big wound turban with checks and tassels;
+  - Red Dao variant: black clothes, red pom-pom headdress, silver coins, tassels;
+  - Hmong men: black / indigo with a coloured sash;
+  - five idle styles: hands behind back, hand on strap, arms folded, cocked hip, breathing.
+- **Bikes**:
+  - lever / throttle / brake cables;
+  - chain with links, both sprockets;
+  - two-row plate lettering;
+  - laterite mud on fenders, frame and tyre sidewalls;
+  - Easy Rider: criss-crossed bungees hooked to the rack, cam straps round the dry bags, a rain-covered top
+    bag under a cargo net.
+- **Cano roof**:
+  - sun-faded blue matte canvas on a ridge pole, sewn panels, bleached streaks, red star;
+  - the red satin roof had blown out to salmon in every sun shot.
+- **Walls and houses**:
+  - all dry-stone walls (roadside fences, yard walls) are irregular rubble with gaps over a dark core, a ragged
+    top, capstones, moss and grass;
+  - house platforms and terrace walls are dry-stone faced, built at their real depth (no stretched slabs);
+  - two in three houses are rammed earth (trinh tuong): per-lift tones, lift lines, drip streaks, splash zone;
+  - dark weathered yin-yang tiles with course lines and moss;
+  - packed brown-red earth yards; roadside racks kept off the viewpoint plazas.
+- **Roads**:
+  - rare potholes / spalled slab corners in worn stretches;
+  - tyre-polished wheel paths;
+  - stronger crack network.
+- **Light / grade**: warmer key (5100 K), cooler shade, a little more contrast and warmth in the grade.
+
+Measured (all under the lock, with no other Unreal running; three runs today overlapped A's playtests, read 41-65
+FPS and were discarded):
+- -hgperf before (e1754d8): Spawn 80, viewpoint 80 FPS.
+- After all of B's 6B work (run 6, before merging polish-2): min 74 FPS (Spawn 81, Viewpoint_3 74).
+- After merging A's WIP polish-2 (vegetation: ISM instances 58k -> 78k, scatter actors 25 -> 46):
+  Spawn 63, Viewpoint_0 57 FPS - below 70. The A/B with A's vegetation hidden could not run before the
+  deadline (lock busy).
+- CP05 OK, validate_layout 0 FAIL, no CrashReportClient.
+- The last commit (roof tile courses / no moss pads) was compile-checked only.
+
+Round 6B budget pass (merged with B's 3e104f6, regenerated, CP05 rebuilt, perf lock held):
+- Outcrops are now B's SM_HG_KarstOutcrop_01..04 jagged blade clusters (ours read as "white eggs"): 18k,
+  density falling off with road distance (full within 250 m, down to 15 % at 700 m), cull 450-600 m, shadows on
+  two of the four meshes. Variants cut to 12 own meshes (16 vegetation HISMs instead of 25); grass / scrub without
+  shadows, grass culled at 70-90 m. Vegetation 60.6k -> 26.3k instances. Stale assets of the dropped variants
+  deleted (no reference in the CP05 map).
+- -hgperf, merged build, 2 runs: SUMMARY PASS both, min 71 FPS (Spawn 90 / 74, ThamMa eye 74 / 71, MomDa 80 / 79,
+  MPL plaza 88 / 84, NhoQue rim 76 / 77, TaLang dock 74 / 76, TuSan boat 71 / 72, drones / flycam 116-119).
+- Bisect: -hghide=HmongHouse -> min 75 (ThamMa eye 81: B's house platforms cost ~7 FPS there);
+  -hghide of all A's round 6 actors (vegetation, dogs, milestones, goats, kids, walkers, flags) -> min 74.
+  No change made to B's house files: both are inside the 70 budget now.
+
+## Round 6C - convoy viewpoint stops, hip lean, goat squeeze (agent A)
+- Playtest on 42403c7 (lock held): every check PASS; 1 AI dead stop (a bike held by Goat_MPL_1 at 0.0 m that could not leave the lane); 0 viewpoint stops. All 59 shots viewed: no regressions (the restart-at-viewpoint shot still starts against the Ma Pi Leng rock pillar).
+- Viewpoint stops never fired because convoys > 450 m from the camera run the kinematic far-LOD path, which skipped the logic. Now `UpdateViewpointStop` runs in both paths. Leaders pull over (75 %) at Tham Ma (road 248 m) and Ma Pi Leng (2823 m) for 30-60 s, riders stop in line behind them (or behind a stopped bike of their tour), photographers spawn within 350 m, then they ride on. Other traffic goes round a photo stop after about 1 s.
+- Cows and goats that are shooed but cannot leave the lane are squeezed past: probe and box ignore them for 12 s.
+- Rider weight shift: the driver seat (pivot at the saddle) rolls up to 6 deg into hairpins, eased in and out. The rig's own lean is no longer driven, so the body leans from the hips and stays on the seat.
+- Playtest after the fix (lock held): all PASS, 0 AI dead stops, 0 re-placements, 4 viewpoint stops, 19 kid waves, dogs 72 chases / 273 barks, average 88.7 FPS.
+
+## Round 7B - Poly Haven photoscanned materials (agent B, merged polish-2 bca7074)
+
+- **Import**: `Scripts/hg_lib/scans.py`.
+  - Role -> Poly Haven id list; the first set on disk wins, a missing role falls back to the procedural colour.
+  - diff sRGB, nor_gl -> green flipped, ARM linear.
+  - Re-imported only when the file's sha1 changes.
+  - `Data/PolyHaven` is a symlink to the main checkout (gitignored there, not committed here).
+  - Chosen by eye from the download:
+
+    | Role | Poly Haven id |
+    |---|---|
+    | rock | marble_cliff_05 (grey karst limestone) |
+    | stony soil | dry_ground_rocks |
+    | earth | brown_mud_dry |
+    | grass | forrest_ground_01 (dry grass with bare patches) |
+    | river bed | dry_riverbed_rock |
+    | road | asphalt_02 |
+    | dry-stone walls | gray_rocks |
+    | rammed earth | brown_mud_dry |
+    | concrete | none fetched |
+- **Terrain**:
+  - The scans carry the art-bible palette: palette x scan luminance / measured mean, mixed with the scan's own colour.
+  - The slope / height / noise blending and the 6B outcrops stay; the n_far / n_mid macro tints break up the tiling.
+  - limestone: biplanar on cliffs and outcrops;
+  - grass: on dry and lush ground;
+  - stony soil: on slopes;
+  - mud: on terraces and the earth rings;
+  - river bed: below the waterline;
+  - rock normal: from the scan.
+  - Budget: 6 extra samples on shared wrap samplers (SSM_WRAP_WORLD_GROUP_SETTINGS, needed above 16 textures on
+    Metal SM5). The far grass sample and the grass normal were dropped after the first measurement.
+- **Road**:
+  - asphalt_02 diffuse + normal under the existing markings, potholes and wheel paths;
+  - Ta Lang concrete keeps its procedural slabs, with dry_ground_rocks normals for aggregate relief.
+- **Houses and walls**: new M_HG_KitDressing (kit vertex colour x world-biplanar scan detail on matte surfaces)
+  on houses, platforms, terrace walls, stone signs and roadside fences.
+  - Warm vertex colours (rammed earth, yards) take the brown_mud_dry detail; grey ones (stone) take gray_rocks.
+  - Wood, tiles and metal stay plain.
+- **Data**: Generated/ was stale after the polish-2 merge (A's vegetation budget pass); regenerated before measuring.
+
+Measured (lock held, no other Unreal; traffic makes Spawn vary by +-1.7 ms between identical runs):
+- Before (no scans, fresh data): Spawn 63 / Viewpoint_3 76. That run was on stale data.
+- First scan build (8 samples): Spawn 54 / Viewpoint_0 50.
+- Budget build, two identical runs: Spawn 69 and 81, Viewpoint_3 79 and 77.
+- CP05 OK, validate_layout 0 FAIL, 0 CrashReportClient.
+
+User pass "xơ xác, không thật" (00:05):
+- continuous green-brown grass / scrub cover (a green floor everywhere, broad macro patches, weaker shrub
+  speckle that fades with distance);
+- limestone outcrops only on faces steeper than ~30 deg, with a soft noisy edge;
+- red-brown soil reduced to the terraces, road cuts and the earth ring;
+- stony-soil scan on slopes 0.55 -> 0.2;
+- scan detail fades out beyond ~30-120 m (no far tiling);
+- far hills blend to one green-grey tone, and the DEM far terrain's shrub noise is calmed;
+- cliffs keep biplanar limestone (no stretched texels).
+
+Before / after on the same review cameras (Saved/HG_CI): Review7B_final.keep (before) and Review7B_cover.keep (after).
+| Location | Before | After |
+|---|---|---|
+| Ma Pi Leng range | 56_rim_240 | 52_rim_240 |
+| Tham Ma plaza | 66_rim_240 | 62_rim_240 |
+| hamlet slope | 73_rim_240 | 69_rim_240 |
+| ground close-up | 79_rim_180 | 75_rim_180 |
+| vistas | 38-43 | 34-39 |
+Review7B_locked.keep is the committed build.
+
+-hgperf, 2 runs each, under the lock, no other Unreal (the harness picks Viewpoint_0 or _3 at random; traffic
+varies the load):
+| Build | Spawn_ThamMa | Viewpoint |
+|---|---|---|
+| Scans, before the cover pass | 100 / 82 | Viewpoint_0 81 / 72 |
+| Cover pass with the 150 m macro sample | 57 / 70 | Viewpoint_3 65 / 69 |
+| Locked (macro from the 32 m noise) | 74 / 70 (median 72) | Viewpoint_0 57 / 81 (median 69, at the 70 limit) |
+
+## Round 7A - Poly Haven CC0 scans: cliffs, boulders, outcrops; denser ground cover (agent A)
+- Download: `Scripts/Tools/fetch_polyhaven.py`. Stdlib only, generic User-Agent, md5-checked, idempotent, 1 GB cap, dl.polyhaven.org only. 40 assets, 557 MB, plus 5 plant alpha maps (1.2 MB, approved separately) into `Data/PolyHaven/` (gitignored). The manifest is in `Data/polyhaven_manifest.json`, the CC0 note in `Data/POLYHAVEN_CREDITS.md`. fir_tree_01 (238 MB FBX, every needle modelled) took 47 min to build LODs and timed the import out, so it is not imported.
+- Import: `Scripts/hg_lib/scan_meshes.py` (renamed from scans.py to avoid clashing with B's texture module).
+  - Folders: /Game/HaGiang/PolyHaven/<id>/, reimported only when the source sha1 changes.
+  - M1 LOD chains, NDOP26 hull collision on rocks.
+  - The base colour of the rock scans is multiplied by (0.80, 0.84, 0.90), pulling the warm Namaqualand scans towards grey limestone.
+  - `Scripts/Tools/prep_scan_alpha.py` merges the alpha maps into RGBA PNGs and writes a `_alpha.gltf` copy (the glTF set ships JPG diffuse maps without alpha).
+- Placement (`world.spawn_scan_scatter`): each scan piece is fitted to the procedural mesh it replaces and re-centred (the multi-piece sets are laid out away from the origin), then sunk.
+  - Cliffs, summits and spur: 5 scan rock faces, per-axis fit within 0.6-1.8x.
+  - Boulders: 4 scans, sunk by 30 %. The small boulder_05/06 were dropped because their texture smeared at 3 m (the standing boulder in B's 75_rim_180 is gone).
+  - Outcrops: KarstOutcrop_03/04 replaced by 8 moss rock-set pieces, sunk by 30 %. B's blade clusters (01/02) stay.
+- Plants stay procedural:
+  - Scanned firs are 480-780k verts each and read as bare sticks once decimated.
+  - The alpha-cut scan shrubs and grass read as dark thin spikes at review distance.
+  - Instead, the verge and slope grass is clumped and denser (6-14 tufts per clump, 70k tufts, culled at 70-90 m), with scrub in every fourth clump. All tufts use the grass-green material (the dark dry tufts read as black spikes).
+- Merge of B (907ab07) and final checks (all generators regenerated, CP05 rebuilt):
+  - validate_layout: 0 FAIL (119 pass, 3 warn).
+  - -hgplaytest: every check PASS, 0 AI dead stops, average 73.3 FPS.
+  - -hgperf runs and the per-camera median: see the report numbers below.
+- Not done: the cone firs and the kapok "lollipop" trees near the road are unchanged; the scan foliage needs a proper material pass (two-sided foliage lighting, colour) before it can replace them.
+- FPS (-hgperf, perf lock held):
+  - 7A alone, before the merge (load about 6): min 72 and min 79.
+  - Merged 907ab07 + 5d3a4e7, 3 runs (load 6.7-8): per-camera median Spawn 80, ThamMa eye 70, ThamMa drone 104, MomDa 71, MPL plaza 77, MPL drone 106, NhoQue rim 69, TaLang 80, TuSan boat 65, TuSan flycam 116. Two cameras are under 70.
+  - Budget cut 894b89c (two heaviest cliff scans out, bushes culled at 110-150 m): 4 runs at load 7-14.6 (other apps), unusable (even the drone views fell from about 119 to 61-97). It must be re-measured on a quiet machine. If TuSan boat is still under 70 there, the next step is the procedural gorge cliffs (scan cliffs off).
+- Coordinator re-measure of 894b89c on a quieter machine (load 6-8, perf lock held), 2 runs of -hgperf: PASS, min 75 and min 80 FPS.
+  - Per-camera median: TuSan boat 78, NhoQue rim 82, ThamMa eye 81, MomDa 84, TaLang 81, Spawn 85.
+  - The budget cut holds; the earlier sub-70 numbers were machine load.

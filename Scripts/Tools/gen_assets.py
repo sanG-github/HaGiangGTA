@@ -276,14 +276,52 @@ def road_post():
 def make_meshes(rng):
     out = OUT / "Meshes"
     out.mkdir(parents=True, exist_ok=True)
+    # Keep the shared rng's sequence for the meshes after the rocks (bushes, trees - agent A's): consume it
+    # exactly as the round-1 rocks did, and build the round-6B rocks from their own stream.
     for i in range(4):
-        p, f = karst_rock(rng, 6, 1000.0, aspect=(1.0, rng.uniform(0.45, 0.7), rng.uniform(1.5, 2.3)),
-                          flute_count=rng.integers(7, 13), flute_depth=0.12, bumpiness=0.3, cuts=11)
+        karst_rock(rng, 6, 1000.0, aspect=(1.0, rng.uniform(0.45, 0.7), rng.uniform(1.5, 2.3)),
+                   flute_count=rng.integers(7, 13), flute_depth=0.12, bumpiness=0.3, cuts=11)
+    for i in range(3):
+        karst_rock(rng, 5, 300.0, aspect=(1.0, rng.uniform(0.7, 0.95), rng.uniform(0.6, 0.9)),
+                   flute_count=rng.integers(4, 8), flute_depth=0.06, bumpiness=0.3, cuts=7)
+    rrng = np.random.default_rng(SEED + 606)
+    # Round 6B (agent B): sharper karst - more fracture planes, deeper karren flutes, rougher crowns. The round-1
+    # rocks read as smooth pebbles; Ha Giang limestone is jagged, fluted grey blades poking out of thin soil.
+    for i in range(4):
+        p, f = karst_rock(rrng, 6, 1000.0, aspect=(1.0, rrng.uniform(0.45, 0.7), rrng.uniform(1.6, 2.5)),
+                          flute_count=rrng.integers(9, 15), flute_depth=0.18, bumpiness=0.42, cuts=15)
         write_obj(out / f"SM_HG_KarstCliff_{i + 1:02d}.obj", p, f)
     for i in range(3):
-        p, f = karst_rock(rng, 5, 300.0, aspect=(1.0, rng.uniform(0.7, 0.95), rng.uniform(0.6, 0.9)),
-                          flute_count=rng.integers(4, 8), flute_depth=0.06, bumpiness=0.3, cuts=7)
+        # Boulder_01 stays a blocky stone (the Ma Pi Leng name stone uses it); 02 / 03 become jagged fluted blades.
+        if i == 0:
+            p, f = karst_rock(rrng, 5, 300.0, aspect=(1.0, rrng.uniform(0.7, 0.95), rrng.uniform(0.6, 0.9)),
+                              flute_count=rrng.integers(5, 9), flute_depth=0.1, bumpiness=0.38, cuts=11)
+        else:
+            p, f = karst_rock(rrng, 5, 300.0, aspect=(1.0, rrng.uniform(0.5, 0.7), rrng.uniform(1.1, 1.6)),
+                              flute_count=rrng.integers(7, 12), flute_depth=0.2, bumpiness=0.5, cuts=13, flat_bottom=0.5)
         write_obj(out / f"SM_HG_Boulder_{i + 1:02d}.obj", p, f)
+    # Round 6B: outcrop clusters for A's dense scatter - 3-6 fused jagged blades of mixed height, sunk into the
+    # ground (pivot at ground level), 1.5-4 m across. SM_HG_KarstOutcrop_01..04.
+    for i in range(4):
+        parts_v, parts_f, off = [], [], 0
+        n_blades = int(rrng.integers(3, 7))
+        span = rrng.uniform(150.0, 400.0)
+        for k in range(n_blades):
+            h = rrng.uniform(0.6, 1.6) * (1.6 if k == 0 else 1.0)
+            v, f = karst_rock(rrng, 4, rrng.uniform(60.0, 160.0) * (1.4 if k == 0 else 1.0),
+                              aspect=(1.0, rrng.uniform(0.35, 0.65), h * 1.6),
+                              flute_count=rrng.integers(6, 11), flute_depth=0.22, bumpiness=0.5, cuts=10, flat_bottom=0.4)
+            yaw = rrng.uniform(0, 2 * np.pi)
+            c, sn = np.cos(yaw), np.sin(yaw)
+            v = v @ np.array([[c, sn, 0.0], [-sn, c, 0.0], [0.0, 0.0, 1.0]])
+            lean = rrng.uniform(-0.12, 0.12)
+            v[:, 0] += v[:, 2] * lean
+            ang, rad = rrng.uniform(0, 2 * np.pi), (0.0 if k == 0 else rrng.uniform(0.25, 0.5) * span)
+            v += np.array([np.cos(ang) * rad, np.sin(ang) * rad, -rrng.uniform(0.12, 0.3) * v[:, 2].max()])
+            parts_v.append(v)
+            parts_f.append(f + off)
+            off += len(v)
+        write_obj(out / f"SM_HG_KarstOutcrop_{i + 1:02d}.obj", np.vstack(parts_v), np.vstack(parts_f))
     for i in range(2):
         parts_v, parts_f, off = [], [], 0
         for _ in range(6):
@@ -542,6 +580,57 @@ def make_ambience(rng, sr=44100):
         thump[i:i + 800] += np.exp(-np.arange(800) / 120.0) * np.sin(2 * np.pi * 70.0 * np.arange(800) / sr)
     tyre = roll / (np.abs(roll).max() + 1e-6) + 0.35 * thump
     _loop_wav(out / "SW_HG_Tyre_Loop.wav", np.tanh(tyre) * 0.7, sr)
+
+    # Round 6A: horn (two-tone moped beep, x2), khen-like reed drone for the hamlets / viewpoints, river lapping.
+    hn = int(0.62 * sr)
+    th = np.arange(hn) / sr
+    horn = np.zeros(hn)
+    for t0 in (0.0, 0.34):
+        m = (th >= t0) & (th < t0 + 0.24)
+        tt = th[m] - t0
+        env = np.minimum(1.0, tt / 0.01) * np.minimum(1.0, (0.24 - tt) / 0.02)
+        tone = np.sign(np.sin(2 * np.pi * 415.0 * tt)) * 0.5 + np.sign(np.sin(2 * np.pi * 520.0 * tt)) * 0.5
+        horn[m] = env * _lowpass(tone, 2500.0, sr) if len(tone) > 8 else 0.0
+    _write_wav(out / "SW_HG_Horn.wav", horn / (np.abs(horn).max() + 1e-6) * 0.8, sr)
+    # Khen: free-reed mouth organ - a drone (D) under a slow pentatonic line, reedy odd harmonics, breath noise.
+    n8 = int(8.0 * sr)
+    t8 = np.arange(n8) / sr
+    def reed(f, a=1.0):
+        return a * (np.sin(2 * np.pi * f * t8) + 0.45 * np.sin(2 * np.pi * 3 * f * t8) + 0.2 * np.sin(2 * np.pi * 5 * f * t8))
+    drone = reed(146.8, 0.5) + reed(220.0, 0.3)
+    line = np.zeros(n8)
+    notes = [293.7, 329.6, 440.0, 392.0, 329.6, 293.7, 261.6, 293.7]   # D E A G E D C D (pentatonic)
+    for k, f in enumerate(notes):
+        i0, i1 = int(k * sr), int((k + 1) * sr)
+        tt = np.arange(i1 - i0) / sr
+        env = np.minimum(1.0, tt / 0.08) * np.minimum(1.0, (1.0 - tt) / 0.12)
+        line[i0:i1] = env * (np.sin(2 * np.pi * f * tt) + 0.4 * np.sin(2 * np.pi * 3 * f * tt)) * (1.0 + 0.03 * np.sin(2 * np.pi * 5.5 * tt))
+    breath = 0.04 * _lowpass(rng.normal(size=n8), 4000.0, sr)
+    khen = drone + 0.8 * line + breath
+    _loop_wav(out / "SW_HG_Khen_Loop.wav", np.tanh(khen / (np.abs(khen).max() + 1e-6) * 1.3) * 0.6, sr)
+    # Round 6B: village dog bark (two sharp barks: noisy formant burst with a falling pitch).
+    bn = int(0.7 * sr)
+    bark = np.zeros(bn)
+    for t0 in (0.0, 0.32):
+        m = int(0.17 * sr)
+        i0 = int(t0 * sr)
+        tt = np.arange(m) / sr
+        f0 = 520.0 * (1.0 - 1.6 * tt)
+        env = np.minimum(1.0, tt / 0.006) * np.exp(-tt / 0.06)
+        voiced = np.sign(np.sin(2 * np.pi * np.cumsum(f0) / sr)) * 0.6 + 0.4 * rng.normal(size=m)
+        burst = _lowpass(voiced, 2600.0, sr) - 0.6 * _lowpass(voiced, 350.0, sr)
+        bark[i0:i0 + m] += env * burst
+    _write_wav(out / "SW_HG_DogBark.wav", bark / (np.abs(bark).max() + 1e-6) * 0.85, sr)
+    # Water lapping on the hull / banks: low-passed noise in soft irregular slaps.
+    slap = np.zeros(n)
+    for _ in range(18):
+        i0 = int(rng.uniform(0.0, 5.7) * sr)
+        m = int(rng.uniform(0.15, 0.35) * sr)
+        if i0 + m < n:
+            tt = np.arange(m) / m
+            slap[i0:i0 + m] += np.sin(np.pi * tt) ** 2 * rng.uniform(0.4, 1.0)
+    lap = _lowpass(rng.normal(size=n), 700.0, sr) * (0.25 + slap)
+    _loop_wav(out / "SW_HG_WaterLap_Loop.wav", lap / (np.abs(lap).max() + 1e-6) * 0.7, sr)
 
 
 # ---------------------------------------------------------------------------

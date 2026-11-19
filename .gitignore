@@ -32,6 +32,7 @@ Content/Quixel/
 # so they are reproducible from the scripts in this repo.
 Content/Maps/
 Content/HaGiang/Generated/
+Content/HaGiang/PolyHaven/
 Generated/
 
 # ---- OS / misc ----
@@ -46,3 +47,6 @@ __pycache__/
 Data/Geo/*.tif
 Data/Geo/*.json
 .claude/worktrees/
+
+# ---- Poly Haven CC0 downloads (Scripts/Tools/fetch_polyhaven.py; manifest committed in Data/polyhaven_manifest.json) ----
+Data/PolyHaven/

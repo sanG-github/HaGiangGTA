@@ -1,0 +1,588 @@
+{
+ "aerial_grass_rock": {
+  "bytes": 7368961,
+  "files": [
+   "aerial_grass_rock_diff_2k.jpg",
+   "aerial_grass_rock_nor_gl_2k.jpg",
+   "aerial_grass_rock_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/aerial_grass_rock"
+ },
+ "asphalt_02": {
+  "bytes": 9318812,
+  "files": [
+   "asphalt_02_diff_2k.jpg",
+   "asphalt_02_nor_gl_2k.jpg",
+   "asphalt_02_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/asphalt_02"
+ },
+ "boulder_01": {
+  "bytes": 5771986,
+  "files": [
+   "boulder_01_1k.gltf",
+   "textures/boulder_01_arm_1k.jpg",
+   "textures/boulder_01_diff_1k.jpg",
+   "boulder_01.bin",
+   "textures/boulder_01_nor_gl_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/boulder_01"
+ },
+ "brown_mud_dry": {
+  "bytes": 9584343,
+  "files": [
+   "brown_mud_dry_diff_2k.jpg",
+   "brown_mud_dry_nor_gl_2k.jpg",
+   "brown_mud_dry_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/brown_mud_dry"
+ },
+ "dead_tree_trunk": {
+  "bytes": 4787539,
+  "files": [
+   "dead_tree_trunk_1k.gltf",
+   "textures/dead_tree_trunk_arm_1k.jpg",
+   "textures/dead_tree_trunk_nor_gl_1k.jpg",
+   "textures/dead_tree_trunk_diff_1k.jpg",
+   "dead_tree_trunk.bin"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/dead_tree_trunk"
+ },
+ "dry_branches_medium_01": {
+  "bytes": 3251642,
+  "files": [
+   "dry_branches_medium_01_1k.gltf",
+   "textures/dry_branches_medium_01_arm_1k.jpg",
+   "textures/dry_branches_medium_01_diff_1k.jpg",
+   "textures/dry_branches_medium_01_nor_gl_1k.jpg",
+   "dry_branches_medium_01.bin"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/dry_branches_medium_01"
+ },
+ "dry_ground_rocks": {
+  "bytes": 9886657,
+  "files": [
+   "dry_ground_rocks_diff_2k.jpg",
+   "dry_ground_rocks_nor_gl_2k.jpg",
+   "dry_ground_rocks_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/dry_ground_rocks"
+ },
+ "dry_riverbed_rock": {
+  "bytes": 11346705,
+  "files": [
+   "dry_riverbed_rock_diff_2k.jpg",
+   "dry_riverbed_rock_nor_gl_2k.jpg",
+   "dry_riverbed_rock_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/dry_riverbed_rock"
+ },
+ "fern_02": {
+  "bytes": 1392399,
+  "files": [
+   "fern_02_1k.gltf",
+   "textures/fern_02_arm_1k.jpg",
+   "textures/fern_02_diff_1k.jpg",
+   "textures/fern_02_nor_gl_1k.jpg",
+   "fern_02.bin",
+   "textures/fern_02_alpha_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/fern_02"
+ },
+ "fir_sapling_medium": {
+  "bytes": 78331343,
+  "files": [
+   "fir_sapling_medium_1k.gltf",
+   "textures/fir_sapling_medium_branches_nor_gl_1k.jpg",
+   "textures/fir_sapling_medium_branches_diff_1k.jpg",
+   "textures/fir_sapling_medium_branches_arm_1k.jpg",
+   "textures/fir_sapling_medium_twigs_nor_gl_1k.jpg",
+   "textures/fir_sapling_medium_twigs_diff_1k.jpg",
+   "textures/fir_sapling_medium_twigs_arm_1k.jpg",
+   "fir_sapling_medium.bin",
+   "textures/fir_sapling_medium_twigs_alpha_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/fir_sapling_medium"
+ },
+ "fir_tree_01": {
+  "bytes": 270835049,
+  "files": [
+   "fir_tree_01_1k.fbx",
+   "textures/fir_tree_01_bark_diff_1k.png",
+   "textures/fir_tree_01_bark_disp_1k.png",
+   "textures/fir_tree_01_bark_nor_gl_1k.png",
+   "textures/fir_tree_01_bark_rough_1k.png",
+   "textures/fir_tree_01_twig_alpha_1k.png",
+   "textures/fir_tree_01_twig_diff_1k.png",
+   "textures/fir_tree_01_twig_nor_gl_1k.png",
+   "textures/fir_tree_01_twig_rough_1k.png"
+  ],
+  "format": "fbx",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/fir_tree_01"
+ },
+ "forrest_ground_01": {
+  "bytes": 9789472,
+  "files": [
+   "forrest_ground_01_diff_2k.jpg",
+   "forrest_ground_01_nor_gl_2k.jpg",
+   "forrest_ground_01_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/forrest_ground_01"
+ },
+ "grass_medium_01": {
+  "bytes": 3512636,
+  "files": [
+   "grass_medium_01_1k.gltf",
+   "textures/grass_medium_01_nor_gl_1k.jpg",
+   "textures/grass_medium_01_diff_1k.jpg",
+   "textures/grass_medium_01_arm_1k.jpg",
+   "grass_medium_01.bin",
+   "textures/grass_medium_01_alpha_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/grass_medium_01"
+ },
+ "grass_medium_02": {
+  "bytes": 916337,
+  "files": [
+   "grass_medium_02_1k.gltf",
+   "textures/grass_medium_02_nor_gl_1k.jpg",
+   "textures/grass_medium_02_diff_1k.jpg",
+   "textures/grass_medium_02_arm_1k.jpg",
+   "grass_medium_02.bin",
+   "textures/grass_medium_02_alpha_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/grass_medium_02"
+ },
+ "gray_rocks": {
+  "bytes": 12397894,
+  "files": [
+   "gray_rocks_diff_2k.jpg",
+   "gray_rocks_nor_gl_2k.jpg",
+   "gray_rocks_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/gray_rocks"
+ },
+ "lichen_rock": {
+  "bytes": 11833038,
+  "files": [
+   "lichen_rock_diff_2k.jpg",
+   "lichen_rock_nor_gl_2k.jpg",
+   "lichen_rock_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/lichen_rock"
+ },
+ "marble_cliff_01": {
+  "bytes": 8239920,
+  "files": [
+   "marble_cliff_01_diff_2k.jpg",
+   "marble_cliff_01_nor_gl_2k.jpg",
+   "marble_cliff_01_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/marble_cliff_01"
+ },
+ "marble_cliff_03": {
+  "bytes": 7969127,
+  "files": [
+   "marble_cliff_03_diff_2k.jpg",
+   "marble_cliff_03_nor_gl_2k.jpg",
+   "marble_cliff_03_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/marble_cliff_03"
+ },
+ "marble_cliff_05": {
+  "bytes": 9395229,
+  "files": [
+   "marble_cliff_05_diff_2k.jpg",
+   "marble_cliff_05_nor_gl_2k.jpg",
+   "marble_cliff_05_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/marble_cliff_05"
+ },
+ "mountainside": {
+  "bytes": 7385372,
+  "files": [
+   "mountainside_1k.gltf",
+   "textures/mountainside_arm_1k.jpg",
+   "textures/mountainside_diff_1k.jpg",
+   "mountainside.bin",
+   "textures/mountainside_nor_gl_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/mountainside"
+ },
+ "namaqualand_boulder_02": {
+  "bytes": 5139304,
+  "files": [
+   "namaqualand_boulder_02_1k.gltf",
+   "namaqualand_boulder_02.bin",
+   "textures/namaqualand_boulder_02_nor_gl_1k.jpg",
+   "textures/namaqualand_boulder_02_arm_1k.jpg",
+   "textures/namaqualand_boulder_02_diff_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/namaqualand_boulder_02"
+ },
+ "namaqualand_boulder_03": {
+  "bytes": 3778955,
+  "files": [
+   "namaqualand_boulder_03_1k.gltf",
+   "textures/namaqualand_boulder_03_diff_1k.jpg",
+   "textures/namaqualand_boulder_03_nor_gl_1k.jpg",
+   "namaqualand_boulder_03.bin",
+   "textures/namaqualand_boulder_03_arm_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/namaqualand_boulder_03"
+ },
+ "namaqualand_boulder_04": {
+  "bytes": 3715812,
+  "files": [
+   "namaqualand_boulder_04_1k.gltf",
+   "textures/namaqualand_boulder_04_arm_1k.jpg",
+   "textures/namaqualand_boulder_04_diff_1k.jpg",
+   "textures/namaqualand_boulder_04_nor_gl_1k.jpg",
+   "namaqualand_boulder_04.bin"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/namaqualand_boulder_04"
+ },
+ "namaqualand_boulder_05": {
+  "bytes": 4699992,
+  "files": [
+   "namaqualand_boulder_05_1k.gltf",
+   "textures/namaqualand_boulder_05_arm_1k.jpg",
+   "textures/namaqualand_boulder_05_nor_gl_1k.jpg",
+   "namaqualand_boulder_05.bin",
+   "textures/namaqualand_boulder_05_diff_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/namaqualand_boulder_05"
+ },
+ "namaqualand_boulder_06": {
+  "bytes": 5252430,
+  "files": [
+   "namaqualand_boulder_06_1k.gltf",
+   "textures/namaqualand_boulder_06_nor_gl_1k.jpg",
+   "textures/namaqualand_boulder_06_arm_1k.jpg",
+   "namaqualand_boulder_06.bin",
+   "textures/namaqualand_boulder_06_diff_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/namaqualand_boulder_06"
+ },
+ "namaqualand_cliff_01": {
+  "bytes": 4544360,
+  "files": [
+   "namaqualand_cliff_01_1k.gltf",
+   "textures/namaqualand_cliff_01_nor_gl_1k.jpg",
+   "namaqualand_cliff_01.bin",
+   "textures/namaqualand_cliff_01_diff_1k.jpg",
+   "textures/namaqualand_cliff_01_arm_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/namaqualand_cliff_01"
+ },
+ "namaqualand_cliff_02": {
+  "bytes": 8378923,
+  "files": [
+   "namaqualand_cliff_02_1k.gltf",
+   "textures/namaqualand_cliff_02_diff_1k.jpg",
+   "textures/namaqualand_cliff_02_nor_gl_1k.jpg",
+   "namaqualand_cliff_02.bin",
+   "textures/namaqualand_cliff_02_arm_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/namaqualand_cliff_02"
+ },
+ "namaqualand_rocks_01": {
+  "bytes": 4802955,
+  "files": [
+   "namaqualand_rocks_01_1k.gltf",
+   "textures/namaqualand_rocks_01_diff_1k.jpg",
+   "textures/namaqualand_rocks_01_arm_1k.jpg",
+   "namaqualand_rocks_01.bin",
+   "textures/namaqualand_rocks_01_nor_gl_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/namaqualand_rocks_01"
+ },
+ "rock_07": {
+  "bytes": 2184088,
+  "files": [
+   "rock_07_1k.gltf",
+   "rock_07.bin",
+   "textures/rock_07_arm_1k.jpg",
+   "textures/rock_07_diff_1k.jpg",
+   "textures/rock_07_nor_gl_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/rock_07"
+ },
+ "rock_09": {
+  "bytes": 1964421,
+  "files": [
+   "rock_09_1k.gltf",
+   "textures/rock_09_arm_1k.jpg",
+   "textures/rock_09_nor_gl_1k.jpg",
+   "textures/rock_09_diff_1k.jpg",
+   "rock_09.bin"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/rock_09"
+ },
+ "rock_face_01": {
+  "bytes": 3049988,
+  "files": [
+   "rock_face_01_1k.gltf",
+   "textures/rock_face_01_arm_1k.jpg",
+   "textures/rock_face_01_nor_gl_1k.jpg",
+   "textures/rock_face_01_diff_1k.jpg",
+   "rock_face_01.bin"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/rock_face_01"
+ },
+ "rock_face_02": {
+  "bytes": 3528386,
+  "files": [
+   "rock_face_02_1k.gltf",
+   "textures/rock_face_02_nor_gl_1k.jpg",
+   "textures/rock_face_02_arm_1k.jpg",
+   "rock_face_02.bin",
+   "textures/rock_face_02_diff_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/rock_face_02"
+ },
+ "rock_moss_set_01": {
+  "bytes": 1937065,
+  "files": [
+   "rock_moss_set_01_1k.gltf",
+   "textures/rock_moss_set_01_nor_gl_1k.jpg",
+   "rock_moss_set_01.bin",
+   "textures/rock_moss_set_01_rough_1k.jpg",
+   "textures/rock_moss_set_01_diff_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/rock_moss_set_01"
+ },
+ "rock_moss_set_02": {
+  "bytes": 1942240,
+  "files": [
+   "rock_moss_set_02_1k.gltf",
+   "textures/rock_moss_set_02_nor_gl_1k.jpg",
+   "textures/rock_moss_set_02_diff_1k.jpg",
+   "textures/rock_moss_set_02_rough_1k.jpg",
+   "rock_moss_set_02.bin"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/rock_moss_set_02"
+ },
+ "rocky_terrain_02": {
+  "bytes": 9342979,
+  "files": [
+   "rocky_terrain_02_diff_2k.jpg",
+   "rocky_terrain_02_nor_gl_2k.jpg",
+   "rocky_terrain_02_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/rocky_terrain_02"
+ },
+ "shrub_02": {
+  "bytes": 2083017,
+  "files": [
+   "shrub_02_1k.gltf",
+   "textures/shrub_02_arm_1k.jpg",
+   "textures/shrub_02_nor_gl_1k.jpg",
+   "shrub_02.bin",
+   "textures/shrub_02_diff_1k.jpg",
+   "textures/shrub_02_alpha_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/shrub_02"
+ },
+ "shrub_03": {
+  "bytes": 1628793,
+  "files": [
+   "shrub_03_1k.gltf",
+   "shrub_03.bin",
+   "textures/shrub_03_arm_1k.jpg",
+   "textures/shrub_03_diff_1k.jpg",
+   "textures/shrub_03_nor_gl_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/shrub_03"
+ },
+ "shrub_04": {
+  "bytes": 1907514,
+  "files": [
+   "shrub_04_1k.gltf",
+   "textures/shrub_04_nor_gl_1k.jpg",
+   "textures/shrub_04_diff_1k.jpg",
+   "textures/shrub_04_arm_1k.jpg",
+   "shrub_04.bin"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/shrub_04"
+ },
+ "sparse_grass": {
+  "bytes": 13461807,
+  "files": [
+   "sparse_grass_diff_2k.jpg",
+   "sparse_grass_nor_gl_2k.jpg",
+   "sparse_grass_arm_2k.jpg"
+  ],
+  "format": "jpg",
+  "kind": "texture",
+  "license": "CC0",
+  "resolution": "2k",
+  "source": "https://polyhaven.com/a/sparse_grass"
+ },
+ "stone_01": {
+  "bytes": 3724420,
+  "files": [
+   "stone_01_1k.gltf",
+   "textures/stone_01_arm_1k.jpg",
+   "stone_01.bin",
+   "textures/stone_01_diff_1k.jpg",
+   "textures/stone_01_nor_gl_1k.jpg"
+  ],
+  "format": "gltf",
+  "kind": "model",
+  "license": "CC0",
+  "resolution": "1k",
+  "source": "https://polyhaven.com/a/stone_01"
+ }
+}

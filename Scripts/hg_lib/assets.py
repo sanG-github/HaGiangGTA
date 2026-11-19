@@ -12,6 +12,7 @@ from . import editor_utils as hg
 DEST = f"{hg.GENERATED_ROOT}"
 MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "SM_HG_KarstCliff_04",
           "SM_HG_Boulder_01", "SM_HG_Boulder_02", "SM_HG_Boulder_03",
+          "SM_HG_KarstOutcrop_01", "SM_HG_KarstOutcrop_02", "SM_HG_KarstOutcrop_03", "SM_HG_KarstOutcrop_04",
           "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost",
           "SM_HG_Kapok_Trunk", "SM_HG_Kapok_Bloom", "SM_HG_Tree_Trunk", "SM_HG_Tree_Crown",
           "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
@@ -20,13 +21,19 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
 # Round 3B: layered distant ranges (Scripts/Tools/gen_ranges.py) replace the single SM_HG_DistantRanges ring.
 RANGE_LAYERS = [f"SM_HG_RangeLayer_{i}" for i in range(3)]
 MESHES += RANGE_LAYERS + ["SM_HG_FarTerrain"]
+# Round 6B (agent A): karst vegetation species (Scripts/Tools/gen_vegetation.py), when generated.
+try:
+    from . import vegetation as _veg
+    MESHES += _veg.mesh_names()
+except Exception:   # outside the editor (validate_layout imports placements only) or no json yet
+    pass
 PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron",
          "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument",
          *RANGE_LAYERS, "SM_HG_FarTerrain")
 NANITE = {m for m in MESHES if m not in PROPS}
 DISTANT = set(RANGE_LAYERS) | {"SM_HG_FarTerrain", "SM_HG_DistantApron", "SM_HG_DistantRanges"}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
-COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
+COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m or "Outcrop" in m}
 TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask", "T_HG_PathMask": "mask",
             "T_HG_ShoulderMask": "mask", "T_HG_Sign_MaPiLeng": "mask", "T_HG_Sign_ThamMa": "mask",
             "T_HG_Sign_TuSan": "mask"}
@@ -116,6 +123,7 @@ def _set_nanite(mesh: unreal.StaticMesh, enabled: bool) -> None:
 LOD_CHAINS = {
     "Cliff": [(1.0, 1.0), (0.18, 0.45), (0.05, 0.16), (0.012, 0.05), (0.004, 0.015)],
     "Boulder": [(1.0, 1.0), (0.2, 0.3), (0.05, 0.1), (0.015, 0.03)],
+    "Outcrop": [(1.0, 1.0), (0.25, 0.3), (0.07, 0.1), (0.02, 0.03)],
     "Bush": [(1.0, 1.0), (0.25, 0.25), (0.06, 0.08), (0.02, 0.025)],
     "Crown": [(1.0, 1.0), (0.3, 0.2), (0.08, 0.06), (0.03, 0.02)],
     "Bloom": [(1.0, 1.0), (0.3, 0.2), (0.08, 0.06)],
@@ -225,7 +233,8 @@ def import_sfx(force: bool = False) -> dict:
 
 
 LOOPS = ("SW_HG_BikeEngine_Loop", "SW_HG_TruckEngine_Loop", "SW_HG_BoatMotor_Loop", "SW_HG_Siren_Loop", "SW_HG_Heli_Loop",
-         "SW_HG_Wind_Loop", "SW_HG_Birds_Loop", "SW_HG_Tyre_Loop")
+         "SW_HG_Wind_Loop", "SW_HG_Birds_Loop", "SW_HG_Tyre_Loop", "SW_HG_Khen_Loop", "SW_HG_WaterLap_Loop")
+ONESHOTS = ("SW_HG_Horn", "SW_HG_DogBark")
 
 
 def import_loops(force: bool = False) -> dict:
@@ -234,6 +243,11 @@ def import_loops(force: bool = False) -> dict:
     for n in LOOPS:
         snd = import_sound(n, force)
         snd.set_editor_property("looping", True)
+        unreal.EditorAssetLibrary.save_loaded_asset(snd)
+        out[n] = snd
+    for n in ONESHOTS:   # round 6A: horn
+        snd = import_sound(n, force)
+        snd.set_editor_property("looping", False)
         unreal.EditorAssetLibrary.save_loaded_asset(snd)
         out[n] = snd
     return out

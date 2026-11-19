@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import unreal
 
+from . import vegetation
 from . import assets, dressing, materials, placements, world
 from . import editor_utils as hg
 
@@ -27,7 +28,16 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
 
     step("Importing textures, Nanite meshes, audio")
     tex = assets.import_textures()
+    try:
+        from . import scans
+        tex["scan"] = scans.import_scans()   # Round 7B: Poly Haven sets (empty until downloaded)
+    except Exception as exc:  # never block the checkpoint on optional scans
+        hg.warn(f"Poly Haven scans skipped: {exc}")
+        tex["scan"] = {}
     meshes = assets.import_meshes()
+    # Round 7A: Poly Haven scans (Data/PolyHaven, CC0) - skipped with a warning when not downloaded.
+    from . import scan_meshes
+    scan_meshes.import_all()
     flute = assets.import_flute()
 
     step("Building materials")
@@ -63,6 +73,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
 
     step("Scatter: cliffs, summits, boulders, shrubs, posts")
     world.build_scatter(scatter, meshes, mats, tag, f"{prefix}/Scatter")
+    vegetation.build(meshes, mats, tag, f"{prefix}/Vegetation")
 
     step("Golden hour atmosphere")
     world.build_golden_hour(tag, f"{prefix}/Lighting")
@@ -152,6 +163,46 @@ def build_cows(ctx, at_m, count, rng, tag, prefix):
         cow.set_editor_property("wander_radius", 400.0)
 
 
+def build_roadside_life(ctx, tag, prefix):
+    """Round 6A (agent A): goats on the Ma Pi Leng road, kids waving by the hamlets, locals on the shoulder."""
+    life = placements.roadside_life(ctx)
+    goat_coats = [unreal.LinearColor(0.9, 0.88, 0.82, 1), unreal.LinearColor(0.08, 0.07, 0.06, 1),
+                  unreal.LinearColor(0.45, 0.3, 0.18, 1)]
+    for i, (x, y, z, yaw) in enumerate(life["goats"]):
+        g = hg.spawn_actor(unreal.HGCowActor, f"Goat_MPL_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Goats")
+        g.set_editor_property("goat", True)
+        g.set_editor_property("coat_color", goat_coats[i % len(goat_coats)])
+        g.set_editor_property("wander_radius", 600.0)
+    for i, (x, y, z, yaw) in enumerate(life["kids"]):
+        k = hg.spawn_actor(unreal.HGTouristNPC, f"Kid_{i}", (x, y, z), (0, yaw + 90.0, 0), tag, f"{prefix}/Roadside")
+        k.set_editor_property("style", unreal.HGTouristStyle.LOCAL)
+        k.set_editor_property("kid", True)
+        k.set_editor_property("wander", False)
+    for i, (x, y, z, yaw) in enumerate(life["walkers"]):
+        w = hg.spawn_actor(unreal.HGTouristNPC, f"ShoulderWalker_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Roadside")
+        w.set_editor_property("style", unreal.HGTouristStyle.LOCAL)
+        w.set_editor_property("shoulder_walker", True)
+    # Round 6B: village dogs - vang (tan), den (black), ven (brindle brown), a white one now and then.
+    if hasattr(unreal, "HGDogActor"):
+        coats = [unreal.LinearColor(0.62, 0.4, 0.17, 1), unreal.LinearColor(0.04, 0.035, 0.03, 1),
+                 unreal.LinearColor(0.3, 0.2, 0.11, 1), unreal.LinearColor(0.7, 0.5, 0.26, 1), unreal.LinearColor(0.78, 0.75, 0.68, 1)]
+        for i, (x, y, z, yaw, mode) in enumerate(life["dogs"]):
+            d = hg.spawn_actor(unreal.HGDogActor, f"Dog_{mode}_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Dogs")
+            d.set_editor_property("coat_color", coats[i % len(coats)])
+            d.set_editor_property("mode", unreal.HGDogMode.TROT if mode == "trot" else unreal.HGDogMode.LIE)
+    if hasattr(unreal, "HGDressingProp"):
+        for i, (x, y, z, yaw) in enumerate(life["flags"]):
+            fp = hg.spawn_actor(unreal.HGDressingProp, f"RoadFlag_{i}", (x, y, z - 95.0), (0, yaw, 0), tag, f"{prefix}/Roadside")
+            fp.set_editor_property("kind", unreal.HGDressingKind.FLAG_POLE)
+    if hasattr(unreal, "HGMilestoneActor"):
+        for i, (x, y, z, yaw, town, km) in enumerate(life["milestones"]):
+            ms = hg.spawn_actor(unreal.HGMilestoneActor, f"Milestone_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Milestones")
+            ms.set_editor_property("town", town)
+            ms.set_editor_property("km", int(km))
+    hg.log(f"Roadside life: {len(life['goats'])} goats, {len(life['kids'])} kids, {len(life['walkers'])} shoulder walkers, "
+           f"{len(life['dogs'])} dogs, {len(life['milestones'])} milestones")
+
+
 def build_happy_water(ctx, rng, tag, prefix):
     for label, x, y, z in placements.happy_water(ctx, rng):
         hg.spawn_actor(unreal.HGHappyWaterPickup, label, (x, y, z), (0, 0, 0), tag, f"{prefix}/HappyWater")
@@ -169,3 +220,4 @@ def build_living_world(base: dict, tag: str, prefix: str) -> None:
     for at_m, count in placements.living_world_cows(ctx):
         build_cows(ctx, at_m, count, rng, tag, prefix)
     build_happy_water(ctx, rng, tag, prefix)
+    build_roadside_life(ctx, tag, prefix)
