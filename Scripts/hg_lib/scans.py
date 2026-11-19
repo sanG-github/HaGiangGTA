@@ -24,15 +24,16 @@ HASH_TAG = "HGSourceHash"
 
 # role -> preferred Poly Haven ids (first one present on disk wins)
 ROLES = {
-    "rock": ["marble_cliff_01", "marble_cliff_02", "lichen_rock", "gray_rocks", "rock_face", "rock_wall_08"],
-    "ground": ["dry_ground_rocks", "rocky_terrain_02", "rocky_trail", "aerial_rocks_02", "gravelly_sand"],
-    "mud": ["red_mud_stones", "dry_mud_field", "brown_mud_02", "mud_cracked_dry_03", "red_dirt_mud_01"],
-    "grass": ["sparse_grass", "aerial_grass_rock", "rocky_grass", "forest_ground_04", "grass_path_2"],
-    "riverbed": ["river_small_rocks", "dry_riverbed_rock", "pebbles", "gravel_stones"],
-    "asphalt": ["asphalt_02", "asphalt_track", "asphalt_01"],
-    "concrete": ["concrete_floor_02", "concrete_pavement", "concrete_floor_worn_001"],
-    "stonewall": ["dry_stone_wall", "stone_wall", "castle_wall_slates", "stone_wall_04"],
-    "earthwall": ["mud_wall", "clay_plaster", "brown_mud_02", "dry_mud_field"],
+    # Picked from the Round 7B download (Data/polyhaven_manifest.json) by eye against the Ha Giang references.
+    "rock": ["marble_cliff_05", "marble_cliff_01", "gray_rocks"],          # grey karst limestone
+    "ground": ["dry_ground_rocks", "rocky_terrain_02"],                     # thin khaki stony soil
+    "mud": ["brown_mud_dry"],                                               # red-brown terrace earth
+    "grass": ["forrest_ground_01", "sparse_grass", "aerial_grass_rock"],    # dry grass with bare patches
+    "riverbed": ["dry_riverbed_rock"],
+    "asphalt": ["asphalt_02"],
+    "concrete": [],                                                         # none fetched: procedural + ground normals
+    "stonewall": ["gray_rocks", "lichen_rock"],                             # dry-stone / rubble detail
+    "earthwall": ["brown_mud_dry"],                                         # rammed earth (trinh tuong)
 }
 
 

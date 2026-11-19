@@ -269,12 +269,12 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     if "grass" in scan:
         # Scanned dry grass: near (3 m) and far (14 m) tiling blended by camera distance, palette-tinted.
         gd = g.lerp(g.scan(scan["grass"]["diff"], g.world_uv(wp, 300.0)), g.scan(scan["grass"]["diff"], g.world_uv(wp, 1400.0)), far_t)
-        dry = g.scanned(dry, gd, 0.16, g.scalar("GrassScanMix", 0.45), "GrassScanGain")
+        dry = g.scanned(dry, gd, 0.245, g.scalar("GrassScanMix", 0.45), "GrassScanGain")
     if "ground" in scan:
         # Thin rocky soil showing through on the slopes.
         sl = g.saturate(g.mul(g.sub(0.97, up), 4.0))
         gnd = g.scan(scan["ground"]["diff"], g.world_uv(wp, 350.0))
-        dry = g.lerp(dry, g.scanned(dry, gnd, 0.17, 0.5, "GroundScanGain"), g.mul(sl, g.scalar("RockySoil", 0.55)))
+        dry = g.lerp(dry, g.scanned(dry, gnd, 0.204, 0.5, "GroundScanGain"), g.mul(sl, g.scalar("RockySoil", 0.55)))
     veg = g.lerp(dry, green, g.mul(green_amt, g.lerp(0.72, 1.0, lush_w)))
 
     # Bare terraced corn plots on gentler ground (striped by contour lines).
@@ -285,7 +285,7 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     soil = g.mul(g.color("Soil", (0.28, 0.145, 0.085)), g.lerp(0.75, 1.1, stripe))   # 6B: redder laterite
     mud_d = g.scan(scan["mud"]["diff"], g.world_uv(wp, 280.0)) if "mud" in scan else None
     if mud_d is not None:
-        soil = g.scanned(soil, mud_d, 0.15, g.scalar("MudScanMix", 0.35), "MudScanGain")
+        soil = g.scanned(soil, mud_d, 0.119, g.scalar("MudScanMix", 0.35), "MudScanGain")
     ground = g.lerp(veg, soil, plots)
 
     # Limestone cliffs with rust and dark streaks running down the face.
@@ -293,7 +293,7 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     streak = g.texture(tex["T_HG_Noise"], g.append(g.mul(xy, 1.0 / 900.0), g.mul(z, 1.0 / 5000.0)))
     lime = g.mul(g.color("Limestone", (0.23, 0.228, 0.222)), g.add(0.7, g.mul((n_fine, "R"), 0.45)))   # 3B: 0.27 read as white sheets
     if rock_d is not None:
-        lime = g.scanned(g.color("Limestone", (0.23, 0.228, 0.222)), rock_d, 0.2, g.scalar("RockScanMix", 0.5), "RockScanGain")
+        lime = g.scanned(g.color("Limestone", (0.23, 0.228, 0.222)), rock_d, 0.275, g.scalar("RockScanMix", 0.5), "RockScanGain")
     rust = g.mul(g.saturate(g.mul(g.sub((streak, "G"), 0.72), 5.0)), 0.6)   # rust only in patches (photos: grey walls)
     dark = g.saturate(g.mul(g.sub((streak, "R"), 0.6), 4.0))
     # Round 6B: wet seeps - narrow dark green-black streaks where water runs down the limestone.
@@ -339,13 +339,13 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     soil_ring = g.saturate(g.sub(g.saturate(g.mul(g.sub(out_n, g.sub(out_th, 0.045)), 12.0)), outcrop))
     out_col = g.mul(g.color("OutcropLime", (0.215, 0.212, 0.2)), g.add(0.68, g.mul((n_fine, "R"), 0.45)))
     if rock_d is not None:
-        out_col = g.scanned(g.color("OutcropLime", (0.215, 0.212, 0.2)), rock_d, 0.2, 0.5, "OutcropScanGain")
+        out_col = g.scanned(g.color("OutcropLime", (0.215, 0.212, 0.2)), rock_d, 0.275, 0.5, "OutcropScanGain")
     out_col = g.lerp(out_col, g.color("LichenYellow", (0.16, 0.16, 0.08)), g.mul(g.saturate(g.mul(g.sub((n_fine, "B"), 0.62), 4.0)), 0.7))
     out_col = g.lerp(out_col, g.color("LichenBlack", (0.035, 0.035, 0.032)), g.mul(g.saturate(g.mul(g.sub(0.26, (n_fine, "R")), 6.0)), 0.8))
     out_col = g.lerp(out_col, g.color("Joint", (0.03, 0.028, 0.025)), g.mul(crev, 0.9))
     earth = g.mul(g.color("RedEarth", (0.19, 0.095, 0.058)), g.add(0.8, g.mul((n_fine, "G"), 0.35)))
     if mud_d is not None:
-        earth = g.scanned(g.color("RedEarth", (0.19, 0.095, 0.058)), mud_d, 0.15, 0.3, "EarthScanGain")
+        earth = g.scanned(g.color("RedEarth", (0.19, 0.095, 0.058)), mud_d, 0.119, 0.3, "EarthScanGain")
     ground = g.lerp(ground, earth, g.mul(soil_ring, 0.85))
     ground = g.lerp(ground, out_col, outcrop)
     base = g.lerp(ground, rock_col, rock)
@@ -426,7 +426,7 @@ def wet_asphalt(tex) -> unreal.Material:
     if "asphalt" in scan:
         # Round 7B: scanned asphalt (aggregate, wear) carrying the bleached grey palette.
         ad = g.scan(scan["asphalt"]["diff"], g.world_uv(wp, 250.0))
-        asphalt = g.mul(g.scanned(g.color("Asphalt", (0.13, 0.128, 0.122)), ad, 0.12, g.scalar("AsphaltScanMix", 0.5), "AsphaltScanGain"),
+        asphalt = g.mul(g.scanned(g.color("Asphalt", (0.13, 0.128, 0.122)), ad, 0.1, g.scalar("AsphaltScanMix", 0.5), "AsphaltScanGain"),
                         g.add(0.9, g.mul((broad, "R"), 0.2)))
         if scan["asphalt"].get("nor") is not None:
             agg_n = g.scan(scan["asphalt"]["nor"], g.world_uv(wp, 250.0), "nor")
@@ -524,6 +524,9 @@ def concrete_road(tex) -> unreal.Material:
         concrete = g.scanned(concrete, cd_s, 0.3, g.scalar("ConcreteScanMix", 0.35), "ConcreteScanGain")
         if scan["concrete"].get("nor") is not None:
             agg_n = g.scan(scan["concrete"]["nor"], g.world_uv(wp, 300.0), "nor")
+    elif "ground" in scan and scan["ground"].get("nor") is not None:
+        # No scanned concrete was fetched: procedural slabs over the stony-ground scan's normal (aggregate relief).
+        agg_n = g.scan(scan["ground"]["nor"], g.world_uv(wp, 200.0), "nor")
     # Wheel paths: grey-brown tyre grime.
     tr = g.node(unreal.MaterialExpressionAbs)
     g.link(g.sub(du, 0.24), tr)
@@ -741,9 +744,9 @@ def kit_dressing(tex) -> unreal.Material:
     matte = g.saturate(g.sub(1.0, g.mul(u, 4.0)))
     det = None
     if "stonewall" in scan:
-        det = g.mul(g.lum(g.scan_biplanar(scan["stonewall"]["diff"], wp, 160.0, side)), 1.0 / g_mean(0.2))
+        det = g.mul(g.lum(g.scan_biplanar(scan["stonewall"]["diff"], wp, 160.0, side)), 1.0 / g_mean(0.172))
     if "earthwall" in scan:
-        ed = g.mul(g.lum(g.scan_biplanar(scan["earthwall"]["diff"], wp, 220.0, side)), 1.0 / g_mean(0.2))
+        ed = g.mul(g.lum(g.scan_biplanar(scan["earthwall"]["diff"], wp, 220.0, side)), 1.0 / g_mean(0.119))
         warm = g.saturate(g.mul(g.sub(g.mask(vc, r=True), g.mul(g.mask(vc, b=True), 1.6)), 10.0))
         det = ed if det is None else g.lerp(det, ed, warm)
     if det is not None:
