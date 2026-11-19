@@ -274,10 +274,10 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     slope = g.saturate(g.mul(g.sub(0.985, up), 5.0))
     out_n = g.add(g.add(g.mul((n_mid, "R"), 0.62), g.mul((n_fine, "G"), 0.28)), g.mul((n_far, "R"), 0.22))
     # (first pass too timid: specks only) - clustered by the 32 m macro noise, frequent on any slope
-    out_th = g.sub(g.sub(0.8, g.mul((n_far, "B"), 0.14)), g.mul(slope, g.mul(0.3, g.sub(1.0, g.mul(lush_w, 0.6)))))
+    out_th = g.sub(g.sub(0.88, g.mul((n_far, "B"), 0.1)), g.mul(slope, g.mul(0.17, g.sub(1.0, g.mul(lush_w, 0.6)))))
     outcrop = g.saturate(g.mul(g.sub(out_n, out_th), 12.0))
     soil_ring = g.saturate(g.sub(g.saturate(g.mul(g.sub(out_n, g.sub(out_th, 0.045)), 12.0)), outcrop))
-    out_col = g.mul(g.color("OutcropLime", (0.3, 0.295, 0.28)), g.add(0.68, g.mul((n_fine, "R"), 0.45)))
+    out_col = g.mul(g.color("OutcropLime", (0.215, 0.212, 0.2)), g.add(0.68, g.mul((n_fine, "R"), 0.45)))
     out_col = g.lerp(out_col, g.color("LichenYellow", (0.16, 0.16, 0.08)), g.mul(g.saturate(g.mul(g.sub((n_fine, "B"), 0.62), 4.0)), 0.7))
     out_col = g.lerp(out_col, g.color("LichenBlack", (0.035, 0.035, 0.032)), g.mul(g.saturate(g.mul(g.sub(0.26, (n_fine, "R")), 6.0)), 0.8))
     out_col = g.lerp(out_col, g.color("Joint", (0.03, 0.028, 0.025)), g.mul(crev, 0.9))
