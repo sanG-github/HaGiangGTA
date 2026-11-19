@@ -47,6 +47,11 @@ def build(meshes, mats, tag, folder):
         items = data["instances"].get(name, [])
         mesh = meshes.get(name)
         mat = mats.get(spec["material"])
+        if name.startswith("SM_HG_Veg_Grass_Bush") and mats.get("bush") is not None:
+            # Round 7A: the dry tufts in B's dark house-wall material read as black spikes once clumped densely
+            # (user review: "xo xac") - all tufts use the grass-green bush material; the dry look comes from the
+            # ground under them.
+            mat = mats["bush"]
         if not items or mesh is None:
             continue
         cull = spec["cull"]
