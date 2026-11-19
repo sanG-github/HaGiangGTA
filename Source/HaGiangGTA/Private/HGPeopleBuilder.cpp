@@ -353,7 +353,7 @@ namespace
 		// mouth line, shaped ears with a dark inner bowl, arched two-part brows.
 		const FLC Socket = O.Skin * 0.72f;
 		const FLC Cheek = O.Skin * FLC(1.02f, 0.9f, 0.86f, 1.f);
-		const FLC Lip = FLC(O.Skin.R * 0.78f, O.Skin.G * 0.44f, O.Skin.B * 0.42f, 1.f);
+		const FLC Lip = FLC(O.Skin.R * 0.62f, O.Skin.G * 0.33f, O.Skin.B * 0.31f, 1.f);
 		K.Paint(O.Skin);
 		K.Tube(FVector(0.f, 0.f, -2.f), NB, 5.f, 4.6f, 8, false);
 		K.Ellipsoid(H + FVector(-0.6f, 0.f, 0.8f), FVector(9.3f, 8.2f, 10.6f), FRotator::ZeroRotator, 14, 10);   // cranium
@@ -361,7 +361,7 @@ namespace
 		K.Paint(Cheek);
 		for (const float S : { -1.f, 1.f })
 		{
-			K.Ellipsoid(H + FVector(5.9f, S * 4.5f, -1.8f), FVector(2.2f, 2.3f, 1.7f), FRotator::ZeroRotator, 8, 5);
+			K.Ellipsoid(H + FVector(5.2f, S * 4.4f, -1.8f), FVector(2.0f, 2.2f, 1.6f), FRotator::ZeroRotator, 8, 5);
 		}
 		K.Paint(O.Skin);
 		K.Ellipsoid(H + FVector(9.2f, 0.f, -0.9f), FVector(1.8f, 1.4f, 3.1f), FRotator(-10.f, 0.f, 0.f), 8, 5);   // nose bridge
@@ -401,9 +401,12 @@ namespace
 			K.Ellipsoid(H + FVector(-1.6f, 0.f, 1.6f), FVector(9.8f, 8.9f, 10.8f), FRotator::ZeroRotator, 12, 6, -0.05f);
 			// Round 6B: hairline / fringe over the forehead and short sideburns (no bald egg at 2 m).
 			K.Ellipsoid(H + FVector(5.2f, 0.f, 6.6f), FVector(4.6f, 7.6f, 2.6f), FRotator(-24.f, 0.f, 0.f), 10, 4);
-			for (const float S : { -1.f, 1.f })
+			if (O.Head != EHead::Wrap)
 			{
-				K.Box(H + FVector(4.2f, S * 7.9f, 0.8f), FVector(2.2f, 0.9f, 4.4f));
+				for (const float S : { -1.f, 1.f })
+				{
+					K.Box(H + FVector(3.6f, S * 7.7f, 1.6f), FVector(1.6f, 0.7f, 3.0f));   // short sideburns
+				}
 			}
 			if (O.Head == EHead::Wrap)
 			{

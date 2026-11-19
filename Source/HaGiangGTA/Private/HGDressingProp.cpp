@@ -261,28 +261,49 @@ namespace HGDressingKit
 
 	/** Round 4B: terrace wall under a hillside house - coursed dry stone over a 100 cm unit height (scaled in Z),
 	 *  a little wider than the house platform, battered inwards like the real retaining walls. */
-	void BuildPlinth(FHGMeshKit& K)
+	void BuildPlinth(FHGMeshKit& K, float Depth)
 	{
-		FRandomStream R{ 5150 };
+		// Round 6B: built at its real depth (cached per 50 cm) - the round-4B unit mesh scaled in Z stretched the
+		// stones into 2 m slabs and read as one pale block. Dry-stone courses of big weathered blocks, battered
+		// outwards towards the foot, over a dark core so the joints read as shadow.
+		FRandomStream R{ 5150 + int32(Depth) };
 		const float HX = 560.f, HY = 370.f;
-		K.Paint(FColorL(0.12f, 0.115f, 0.105f), HGSurf::Matte);
-		K.Box(FVector(0.f, 0.f, -50.f), FVector(2 * HX + 30.f, 2 * HY + 30.f, 100.f));
-		for (int32 Row = 0; Row < 4; ++Row)
+		K.Paint(FColorL(0.035f, 0.033f, 0.03f), HGSurf::Matte);
+		K.Box(FVector(0.f, 0.f, -Depth * 0.5f), FVector(2 * HX + 20.f, 2 * HY + 20.f, Depth));
+		const int32 Rows = FMath::Max(1, FMath::CeilToInt(Depth / 32.f));
+		for (int32 Row = 0; Row < Rows; ++Row)
 		{
-			const float Z = -12.f - Row * 25.f;
+			const float Z = -16.f - Row * 32.f;
+			const float Out = 14.f + Row * 1.6f;   // batter
+			auto Stone = [&](const FVector& C, bool bAlongX)
+			{
+				const float G = R.FRandRange(0.055f, 0.13f);
+				const bool bWarm = R.FRand() < 0.3f;
+				K.Paint(FColorL(G * (bWarm ? 1.15f : 1.f), G * 0.97f, G * (bWarm ? 0.8f : 0.9f)), HGSurf::Matte);
+				const float L = R.FRandRange(38.f, 78.f);
+				K.Box(C, bAlongX ? FVector(L, 16.f, R.FRandRange(25.f, 33.f)) : FVector(16.f, L, R.FRandRange(25.f, 33.f)),
+					FRotator(R.FRandRange(-4.f, 4.f), R.FRandRange(-3.f, 3.f), R.FRandRange(-4.f, 4.f)));
+				return L;
+			};
 			for (const float S : { -1.f, 1.f })
 			{
-				for (float X = -HX; X < HX; X += R.FRandRange(40.f, 70.f))
+				for (float X = -HX - Out + (Row % 2) * 25.f; X < HX + Out;)
 				{
-					const float G = R.FRandRange(0.07f, 0.16f);
-					K.Paint(FColorL(G, G * 0.97f, G * 0.9f), HGSurf::Matte);
-					K.Box(FVector(X + 25.f, S * (HY + 16.f + Row * 3.f), Z), FVector(R.FRandRange(36.f, 56.f), 12.f, R.FRandRange(16.f, 23.f)));
+					X += Stone(FVector(X + 30.f, S * (HY + Out + R.FRandRange(-2.f, 2.f)), Z), true) + R.FRandRange(1.f, 4.f);
 				}
-				for (float Y = -HY; Y < HY; Y += R.FRandRange(40.f, 70.f))
+				for (float Y = -HY - Out + (Row % 2) * 25.f; Y < HY + Out;)
 				{
-					const float G = R.FRandRange(0.07f, 0.16f);
-					K.Paint(FColorL(G, G * 0.97f, G * 0.9f), HGSurf::Matte);
-					K.Box(FVector(S * (HX + 16.f + Row * 3.f), Y + 25.f, Z), FVector(12.f, R.FRandRange(36.f, 56.f), R.FRandRange(16.f, 23.f)));
+					Y += Stone(FVector(S * (HX + Out + R.FRandRange(-2.f, 2.f)), Y + 30.f, Z), false) + R.FRandRange(1.f, 4.f);
+				}
+			}
+			if (Row % 3 == 1)
+			{
+				// Ferns / grass in the joints.
+				K.Paint(FColorL(0.05f, 0.085f, 0.025f), HGSurf::Matte);
+				for (int32 t = 0; t < 4; ++t)
+				{
+					const float S = (t & 1) ? 1.f : -1.f;
+					K.Ellipsoid(FVector(R.FRandRange(-HX, HX), S * (HY + Out + 8.f), Z + 14.f), FVector(10.f, 6.f, 7.f), FRotator::ZeroRotator, 6, 3);
 				}
 			}
 		}
@@ -404,10 +425,10 @@ void AHGDressingProp::BeginPlay()
 	if (Kind == EHGDressingKind::HmongHouse && PlinthDepth > 1.f)
 	{
 		// Steep plot: the platform stands on a terrace wall down to the low side of the slope.
-		UStaticMesh* PlinthMesh = FHGMeshKit::Cached(TEXT("SM_HGHousePlinth"), [](FHGMeshKit& K) { BuildPlinth(K); });
+		const float Depth = FMath::CeilToFloat(PlinthDepth / 50.f) * 50.f;
+		UStaticMesh* PlinthMesh = FHGMeshKit::Cached(*FString::Printf(TEXT("SM_HGHousePlinth_%d"), int32(Depth)), [Depth](FHGMeshKit& K) { BuildPlinth(K, Depth); });
 		if (UStaticMeshComponent* P = FHGMeshKit::AddComponent(this, Root, PlinthMesh, TEXT("Plinth"), FVector(0.f, 0.f, -250.f)))
 		{
-			P->SetRelativeScale3D(FVector(1.f, 1.f, PlinthDepth / 100.f));
 			P->SetCullDistance(Cull);
 		}
 	}
