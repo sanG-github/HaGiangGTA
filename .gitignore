@@ -46,3 +46,6 @@ __pycache__/
 Data/Geo/*.tif
 Data/Geo/*.json
 .claude/worktrees/
+
+# ---- Poly Haven CC0 downloads (Scripts/Tools/fetch_polyhaven.py; manifest committed in Data/polyhaven_manifest.json) ----
+Data/PolyHaven/
