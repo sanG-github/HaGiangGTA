@@ -242,7 +242,7 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     rock_d = g.scan_biplanar(scan["rock"]["diff"], wp, 380.0, steep) if "rock" in scan else None
     # Round 7B (user: slopes looked ragged / noisy): a 150 m macro noise for broad hue / value patches, and a
     # camera-distance fade so the fine speckle and the scan detail settle into a coherent tone far away.
-    n_macro = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 15000.0))
+    n_macro = n_far   # budget: the 32 m noise doubles as the macro patch source (a 150 m sample cost ~1 ms)
     far_fade = g.cam_far(wp, 3000.0, 12000.0)
 
     # 1 = lush Tham Ma valley, ~0.5 = dry canyon / karst plateau.
