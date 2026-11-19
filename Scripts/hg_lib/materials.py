@@ -218,14 +218,16 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # Greener lower slopes near the water (photos): +shrubs below ~800 m.
     low = g.saturate(g.mul(g.sub(water_z_cm + 10000.0, z), 1.0 / 8000.0))
     green_amt = g.saturate(g.add(g.add(green_amt, dots), g.mul(low, 0.35)))
-    veg = g.lerp(dry, green, green_amt)
+    # Round 6B palette (art bible: dry mauve / khaki grass dotted with shrubs, not lawn green).
+    dry = g.lerp(dry, g.color("DryMauve", (0.2, 0.13, 0.115)), g.mul(g.saturate(g.mul(g.sub((n_far, "G"), 0.45), 3.0)), 0.6))
+    veg = g.lerp(dry, green, g.mul(green_amt, g.lerp(0.72, 1.0, lush_w)))
 
     # Bare terraced corn plots on gentler ground (striped by contour lines).
     flat = remap_mask(g, up, 0.82, 8.0)
     plots = g.mul(g.mul(g.saturate(g.mul(g.sub((n_far, "B"), 0.6), 6.0)), flat), g.sub(1.0, g.mul(lush, 0.8)))
     stripe = g.node(unreal.MaterialExpressionFrac)
     g.link(g.mul(z, 1.0 / 260.0), stripe)
-    soil = g.mul(g.color("Soil", (0.27, 0.16, 0.095)), g.lerp(0.75, 1.1, stripe))
+    soil = g.mul(g.color("Soil", (0.28, 0.145, 0.085)), g.lerp(0.75, 1.1, stripe))   # 6B: redder laterite
     ground = g.lerp(veg, soil, plots)
 
     # Limestone cliffs with rust and dark streaks running down the face.
@@ -266,6 +268,21 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # Even steep canyon slopes are grassed in the photos: bare rock only above ~68 deg.
     threshold = g.add(g.scalar("RockSlopeThreshold", 0.62), g.mul(g.sub((n_mid, "R"), 0.5), 0.25))
     rock = remap_mask(g, up, threshold, 6.0, invert=True)
+    # Round 6B - the karst look: grey limestone outcrops poke through the thin soil on every slope (they were
+    # only on the cliffs, the hills read as smooth grassland): weathered pale tops with yellow-green and black
+    # lichen, dark solution joints, and a ring of red-brown earth where the soil thins out around them.
+    slope = g.saturate(g.mul(g.sub(0.985, up), 5.0))
+    out_n = g.add(g.add(g.mul((n_mid, "R"), 0.62), g.mul((n_fine, "G"), 0.28)), g.mul((n_far, "R"), 0.22))
+    out_th = g.sub(0.86, g.mul(slope, g.mul(0.26, g.sub(1.0, g.mul(lush_w, 0.6)))))
+    outcrop = g.saturate(g.mul(g.sub(out_n, out_th), 10.0))
+    soil_ring = g.saturate(g.sub(g.saturate(g.mul(g.sub(out_n, g.sub(out_th, 0.07)), 7.0)), outcrop))
+    out_col = g.mul(g.color("OutcropLime", (0.27, 0.265, 0.25)), g.add(0.72, g.mul((n_fine, "R"), 0.4)))
+    out_col = g.lerp(out_col, g.color("LichenYellow", (0.16, 0.16, 0.08)), g.mul(g.saturate(g.mul(g.sub((n_fine, "B"), 0.62), 4.0)), 0.7))
+    out_col = g.lerp(out_col, g.color("LichenBlack", (0.035, 0.035, 0.032)), g.mul(g.saturate(g.mul(g.sub(0.26, (n_fine, "R")), 6.0)), 0.8))
+    out_col = g.lerp(out_col, g.color("Joint", (0.03, 0.028, 0.025)), g.mul(crev, 0.9))
+    earth = g.mul(g.color("RedEarth", (0.26, 0.13, 0.075)), g.add(0.8, g.mul((n_fine, "G"), 0.35)))
+    ground = g.lerp(ground, earth, g.mul(soil_ring, 0.85))
+    ground = g.lerp(ground, out_col, outcrop)
     base = g.lerp(ground, rock_col, rock)
 
     # Reservoir draw-down band: bare ochre rock/soil from the water line up ~4.5 m.
@@ -303,8 +320,9 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         stones = g.saturate(g.mul(g.sub(0.3, (n_fine, "B")), 6.0))
         gravel = g.lerp(g.lerp(gravel, g.mul(lime, 0.8), g.mul(chips, 0.6)), g.color("DarkStone", (0.07, 0.065, 0.06)), g.mul(stones, 0.6))
         base = g.lerp(base, gravel, verge)
-    rough = g.lerp(g.lerp(0.92, 0.95, plots), 0.78, rock)
-    normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rock, 0.6), 0.4)))
+    rocky = g.saturate(g.add(rock, outcrop))
+    rough = g.lerp(g.lerp(0.92, 0.95, plots), 0.78, rocky)
+    normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rocky, 0.6), 0.4)))
     g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(rough, unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(normal, unreal.MaterialProperty.MP_NORMAL)

@@ -105,11 +105,12 @@ namespace HGDressingKit
 
 	void BuildHouse(FHGMeshKit& K, int32 V)
 	{
-		const bool bStone = (V % 2) == 0;
+		const bool bStone = (V % 3) == 0;   // 6B: most Ha Giang Hmong houses are rammed earth (trinh tuong)
 		const bool bFence = (V % 3) != 2;
 		FRandomStream R(1000 + V);
-		const FColorL Earth(0.27f, 0.17f, 0.1f), Stone(0.22f, 0.21f, 0.2f), Wood(0.1f, 0.055f, 0.03f);
-		const FColorL Tile(0.11f, 0.11f, 0.115f), TileLight(0.17f, 0.17f, 0.175f);
+		const FColorL Earth(0.3f, 0.18f, 0.1f), Stone(0.22f, 0.21f, 0.2f), Wood(0.1f, 0.055f, 0.03f);
+		// 6B: old fired yin-yang tiles are dark grey with moss, not light grey (they read as corrugated tin).
+		const FColorL Tile(0.06f, 0.058f, 0.055f), TileLight(0.095f, 0.09f, 0.085f);
 		const float HL = 500.f, HW = 310.f, WallTop = 300.f;
 		// Stone platform (hillside plots: it reaches 2.6 m down so the downhill side never floats).
 		K.Paint(FColorL(0.17f, 0.165f, 0.155f));
@@ -130,12 +131,25 @@ namespace HGDressingKit
 		}
 		else
 		{
-			// Rammed earth: horizontal formwork layers.
+			// Rammed earth (trinh tuong): each 50 cm formwork lift its own tone, a dark lift line between lifts,
+			// rain-drip erosion streaks under the eaves and a darker splash zone at the foot.
 			for (int32 c = 0; c < 5; ++c)
 			{
-				K.Paint(Earth * R.FRandRange(0.85f, 1.1f));
-				K.Box(FVector(0.f, 0.f, 70.f + c * 50.f), FVector(2 * HL + 1.2f, 2 * HW + 1.2f, 4.f));
+				K.Paint(Earth * R.FRandRange(0.82f, 1.12f));
+				K.Box(FVector(0.f, 0.f, 64.f + c * 50.f), FVector(2 * HL + 1.0f, 2 * HW + 1.0f, 46.f));
+				K.Paint(Earth * 0.62f);
+				K.Box(FVector(0.f, 0.f, 88.f + c * 50.f), FVector(2 * HL + 1.4f, 2 * HW + 1.4f, 2.5f));
 			}
+			K.Paint(Earth * 0.7f);
+			for (int32 k = 0; k < 14; ++k)
+			{
+				const bool bFront = (k & 1) == 0;
+				const float X = R.FRandRange(-HL + 20.f, HL - 20.f);
+				const float L = R.FRandRange(40.f, 120.f);
+				K.Box(FVector(X, (bFront ? 1.f : -1.f) * (HW + 0.9f), WallTop - 30.f - L * 0.5f), FVector(R.FRandRange(5.f, 12.f), 1.f, L));
+			}
+			K.Paint(Earth * 0.55f);
+			K.Box(FVector(0.f, 0.f, 52.f), FVector(2 * HL + 1.6f, 2 * HW + 1.6f, 22.f));
 		}
 		// Door, windows, lintel (front = +Y).
 		K.Paint(Wood, HGSurf::Satin);
@@ -166,9 +180,21 @@ namespace HGDressingKit
 			int32 i = 0;
 			for (float X = -HL - OH + 12.f; X < HL + OH; X += 24.f, ++i)
 			{
-				K.Paint((i & 1) ? Tile : TileLight, HGSurf::Satin);
+				K.Paint(((i & 1) ? Tile : TileLight) * R.FRandRange(0.85f, 1.15f), HGSurf::Matte);
 				const FVector Top = FVector(X, 0.f, RidgeZ) + Up * 5.f;
 				K.Tube(Top, Top + Down * SlopeW, (i & 1) ? 5.f : 6.5f, (i & 1) ? 5.f : 6.5f, 6, true);
+			}
+			// Tile courses: a shadow line every ~28 cm down the slope (overlapping tiles), moss in patches.
+			K.Paint(FColorL(0.025f, 0.024f, 0.022f), HGSurf::Matte);
+			for (float D = 28.f; D < SlopeW - 10.f; D += 28.f)
+			{
+				K.Box(FVector(0.f, 0.f, RidgeZ) + Up * 9.5f + Down * D, FVector(2 * HL + 2 * OH, 2.f, 1.2f), SlopeRot);
+			}
+			for (int32 m = 0; m < 7; ++m)
+			{
+				K.Paint(R.FRand() < 0.5f ? FColorL(0.05f, 0.07f, 0.025f) : FColorL(0.09f, 0.1f, 0.04f), HGSurf::Matte);
+				K.Ellipsoid(FVector(R.FRandRange(-HL, HL), 0.f, RidgeZ) + Up * 10.f + Down * R.FRandRange(SlopeW * 0.4f, SlopeW - 15.f),
+					FVector(R.FRandRange(25.f, 60.f), R.FRandRange(15.f, 35.f), 2.5f), SlopeRot, 8, 3);
 			}
 			// Eave line of tile ends.
 			K.Paint(TileLight, HGSurf::Satin);
@@ -200,6 +226,18 @@ namespace HGDressingKit
 			{
 				K.Tube(FVector(HL + 25.f, -200.f + c * 16.f, 20.f + r * 15.f), FVector(HL + 95.f, -200.f + c * 16.f, 20.f + r * 15.f), 7.f, 7.f, 6, true);
 			}
+		}
+		// Round 6B: packed red-brown earth yard in front (swept, a little worn to darker mud by the door).
+		if (bFence)
+		{
+			for (int32 y = 0; y < 9; ++y)
+			{
+				K.Paint(FColorL(0.25f, 0.135f, 0.075f) * R.FRandRange(0.82f, 1.1f), HGSurf::Matte);
+				K.Ellipsoid(FVector(R.FRandRange(-HL + 60.f, HL - 60.f), HW + R.FRandRange(150.f, 650.f), -1.f),
+					FVector(R.FRandRange(150.f, 260.f), R.FRandRange(110.f, 200.f), 3.5f), FRotator(0.f, R.FRandRange(0.f, 180.f), 0.f), 10, 3, 0.f);
+			}
+			K.Paint(FColorL(0.14f, 0.08f, 0.05f), HGSurf::Matte);
+			K.Ellipsoid(FVector(0.f, HW + 120.f, 0.f), FVector(120.f, 70.f, 3.7f), FRotator::ZeroRotator, 10, 3, 0.f);
 		}
 		// Dry-stone yard wall in front (gate gap at the door).
 		if (bFence)

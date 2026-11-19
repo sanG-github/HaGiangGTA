@@ -11,7 +11,7 @@ namespace
 	using FLC = FLinearColor;
 
 	enum class ELower : uint8 { Trousers, Shorts, Skirt };
-	enum class EHead : uint8 { Bare, NonLa, HalfHelmet, DuckBill, FullHelmet, OpenHelmet, Cap, Wrap };
+	enum class EHead : uint8 { Bare, NonLa, HalfHelmet, DuckBill, FullHelmet, OpenHelmet, Cap, Wrap, DaoRed };
 
 	// Tho cam (brocade) palette: the woven bags and scarves sold all along the loop.
 	const FLC ThoCam[6] = { FLC(0.6f, 0.03f, 0.05f), FLC(0.75f, 0.48f, 0.02f), FLC(0.04f, 0.3f, 0.1f),
@@ -43,6 +43,9 @@ namespace
 		bool bStar = false;
 		bool bBaby = false;         // baby carried on the back in a sling (Hmong mothers)
 		bool bCollar = false;       // Hmong embroidered collar flap
+		bool bEmbSleeve = false;    // Round 6B: bright embroidered bands on the forearms (Hmong / Dao women)
+		bool bSash = false;         // Round 6B: cloth sash knotted at the waist (Hmong men)
+		FLC SashColor = FLC(0.05f, 0.25f, 0.12f);
 		int32 ScarfSeed = 0;
 		FLC Skirt[4] = { FLC(0.02f, 0.025f, 0.08f), FLC(0.1f, 0.13f, 0.32f), FLC(0.55f, 0.04f, 0.12f), FLC(0.6f, 0.45f, 0.05f) };
 	};
@@ -74,6 +77,18 @@ namespace
 			O.bBaby = V == 2;
 			O.bBag = V == 1 || V == 3;
 			O.bCollar = true;
+			O.bEmbSleeve = true;
+			O.Top = (V == 1) ? FLC(0.012f, 0.012f, 0.016f) : FLC(0.02f, 0.025f, 0.075f);   // black or indigo
+			O.Sleeve = O.Top;
+			if (V == 3)
+			{
+				// Red Dao: black clothes, red embroidered collar band, the big red headdress with pom-poms.
+				O.Top = FLC(0.012f, 0.012f, 0.015f);
+				O.Sleeve = O.Top;
+				O.Cuff = FLC(0.55f, 0.03f, 0.03f);
+				O.Head = EHead::DaoRed;
+				O.HeadGear = FLC(0.55f, 0.025f, 0.025f);
+			}
 			const FLC Mid[4] = { FLC(0.1f, 0.13f, 0.32f), FLC(0.5f, 0.05f, 0.1f), FLC(0.3f, 0.06f, 0.3f), FLC(0.05f, 0.06f, 0.18f) };
 			const FLC Band[4] = { FLC(0.6f, 0.05f, 0.14f), FLC(0.7f, 0.4f, 0.05f), FLC(0.08f, 0.35f, 0.4f), FLC(0.65f, 0.1f, 0.3f) };
 			O.Skirt[1] = Mid[V];
@@ -91,6 +106,16 @@ namespace
 			O.Lower = V == 1 ? FLC(0.03f, 0.03f, 0.035f) : FLC(0.06f, 0.06f, 0.065f);
 			O.Shoes = V == 2 ? FLC(0.05f, 0.12f, 0.05f) : FLC(0.02f, 0.02f, 0.02f);   // green army canvas shoes
 			O.Head = V == 0 ? EHead::Cap : ((V & 1) ? EHead::NonLa : EHead::Bare);
+			if (V & 1)
+			{
+				// Round 6B: Hmong man - black / indigo tunic and wide trousers, coloured sash.
+				O.Top = V == 1 ? FLC(0.012f, 0.012f, 0.016f) : FLC(0.02f, 0.03f, 0.08f);
+				O.Sleeve = O.Top;
+				O.Cuff = O.Top;
+				O.Lower = FLC(0.015f, 0.015f, 0.02f);
+				O.bSash = true;
+				O.SashColor = V == 1 ? FLC(0.05f, 0.28f, 0.12f) : FLC(0.5f, 0.05f, 0.08f);
+			}
 			O.HeadGear = V == 0 ? FLC(0.02f, 0.02f, 0.025f) : FLC(0.7f, 0.6f, 0.36f);
 			O.bBag = V == 2;
 			break;
@@ -278,6 +303,19 @@ namespace
 		K.Ellipsoid(El, FVector(4.3f), FRotator::ZeroRotator, 6, 4);
 		K.Tube(El, Wr, 4.2f, 3.4f, 8, false);
 		const FVector D = (Wr - El).GetSafeNormal();
+		if (O.bEmbSleeve)
+		{
+			// Hmong / Dao sleeves: stacked bright embroidered bands from the elbow to the cuff.
+			const FLC Bands[5] = { FLC(0.6f, 0.03f, 0.05f), FLC(0.7f, 0.15f, 0.35f), FLC(0.7f, 0.5f, 0.03f), FLC(0.04f, 0.3f, 0.12f), FLC(0.05f, 0.1f, 0.45f) };
+			for (int32 b = 0; b < 5; ++b)
+			{
+				const float T0 = 0.18f + b * 0.15f;
+				K.Paint(Bands[(b + O.ScarfSeed) % 5]);
+				K.Tube(FMath::Lerp(El, Wr, T0), FMath::Lerp(El, Wr, T0 + 0.1f), FMath::Lerp(4.4f, 3.6f, T0), FMath::Lerp(4.4f, 3.6f, T0 + 0.1f), 8, false);
+			}
+			K.Paint(FLC(0.6f, 0.03f, 0.05f));
+			K.Tube(FMath::Lerp(Sh, El, 0.15f), FMath::Lerp(Sh, El, 0.25f), 5.3f, 5.1f, 8, false);   // shoulder band
+		}
 		if (!O.bShortSleeves)
 		{
 			K.Paint(O.Cuff);
@@ -401,14 +439,14 @@ namespace
 			K.Ellipsoid(H + FVector(-1.6f, 0.f, 1.6f), FVector(9.8f, 8.9f, 10.8f), FRotator::ZeroRotator, 12, 6, -0.05f);
 			// Round 6B: hairline / fringe over the forehead and short sideburns (no bald egg at 2 m).
 			K.Ellipsoid(H + FVector(5.2f, 0.f, 6.6f), FVector(4.6f, 7.6f, 2.6f), FRotator(-24.f, 0.f, 0.f), 10, 4);
-			if (O.Head != EHead::Wrap)
+			if (O.Head != EHead::Wrap && O.Head != EHead::DaoRed)
 			{
 				for (const float S : { -1.f, 1.f })
 				{
 					K.Box(H + FVector(3.6f, S * 7.7f, 1.6f), FVector(1.6f, 0.7f, 3.0f));   // short sideburns
 				}
 			}
-			if (O.Head == EHead::Wrap)
+			if (O.Head == EHead::Wrap || O.Head == EHead::DaoRed)
 			{
 				K.Ellipsoid(H + FVector(-9.2f, 0.f, -1.5f), FVector(4.0f, 5.2f, 4.4f), FRotator::ZeroRotator, 8, 5);   // bun under the wrap
 			}
@@ -456,6 +494,31 @@ namespace
 			for (int32 q = 0; q < 4; ++q)
 			{
 				K.Tube(H + FVector(-4.f + q * 1.8f, 12.6f, 0.f), H + FVector(-4.f + q * 1.8f, 13.2f, -6.f - (q % 2) * 2.f), 0.45f, 0.35f, 4, false);
+			}
+			break;
+		}
+		case EHead::DaoRed:
+		{
+			// Red Dao headdress: tall wound red cloth, a crown of red pom-poms and tassels down the back.
+			K.Paint(O.HeadGear);
+			K.Frustum(FTransform(H + FVector(-1.f, 0.f, 2.f)), FVector2D(10.8f, 10.f), FVector2D(13.5f, 12.5f), 12.f, 16, true);
+			K.Paint(O.HeadGear * 1.2f);
+			for (int32 q = 0; q < 10; ++q)
+			{
+				const float A = q * 2.f * PI / 10.f;
+				K.Ellipsoid(H + FVector(-1.f + FMath::Cos(A) * 11.f, FMath::Sin(A) * 10.f, 14.5f), FVector(3.4f), FRotator::ZeroRotator, 6, 4);
+			}
+			K.Ellipsoid(H + FVector(-1.f, 0.f, 16.5f), FVector(4.f), FRotator::ZeroRotator, 6, 4);
+			K.Paint(FLC(0.45f, 0.42f, 0.38f), HGSurf::Chrome);   // silver coins on the band
+			for (int32 q = 0; q < 8; ++q)
+			{
+				const float A = (q - 3.5f) * 0.32f;
+				K.Tube(H + FVector(-1.f + FMath::Cos(A) * 11.4f, FMath::Sin(A) * 10.6f, 4.f), H + FVector(-1.f + FMath::Cos(A) * 11.8f, FMath::Sin(A) * 11.f, 4.f), 1.2f, 1.2f, 6, true);
+			}
+			K.Paint(O.HeadGear);
+			for (int32 q = 0; q < 5; ++q)
+			{
+				K.Tube(H + FVector(-11.f, -4.f + q * 2.f, 4.f), H + FVector(-13.f, -4.f + q * 2.f, -14.f), 0.6f, 0.5f, 4, false);
 			}
 			break;
 		}
@@ -612,7 +675,14 @@ namespace
 					}
 				}
 			}
-			if (O.Legs != ELower::Skirt)
+			if (O.bSash)
+			{
+				K.Paint(O.SashColor);
+				K.Frustum(FTransform(Lean, At(0.f, 0.f, -4.f)), R0 + FVector2D(1.2f), R0 + FVector2D(1.f), 7.f, 14, false);
+				K.Tube(At(R0.X * 0.6f, R0.Y * 0.55f, -2.f), At(R0.X * 0.75f, R0.Y * 0.6f, -26.f), 2.6f, 2.f, 6, true);   // hanging ends
+				K.Tube(At(R0.X * 0.55f, R0.Y * 0.7f, -2.f), At(R0.X * 0.6f, R0.Y * 0.8f, -22.f), 2.4f, 1.8f, 6, true);
+			}
+			else if (O.Legs != ELower::Skirt)
 			{
 				// Belt with a buckle.
 				K.Paint(FLC(0.03f, 0.022f, 0.016f), HGSurf::Satin);

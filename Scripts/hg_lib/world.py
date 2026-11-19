@@ -408,10 +408,10 @@ def build_golden_hour(tag, folder):
     s = ppv.get_editor_property("settings")
     for k, v in (("bloom_intensity", 0.55), ("vignette_intensity", 0.32), ("film_grain_intensity", 0.12),
                  ("auto_exposure_min_brightness", -1.2), ("auto_exposure_max_brightness", 2.5),   # 3B: -1.2 (was 0.6) lets the eye adapt in the sky-lit-only Tu San narrows
-                 ("white_temp", 6600.0), ("color_saturation", unreal.Vector4(1.04, 1.06, 1.04, 1.0)),
-                 ("color_contrast", unreal.Vector4(1.08, 1.08, 1.08, 1.0)),
+                 ("white_temp", 6600.0), ("color_saturation", unreal.Vector4(1.07, 1.06, 1.0, 1.0)),   # 6B grade: richer reds / earth
+                 ("color_contrast", unreal.Vector4(1.11, 1.1, 1.09, 1.0)),
                  ("color_gain_shadows", unreal.Vector4(0.91, 0.98, 1.1, 1.0)),   # 6B: cooler shade
-                 ("color_gain_highlights", unreal.Vector4(1.05, 1.0, 0.93, 1.0)),
+                 ("color_gain_highlights", unreal.Vector4(1.07, 1.01, 0.9, 1.0)),   # 6B: golden key
                  ("lumen_final_gather_quality", 1.0), ("lumen_scene_lighting_quality", 1.0),
                  # Round 3B - deep gorge shade (Tu San narrows went near-black): sky light leaks a little into
                  # sky-occluded places (a bounce fill that only matters where Lumen sees no sky), and local
