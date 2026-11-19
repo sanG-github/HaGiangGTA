@@ -265,7 +265,7 @@ void AHGReviewDirector::BuildShots()
 				continue;
 			}
 			++N;
-			AddActorShot(*It, *FString::Printf(TEXT("person_%d_face"), P), FVector(115.f, 30.f, 70.f), FVector(0.f, 0.f, 66.f));
+			AddActorShot(*It, *FString::Printf(TEXT("person_%d_face"), P), FVector(165.f, 40.f, 72.f), FVector(0.f, 0.f, 64.f));
 			AddActorShot(*It, *FString::Printf(TEXT("person_%d_body"), P), FVector(250.f, -80.f, 45.f), FVector(0.f, 0.f, 5.f));
 			++P;
 		}

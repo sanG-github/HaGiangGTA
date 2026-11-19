@@ -42,7 +42,7 @@ namespace HGDressingKit
 		// Dark core: the gaps between the stones show shadow, not daylight.
 		K.Paint(FColorL(0.035f, 0.033f, 0.03f), HGSurf::Matte);
 		const FVector Mid = (A + B) * 0.5f;
-		K.Box(FVector(Mid.X, Mid.Y, BaseZ + H * 0.45f), FVector(Len, Thick * 0.62f, H * 0.85f), FRotator(0.f, Yaw, 0.f));
+		K.Box(FVector(Mid.X, Mid.Y, BaseZ + H * 0.36f), FVector(Len, Thick * 0.62f, H * 0.68f), FRotator(0.f, Yaw, 0.f));   // below the ragged top
 		for (int32 c = 0; c < Courses; ++c)
 		{
 			float t = R.FRandRange(0.f, 14.f);
@@ -641,8 +641,21 @@ void AHGDressingProp::BuildRoadside()
 		Out = Hit.ImpactPoint;
 		return true;
 	};
+	// Round 6B: keep the plazas / viewpoints free (a corn rack stood among the tourists at the check-in ring).
+	TArray<FVector> Plazas;
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (It->GetClass()->GetName().Contains(TEXT("ViewpointActor")))
+		{
+			Plazas.Add(It->GetActorLocation());
+		}
+	}
 	auto Clear = [&](const FVector& P, float RoadCm, float HouseCm) -> bool
 	{
+		for (const FVector& V : Plazas)
+		{
+			if (FVector::DistSquared2D(V, P) < FMath::Square(3000.f)) { return false; }
+		}
 		for (const FRoadSample& S : Samples)
 		{
 			if (FVector::DistSquared2D(S.P, P) < RoadCm * RoadCm) { return false; }
