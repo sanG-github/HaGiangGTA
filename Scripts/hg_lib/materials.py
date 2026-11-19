@@ -60,6 +60,44 @@ class Graph:
         self.link(uv, s, "UVs")
         return s
 
+    def scan(self, tex, uv, kind="diff"):
+        """Round 7B: Poly Haven scan sample on a shared wrap sampler (Metal SM5 has 16 sampler slots; the landscape
+        material needs more textures than that). kind: diff (sRGB colour), nor (normal map), rough (linear)."""
+        st = {"diff": unreal.MaterialSamplerType.SAMPLERTYPE_COLOR,
+              "nor": unreal.MaterialSamplerType.SAMPLERTYPE_NORMAL}.get(kind, unreal.MaterialSamplerType.SAMPLERTYPE_MASKS)
+        s = self.node(unreal.MaterialExpressionTextureSample, texture=tex, sampler_type=st)
+        try:
+            s.set_editor_property("sampler_source", unreal.SamplerSourceMode.SSM_WRAP_WORLD_GROUP_SETTINGS)
+        except Exception as exc:
+            hg.warn(f"shared sampler: {exc}")
+        self.link(uv, s, "UVs")
+        return s
+
+    def scan_biplanar(self, tex, wp, size_cm, steep, kind="diff"):
+        top = self.scan(tex, self.world_uv(wp, size_cm), kind)
+        side_uv = self.mul(self.append(self.add(self.mask(wp, r=True), self.mask(wp, g=True)), self.mask(wp, b=True)), 1.0 / size_cm)
+        return self.lerp(top, self.scan(tex, side_uv, kind), steep)
+
+    def lum(self, rgb):
+        d = self.node(unreal.MaterialExpressionDotProduct)
+        self.link(self.mask(rgb, r=True, g=True, b=True), d, "A")
+        self.link(self.const3((0.3, 0.59, 0.11)), d, "B")
+        return d
+
+    def cam_far(self, wp, near_cm, far_cm):
+        """0 near the camera -> 1 beyond far_cm (distance tiling breakup)."""
+        cam = self.node(unreal.MaterialExpressionCameraPositionWS)
+        d = self.node(unreal.MaterialExpressionDistance)
+        self.link(cam, d, "A")
+        self.link(wp, d, "B")
+        return self.saturate(self.mul(self.sub(d, near_cm), 1.0 / (far_cm - near_cm)))
+
+    def scanned(self, palette, scan_rgb, mean, mix, gain_name, gain=(1.0, 1.0, 1.0)):
+        """Palette colour carrying the scan's detail (luminance / mean), mixed with the scan's own colour."""
+        detail = self.mul(palette, self.mul(self.lum(scan_rgb), 1.0 / mean))
+        own = self.mul(self.mask(scan_rgb, r=True, g=True, b=True), self.color(gain_name, gain))
+        return self.lerp(detail, own, mix)
+
     # -- math --------------------------------------------------------------
     def link(self, src, dst, dst_input="", src_output=""):
         if isinstance(src, tuple):
@@ -194,7 +232,18 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     n_far = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 3200.0))
     n_mid = g.biplanar(tex["T_HG_Noise"], wp, 700.0, steep)
     n_fine = g.texture(tex["T_HG_Noise"], g.world_uv(wp, 110.0))      # M1 budget: ~7 samples per landscape pixel
-    rock_n = g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 420.0), normal=True)
+    # Round 7B: Poly Haven scans (Scripts/hg_lib/scans.py) where present; every role falls back to the
+    # procedural colour. ~8 extra samples on shared samplers.
+    scan = tex.get("scan") or {}
+    if "rock" in scan and scan["rock"].get("nor") is not None:
+        rock_n = g.scan(scan["rock"]["nor"], g.world_uv(wp, 380.0), "nor")
+    else:
+        rock_n = g.texture(tex["T_HG_RockNormal"], g.world_uv(wp, 420.0), normal=True)
+    rock_d = g.scan_biplanar(scan["rock"]["diff"], wp, 380.0, steep) if "rock" in scan else None
+    # Round 7B (user: slopes looked ragged / noisy): a 150 m macro noise for broad hue / value patches, and a
+    # camera-distance fade so the fine speckle and the scan detail settle into a coherent tone far away.
+    n_macro = n_far   # budget: the 32 m noise doubles as the macro patch source (a 150 m sample cost ~1 ms)
+    far_fade = g.cam_far(wp, 3000.0, 12000.0)
 
     # 1 = lush Tham Ma valley, ~0.5 = dry canyon / karst plateau.
     if lush_center_cm is not None:
@@ -215,12 +264,30 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # Shrub dots re-use channels already sampled: n_mid.B (7 m clumps) + n_fine.B (1 m specks).
     dots = g.saturate(g.mul(g.sub((n_mid, "B"), g.sub(0.45, g.mul(lush, 0.2))), 2.0))
     dots = g.saturate(g.add(dots, g.mul(g.saturate(g.mul(g.sub((n_fine, "B"), 0.5), 4.0)), 0.5)))
+    dots = g.mul(dots, g.mul(g.sub(1.0, far_fade), 0.45))
     # Greener lower slopes near the water (photos): +shrubs below ~800 m.
     low = g.saturate(g.mul(g.sub(water_z_cm + 10000.0, z), 1.0 / 8000.0))
     green_amt = g.saturate(g.add(g.add(green_amt, dots), g.mul(low, 0.35)))
     # Round 6B palette (art bible: dry mauve / khaki grass dotted with shrubs, not lawn green).
     dry = g.lerp(dry, g.color("DryMauve", (0.2, 0.13, 0.115)), g.mul(g.saturate(g.mul(g.sub((n_far, "G"), 0.45), 3.0)), 0.6))
-    veg = g.lerp(dry, green, g.mul(green_amt, g.lerp(0.72, 1.0, lush_w)))
+    if "grass" in scan:
+        # Scanned dry grass: near (3 m) and far (14 m) tiling blended by camera distance, palette-tinted.
+        # (budget: one sample at 4.5 m; the n_far / n_mid macro tints already break up the repeat)
+        gd = g.scan(scan["grass"]["diff"], g.world_uv(wp, 450.0))
+        dry = g.lerp(g.scanned(dry, gd, 0.245, g.scalar("GrassScanMix", 0.6), "GrassScanGain"), dry, g.mul(far_fade, 0.8))
+        # The shrubby / lush green carries the same scanned grass detail (it read as flat procedural blotches).
+        green = g.mul(green, g.lerp(1.0, g.mul(g.lum(gd), 1.0 / 0.245), g.mul(g.sub(1.0, far_fade), 0.8)))
+    if "ground" in scan:
+        # Thin rocky soil showing through on the slopes.
+        sl = g.saturate(g.mul(g.sub(0.97, up), 4.0))
+        gnd = g.scan(scan["ground"]["diff"], g.world_uv(wp, 350.0))
+        dry = g.lerp(dry, g.scanned(dry, gnd, 0.204, 0.5, "GroundScanGain"), g.mul(g.mul(sl, g.scalar("RockySoil", 0.2)), g.sub(1.0, far_fade)))
+    # Continuous green-brown grass and scrub (Ha Giang slopes): a green floor everywhere, broad 150 m patches of
+    # greener / browner cover, far hills one coherent green-grey.
+    green_amt = g.saturate(g.add(g.mul(green_amt, 0.55), g.add(0.38, g.mul(g.sub((n_macro, "R"), 0.5), 0.5))))
+    veg = g.lerp(dry, green, green_amt)
+    veg = g.mul(veg, g.add(0.9, g.mul((n_macro, "G"), 0.22)))                          # broad value patches
+    veg = g.lerp(veg, g.color("FarHillTone", (0.075, 0.085, 0.05)), g.mul(far_fade, 0.55))
 
     # Bare terraced corn plots on gentler ground (striped by contour lines).
     flat = remap_mask(g, up, 0.82, 8.0)
@@ -228,12 +295,17 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     stripe = g.node(unreal.MaterialExpressionFrac)
     g.link(g.mul(z, 1.0 / 260.0), stripe)
     soil = g.mul(g.color("Soil", (0.28, 0.145, 0.085)), g.lerp(0.75, 1.1, stripe))   # 6B: redder laterite
+    mud_d = g.scan(scan["mud"]["diff"], g.world_uv(wp, 280.0)) if "mud" in scan else None
+    if mud_d is not None:
+        soil = g.scanned(soil, mud_d, 0.119, g.scalar("MudScanMix", 0.35), "MudScanGain")
     ground = g.lerp(veg, soil, plots)
 
     # Limestone cliffs with rust and dark streaks running down the face.
     xy = g.add(g.mask(wp, r=True), g.mask(wp, g=True))
     streak = g.texture(tex["T_HG_Noise"], g.append(g.mul(xy, 1.0 / 900.0), g.mul(z, 1.0 / 5000.0)))
     lime = g.mul(g.color("Limestone", (0.23, 0.228, 0.222)), g.add(0.7, g.mul((n_fine, "R"), 0.45)))   # 3B: 0.27 read as white sheets
+    if rock_d is not None:
+        lime = g.scanned(g.color("Limestone", (0.23, 0.228, 0.222)), rock_d, 0.275, g.scalar("RockScanMix", 0.5), "RockScanGain")
     rust = g.mul(g.saturate(g.mul(g.sub((streak, "G"), 0.72), 5.0)), 0.6)   # rust only in patches (photos: grey walls)
     dark = g.saturate(g.mul(g.sub((streak, "R"), 0.6), 4.0))
     # Round 6B: wet seeps - narrow dark green-black streaks where water runs down the limestone.
@@ -275,14 +347,18 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     out_n = g.add(g.add(g.mul((n_mid, "R"), 0.62), g.mul((n_fine, "G"), 0.28)), g.mul((n_far, "R"), 0.22))
     # (first pass too timid: specks only) - clustered by the 32 m macro noise, frequent on any slope
     out_th = g.sub(g.sub(0.88, g.mul((n_far, "B"), 0.1)), g.mul(slope, g.mul(0.17, g.sub(1.0, g.mul(lush_w, 0.6)))))
-    outcrop = g.saturate(g.mul(g.sub(out_n, out_th), 12.0))
+    outcrop = g.mul(g.saturate(g.mul(g.sub(out_n, out_th), 8.0)), g.saturate(g.mul(g.sub(g.add(0.88, g.mul(g.sub((n_mid, "G"), 0.5), 0.12)), up), 5.0)))
     soil_ring = g.saturate(g.sub(g.saturate(g.mul(g.sub(out_n, g.sub(out_th, 0.045)), 12.0)), outcrop))
     out_col = g.mul(g.color("OutcropLime", (0.215, 0.212, 0.2)), g.add(0.68, g.mul((n_fine, "R"), 0.45)))
+    if rock_d is not None:
+        out_col = g.scanned(g.color("OutcropLime", (0.215, 0.212, 0.2)), rock_d, 0.275, 0.5, "OutcropScanGain")
     out_col = g.lerp(out_col, g.color("LichenYellow", (0.16, 0.16, 0.08)), g.mul(g.saturate(g.mul(g.sub((n_fine, "B"), 0.62), 4.0)), 0.7))
     out_col = g.lerp(out_col, g.color("LichenBlack", (0.035, 0.035, 0.032)), g.mul(g.saturate(g.mul(g.sub(0.26, (n_fine, "R")), 6.0)), 0.8))
     out_col = g.lerp(out_col, g.color("Joint", (0.03, 0.028, 0.025)), g.mul(crev, 0.9))
     earth = g.mul(g.color("RedEarth", (0.19, 0.095, 0.058)), g.add(0.8, g.mul((n_fine, "G"), 0.35)))
-    ground = g.lerp(ground, earth, g.mul(soil_ring, 0.85))
+    if mud_d is not None:
+        earth = g.scanned(g.color("RedEarth", (0.19, 0.095, 0.058)), mud_d, 0.119, 0.3, "EarthScanGain")
+    ground = g.lerp(ground, earth, g.mul(soil_ring, 0.35))
     ground = g.lerp(ground, out_col, outcrop)
     base = g.lerp(ground, rock_col, rock)
 
@@ -323,7 +399,16 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         base = g.lerp(base, gravel, verge)
     rocky = g.saturate(g.add(rock, outcrop))
     rough = g.lerp(g.lerp(0.92, 0.95, plots), 0.78, rocky)
-    normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rocky, 0.6), 0.4)))
+    if "riverbed" in scan:
+        # River bed under the turquoise water: scanned pebbles / silt below the waterline.
+        under = g.saturate(g.mul(g.sub(water_z_cm - 40.0, z), 1.0 / 150.0))
+        bed = g.mul(g.mask(g.scan(scan["riverbed"]["diff"], g.world_uv(wp, 250.0)), r=True, g=True, b=True), g.color("RiverbedGain", (0.8, 0.8, 0.8)))
+        base = g.lerp(base, bed, under)
+    if False:   # budget: grass normal dropped (no visible gain at 720p, ~0.3 ms)
+        ground_n = g.scan(scan["grass"]["nor"], g.world_uv(wp, 300.0), "nor")
+        normal = g.normalize(g.lerp(g.lerp(g.const3((0.0, 0.0, 1.0)), ground_n, 0.6), rock_n, g.add(g.mul(rocky, 0.6), 0.4)))
+    else:
+        normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rocky, 0.6), 0.4)))
     g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(rough, unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(normal, unreal.MaterialProperty.MP_NORMAL)
@@ -349,6 +434,14 @@ def wet_asphalt(tex) -> unreal.Material:
     # Bleached grey with gentle broad variation and salt-and-pepper aggregate.
     tone = g.add(g.add(0.86, g.mul((broad, "R"), 0.22)), g.mul(g.sub((fine, "G"), 0.5), 0.35))
     asphalt = g.mul(g.color("Asphalt", (0.13, 0.128, 0.122)), tone)
+    scan = tex.get("scan") or {}
+    if "asphalt" in scan:
+        # Round 7B: scanned asphalt (aggregate, wear) carrying the bleached grey palette.
+        ad = g.scan(scan["asphalt"]["diff"], g.world_uv(wp, 250.0))
+        asphalt = g.mul(g.scanned(g.color("Asphalt", (0.13, 0.128, 0.122)), ad, 0.1, g.scalar("AsphaltScanMix", 0.5), "AsphaltScanGain"),
+                        g.add(0.9, g.mul((broad, "R"), 0.2)))
+        if scan["asphalt"].get("nor") is not None:
+            agg_n = g.scan(scan["asphalt"]["nor"], g.world_uv(wp, 250.0), "nor")
     # Wheel paths (each lane's tyre tracks at |u-0.5| ~ 0.14 and 0.36): slightly darker and smoother.
     tr1 = g.node(unreal.MaterialExpressionAbs)
     g.link(g.sub(du, 0.14), tr1)
@@ -436,6 +529,16 @@ def concrete_road(tex) -> unreal.Material:
     broom = g.texture(tex["T_HG_Noise"], broom_uv)
     concrete = g.mul(g.color("Concrete", (0.3, 0.292, 0.272)),
                      g.mul(slab_tone, g.add(g.add(0.86, g.mul((fine, "G"), 0.22)), g.mul((broom, "R"), 0.12))))
+    scan = tex.get("scan") or {}
+    if "concrete" in scan:
+        # Round 7B: scanned concrete detail on each pour (slab tone and broom grain kept).
+        cd_s = g.scan(scan["concrete"]["diff"], g.world_uv(wp, 300.0))
+        concrete = g.scanned(concrete, cd_s, 0.3, g.scalar("ConcreteScanMix", 0.35), "ConcreteScanGain")
+        if scan["concrete"].get("nor") is not None:
+            agg_n = g.scan(scan["concrete"]["nor"], g.world_uv(wp, 300.0), "nor")
+    elif "ground" in scan and scan["ground"].get("nor") is not None:
+        # No scanned concrete was fetched: procedural slabs over the stony-ground scan's normal (aggregate relief).
+        agg_n = g.scan(scan["ground"]["nor"], g.world_uv(wp, 200.0), "nor")
     # Wheel paths: grey-brown tyre grime.
     tr = g.node(unreal.MaterialExpressionAbs)
     g.link(g.sub(du, 0.24), tr)
@@ -634,6 +737,43 @@ def vertex_color() -> unreal.Material:
     return g.finish()
 
 
+def kit_dressing(tex) -> unreal.Material:
+    """Round 7B: M_HG_VertexColor plus scanned detail for the dressing kit meshes (houses, platforms, terrace and
+    dry-stone walls, fences). Matte surfaces (UV0.x = 0) take the luminance detail of a dry-stone scan, or of an
+    earth / mud scan where the vertex colour is warm (rammed earth, yards); wood, tiles' satin and metal stay
+    plain. World-aligned biplanar projection - the kit meshes have no texture UVs."""
+    g = Graph("M_HG_KitDressing")
+    scan = tex.get("scan") or {}
+    vc = g.node(unreal.MaterialExpressionVertexColor)
+    tc = g.node(unreal.MaterialExpressionTextureCoordinate)
+    u = g.mask(tc, r=True)
+    rgb = g.mask(vc, r=True, g=True, b=True)
+    base = rgb
+    wp = g.world_pos()
+    nz = g.node(unreal.MaterialExpressionAbs)
+    g.link(g.up_facing(), nz)
+    side = g.saturate(g.mul(g.sub(0.75, nz), 4.0))
+    matte = g.saturate(g.sub(1.0, g.mul(u, 4.0)))
+    det = None
+    if "stonewall" in scan:
+        det = g.mul(g.lum(g.scan_biplanar(scan["stonewall"]["diff"], wp, 160.0, side)), 1.0 / g_mean(0.172))
+    if "earthwall" in scan:
+        ed = g.mul(g.lum(g.scan_biplanar(scan["earthwall"]["diff"], wp, 220.0, side)), 1.0 / g_mean(0.119))
+        warm = g.saturate(g.mul(g.sub(g.mask(vc, r=True), g.mul(g.mask(vc, b=True), 1.6)), 10.0))
+        det = ed if det is None else g.lerp(det, ed, warm)
+    if det is not None:
+        base = g.mul(rgb, g.lerp(1.0, det, g.mul(matte, g.scalar("DetailAmount", 0.85))))
+    g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
+    g.out(g.lerp(0.85, 0.22, u), unreal.MaterialProperty.MP_ROUGHNESS)
+    g.out(g.saturate(g.mul(g.sub(u, 0.7), 3.3)), unreal.MaterialProperty.MP_METALLIC)
+    g.out(g.lerp(0.35, 0.5, u), unreal.MaterialProperty.MP_SPECULAR)
+    return g.finish()
+
+
+def g_mean(v):
+    return float(v)
+
+
 def lamp() -> unreal.Material:
     """Head / tail / police lamp lenses: unlit emissive Color x Intensity (MID-driven: brake light, flashers).
     Meshes using it have no shadow and no Lumen / distance-field contribution (FHGMeshKit::AddLamp)."""
@@ -700,7 +840,8 @@ def far_terrain(tex) -> unreal.Material:
     steep = g.saturate(g.mul(g.sub(0.72, up), 4.0))
     dry = g.lerp(g.color("Dry", (0.075, 0.075, 0.04)), g.color("Khaki", (0.1, 0.09, 0.05)), (n2, "G"))   # match the landscape's green-khaki
     shrub = g.color("Shrub", (0.022, 0.042, 0.018))
-    col = g.lerp(dry, shrub, g.saturate(g.mul(g.sub(g.add((n, "R"), g.mul((n2, "B"), 0.5)), 0.55), 2.0)))
+    # 7B: broad, low-contrast scrub cover (the 70 m shrub noise read as speckle on the far hills).
+    col = g.lerp(dry, shrub, g.add(0.35, g.mul(g.saturate(g.mul(g.sub((n, "R"), 0.5), 1.5)), 0.4)))
     rock = g.mul(g.color("Rock", (0.16, 0.16, 0.155)), g.add(0.75, g.mul((n2, "R"), 0.5)))
     col = g.lerp(col, rock, g.mul(steep, g.add(0.5, g.mul((n, "G"), 0.5))))
     valley = g.saturate(g.mul(g.sub(g.scalar("HazeTopZ", 90000.0), z), 1.0 / 45000.0))
@@ -760,6 +901,7 @@ def build_all(tex, water_z_cm=42000.0, layout=None) -> dict:
         "roof_green": metal("M_HG_RoofGreen", (0.06, 0.24, 0.13), 0.55),
         "roof_blue": metal("M_HG_RoofBlue", (0.07, 0.17, 0.34), 0.55),
         "vertex_color": vertex_color(),
+        "kit_dressing": kit_dressing(tex),
         **({f"sign_{k}": sign_text(tex, k, c) for k, c in (("MaPiLeng", (0.32, 0.02, 0.012)), ("ThamMa", (0.62, 0.56, 0.42)),
                                                            ("TuSan", (0.62, 0.56, 0.42))) if f"T_HG_Sign_{k}" in tex}),
         "lamp": lamp(),

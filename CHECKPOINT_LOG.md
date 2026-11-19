@@ -821,3 +821,77 @@ Round 6B budget pass (merged with B's 3e104f6, regenerated, CP05 rebuilt, perf l
 - Cows and goats that are shooed but cannot leave the lane are squeezed past: probe and box ignore them for 12 s.
 - Rider weight shift: the driver seat (pivot at the saddle) rolls up to 6 deg into hairpins, eased in and out. The rig's own lean is no longer driven, so the body leans from the hips and stays on the seat.
 - Playtest after the fix (lock held): all PASS, 0 AI dead stops, 0 re-placements, 4 viewpoint stops, 19 kid waves, dogs 72 chases / 273 barks, average 88.7 FPS.
+
+## Round 7B - Poly Haven photoscanned materials (agent B, merged polish-2 bca7074)
+
+- **Import**: `Scripts/hg_lib/scans.py`.
+  - Role -> Poly Haven id list; the first set on disk wins, a missing role falls back to the procedural colour.
+  - diff sRGB, nor_gl -> green flipped, ARM linear.
+  - Re-imported only when the file's sha1 changes.
+  - `Data/PolyHaven` is a symlink to the main checkout (gitignored there, not committed here).
+  - Chosen by eye from the download:
+
+    | Role | Poly Haven id |
+    |---|---|
+    | rock | marble_cliff_05 (grey karst limestone) |
+    | stony soil | dry_ground_rocks |
+    | earth | brown_mud_dry |
+    | grass | forrest_ground_01 (dry grass with bare patches) |
+    | river bed | dry_riverbed_rock |
+    | road | asphalt_02 |
+    | dry-stone walls | gray_rocks |
+    | rammed earth | brown_mud_dry |
+    | concrete | none fetched |
+- **Terrain**:
+  - The scans carry the art-bible palette: palette x scan luminance / measured mean, mixed with the scan's own colour.
+  - The slope / height / noise blending and the 6B outcrops stay; the n_far / n_mid macro tints break up the tiling.
+  - limestone: biplanar on cliffs and outcrops;
+  - grass: on dry and lush ground;
+  - stony soil: on slopes;
+  - mud: on terraces and the earth rings;
+  - river bed: below the waterline;
+  - rock normal: from the scan.
+  - Budget: 6 extra samples on shared wrap samplers (SSM_WRAP_WORLD_GROUP_SETTINGS, needed above 16 textures on
+    Metal SM5). The far grass sample and the grass normal were dropped after the first measurement.
+- **Road**:
+  - asphalt_02 diffuse + normal under the existing markings, potholes and wheel paths;
+  - Ta Lang concrete keeps its procedural slabs, with dry_ground_rocks normals for aggregate relief.
+- **Houses and walls**: new M_HG_KitDressing (kit vertex colour x world-biplanar scan detail on matte surfaces)
+  on houses, platforms, terrace walls, stone signs and roadside fences.
+  - Warm vertex colours (rammed earth, yards) take the brown_mud_dry detail; grey ones (stone) take gray_rocks.
+  - Wood, tiles and metal stay plain.
+- **Data**: Generated/ was stale after the polish-2 merge (A's vegetation budget pass); regenerated before measuring.
+
+Measured (lock held, no other Unreal; traffic makes Spawn vary by +-1.7 ms between identical runs):
+- Before (no scans, fresh data): Spawn 63 / Viewpoint_3 76. That run was on stale data.
+- First scan build (8 samples): Spawn 54 / Viewpoint_0 50.
+- Budget build, two identical runs: Spawn 69 and 81, Viewpoint_3 79 and 77.
+- CP05 OK, validate_layout 0 FAIL, 0 CrashReportClient.
+
+User pass "xơ xác, không thật" (00:05):
+- continuous green-brown grass / scrub cover (a green floor everywhere, broad macro patches, weaker shrub
+  speckle that fades with distance);
+- limestone outcrops only on faces steeper than ~30 deg, with a soft noisy edge;
+- red-brown soil reduced to the terraces, road cuts and the earth ring;
+- stony-soil scan on slopes 0.55 -> 0.2;
+- scan detail fades out beyond ~30-120 m (no far tiling);
+- far hills blend to one green-grey tone, and the DEM far terrain's shrub noise is calmed;
+- cliffs keep biplanar limestone (no stretched texels).
+
+Before / after on the same review cameras (Saved/HG_CI): Review7B_final.keep (before) and Review7B_cover.keep (after).
+| Location | Before | After |
+|---|---|---|
+| Ma Pi Leng range | 56_rim_240 | 52_rim_240 |
+| Tham Ma plaza | 66_rim_240 | 62_rim_240 |
+| hamlet slope | 73_rim_240 | 69_rim_240 |
+| ground close-up | 79_rim_180 | 75_rim_180 |
+| vistas | 38-43 | 34-39 |
+Review7B_locked.keep is the committed build.
+
+-hgperf, 2 runs each, under the lock, no other Unreal (the harness picks Viewpoint_0 or _3 at random; traffic
+varies the load):
+| Build | Spawn_ThamMa | Viewpoint |
+|---|---|---|
+| Scans, before the cover pass | 100 / 82 | Viewpoint_0 81 / 72 |
+| Cover pass with the 150 m macro sample | 57 / 70 | Viewpoint_3 65 / 69 |
+| Locked (macro from the 32 m noise) | 74 / 70 (median 72) | Viewpoint_0 57 / 81 (median 69, at the 70 limit) |
