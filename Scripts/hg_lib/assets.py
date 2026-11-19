@@ -12,6 +12,7 @@ from . import editor_utils as hg
 DEST = f"{hg.GENERATED_ROOT}"
 MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "SM_HG_KarstCliff_04",
           "SM_HG_Boulder_01", "SM_HG_Boulder_02", "SM_HG_Boulder_03",
+          "SM_HG_KarstOutcrop_01", "SM_HG_KarstOutcrop_02", "SM_HG_KarstOutcrop_03", "SM_HG_KarstOutcrop_04",
           "SM_HG_Bush_01", "SM_HG_Bush_02", "SM_HG_RoadPost",
           "SM_HG_Kapok_Trunk", "SM_HG_Kapok_Bloom", "SM_HG_Tree_Trunk", "SM_HG_Tree_Crown",
           "SM_HG_Pine_Trunk", "SM_HG_Pine_Crown", "SM_HG_RoadStrip", "SM_HG_Guardrail",
@@ -32,7 +33,7 @@ PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantR
 NANITE = {m for m in MESHES if m not in PROPS}
 DISTANT = set(RANGE_LAYERS) | {"SM_HG_FarTerrain", "SM_HG_DistantApron", "SM_HG_DistantRanges"}
 TREE_PARTS = {m for m in MESHES if any(k in m for k in ("Kapok", "Tree_", "Pine"))}
-COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m}
+COMPLEX_COLLISION = {m for m in MESHES if "Cliff" in m or "Boulder" in m or "Outcrop" in m}
 TEXTURES = {"T_HG_RockNormal": "normal", "T_HG_WaterNormal": "normal", "T_HG_Noise": "mask", "T_HG_PathMask": "mask",
             "T_HG_ShoulderMask": "mask", "T_HG_Sign_MaPiLeng": "mask", "T_HG_Sign_ThamMa": "mask",
             "T_HG_Sign_TuSan": "mask"}
@@ -122,6 +123,7 @@ def _set_nanite(mesh: unreal.StaticMesh, enabled: bool) -> None:
 LOD_CHAINS = {
     "Cliff": [(1.0, 1.0), (0.18, 0.45), (0.05, 0.16), (0.012, 0.05), (0.004, 0.015)],
     "Boulder": [(1.0, 1.0), (0.2, 0.3), (0.05, 0.1), (0.015, 0.03)],
+    "Outcrop": [(1.0, 1.0), (0.25, 0.3), (0.07, 0.1), (0.02, 0.03)],
     "Bush": [(1.0, 1.0), (0.25, 0.25), (0.06, 0.08), (0.02, 0.025)],
     "Crown": [(1.0, 1.0), (0.3, 0.2), (0.08, 0.06), (0.03, 0.02)],
     "Bloom": [(1.0, 1.0), (0.3, 0.2), (0.08, 0.06)],

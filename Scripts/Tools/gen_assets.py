@@ -276,14 +276,52 @@ def road_post():
 def make_meshes(rng):
     out = OUT / "Meshes"
     out.mkdir(parents=True, exist_ok=True)
+    # Keep the shared rng's sequence for the meshes after the rocks (bushes, trees - agent A's): consume it
+    # exactly as the round-1 rocks did, and build the round-6B rocks from their own stream.
     for i in range(4):
-        p, f = karst_rock(rng, 6, 1000.0, aspect=(1.0, rng.uniform(0.45, 0.7), rng.uniform(1.5, 2.3)),
-                          flute_count=rng.integers(7, 13), flute_depth=0.12, bumpiness=0.3, cuts=11)
+        karst_rock(rng, 6, 1000.0, aspect=(1.0, rng.uniform(0.45, 0.7), rng.uniform(1.5, 2.3)),
+                   flute_count=rng.integers(7, 13), flute_depth=0.12, bumpiness=0.3, cuts=11)
+    for i in range(3):
+        karst_rock(rng, 5, 300.0, aspect=(1.0, rng.uniform(0.7, 0.95), rng.uniform(0.6, 0.9)),
+                   flute_count=rng.integers(4, 8), flute_depth=0.06, bumpiness=0.3, cuts=7)
+    rrng = np.random.default_rng(SEED + 606)
+    # Round 6B (agent B): sharper karst - more fracture planes, deeper karren flutes, rougher crowns. The round-1
+    # rocks read as smooth pebbles; Ha Giang limestone is jagged, fluted grey blades poking out of thin soil.
+    for i in range(4):
+        p, f = karst_rock(rrng, 6, 1000.0, aspect=(1.0, rrng.uniform(0.45, 0.7), rrng.uniform(1.6, 2.5)),
+                          flute_count=rrng.integers(9, 15), flute_depth=0.18, bumpiness=0.42, cuts=15)
         write_obj(out / f"SM_HG_KarstCliff_{i + 1:02d}.obj", p, f)
     for i in range(3):
-        p, f = karst_rock(rng, 5, 300.0, aspect=(1.0, rng.uniform(0.7, 0.95), rng.uniform(0.6, 0.9)),
-                          flute_count=rng.integers(4, 8), flute_depth=0.06, bumpiness=0.3, cuts=7)
+        # Boulder_01 stays a blocky stone (the Ma Pi Leng name stone uses it); 02 / 03 become jagged fluted blades.
+        if i == 0:
+            p, f = karst_rock(rrng, 5, 300.0, aspect=(1.0, rrng.uniform(0.7, 0.95), rrng.uniform(0.6, 0.9)),
+                              flute_count=rrng.integers(5, 9), flute_depth=0.1, bumpiness=0.38, cuts=11)
+        else:
+            p, f = karst_rock(rrng, 5, 300.0, aspect=(1.0, rrng.uniform(0.5, 0.7), rrng.uniform(1.1, 1.6)),
+                              flute_count=rrng.integers(7, 12), flute_depth=0.2, bumpiness=0.5, cuts=13, flat_bottom=0.5)
         write_obj(out / f"SM_HG_Boulder_{i + 1:02d}.obj", p, f)
+    # Round 6B: outcrop clusters for A's dense scatter - 3-6 fused jagged blades of mixed height, sunk into the
+    # ground (pivot at ground level), 1.5-4 m across. SM_HG_KarstOutcrop_01..04.
+    for i in range(4):
+        parts_v, parts_f, off = [], [], 0
+        n_blades = int(rrng.integers(3, 7))
+        span = rrng.uniform(150.0, 400.0)
+        for k in range(n_blades):
+            h = rrng.uniform(0.6, 1.6) * (1.6 if k == 0 else 1.0)
+            v, f = karst_rock(rrng, 4, rrng.uniform(60.0, 160.0) * (1.4 if k == 0 else 1.0),
+                              aspect=(1.0, rrng.uniform(0.35, 0.65), h * 1.6),
+                              flute_count=rrng.integers(6, 11), flute_depth=0.22, bumpiness=0.5, cuts=10, flat_bottom=0.4)
+            yaw = rrng.uniform(0, 2 * np.pi)
+            c, sn = np.cos(yaw), np.sin(yaw)
+            v = v @ np.array([[c, sn, 0.0], [-sn, c, 0.0], [0.0, 0.0, 1.0]])
+            lean = rrng.uniform(-0.12, 0.12)
+            v[:, 0] += v[:, 2] * lean
+            ang, rad = rrng.uniform(0, 2 * np.pi), (0.0 if k == 0 else rrng.uniform(0.25, 0.5) * span)
+            v += np.array([np.cos(ang) * rad, np.sin(ang) * rad, -rrng.uniform(0.12, 0.3) * v[:, 2].max()])
+            parts_v.append(v)
+            parts_f.append(f + off)
+            off += len(v)
+        write_obj(out / f"SM_HG_KarstOutcrop_{i + 1:02d}.obj", np.vstack(parts_v), np.vstack(parts_f))
     for i in range(2):
         parts_v, parts_f, off = [], [], 0
         for _ in range(6):

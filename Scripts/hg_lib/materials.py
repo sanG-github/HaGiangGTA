@@ -218,14 +218,16 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # Greener lower slopes near the water (photos): +shrubs below ~800 m.
     low = g.saturate(g.mul(g.sub(water_z_cm + 10000.0, z), 1.0 / 8000.0))
     green_amt = g.saturate(g.add(g.add(green_amt, dots), g.mul(low, 0.35)))
-    veg = g.lerp(dry, green, green_amt)
+    # Round 6B palette (art bible: dry mauve / khaki grass dotted with shrubs, not lawn green).
+    dry = g.lerp(dry, g.color("DryMauve", (0.2, 0.13, 0.115)), g.mul(g.saturate(g.mul(g.sub((n_far, "G"), 0.45), 3.0)), 0.6))
+    veg = g.lerp(dry, green, g.mul(green_amt, g.lerp(0.72, 1.0, lush_w)))
 
     # Bare terraced corn plots on gentler ground (striped by contour lines).
     flat = remap_mask(g, up, 0.82, 8.0)
     plots = g.mul(g.mul(g.saturate(g.mul(g.sub((n_far, "B"), 0.6), 6.0)), flat), g.sub(1.0, g.mul(lush, 0.8)))
     stripe = g.node(unreal.MaterialExpressionFrac)
     g.link(g.mul(z, 1.0 / 260.0), stripe)
-    soil = g.mul(g.color("Soil", (0.27, 0.16, 0.095)), g.lerp(0.75, 1.1, stripe))
+    soil = g.mul(g.color("Soil", (0.28, 0.145, 0.085)), g.lerp(0.75, 1.1, stripe))   # 6B: redder laterite
     ground = g.lerp(veg, soil, plots)
 
     # Limestone cliffs with rust and dark streaks running down the face.
@@ -234,7 +236,10 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     lime = g.mul(g.color("Limestone", (0.23, 0.228, 0.222)), g.add(0.7, g.mul((n_fine, "R"), 0.45)))   # 3B: 0.27 read as white sheets
     rust = g.mul(g.saturate(g.mul(g.sub((streak, "G"), 0.72), 5.0)), 0.6)   # rust only in patches (photos: grey walls)
     dark = g.saturate(g.mul(g.sub((streak, "R"), 0.6), 4.0))
+    # Round 6B: wet seeps - narrow dark green-black streaks where water runs down the limestone.
+    seep = g.mul(g.saturate(g.mul(g.sub((streak, "G"), 0.58), 5.0)), g.saturate(g.mul(g.sub(0.45, (streak, "B")), 5.0)))
     rock_col = g.lerp(g.lerp(lime, g.color("Rust", (0.46, 0.2, 0.08)), rust), g.color("Stain", (0.09, 0.085, 0.075)), g.mul(dark, 0.7))
+    rock_col = g.lerp(rock_col, g.color("WetSeep", (0.03, 0.036, 0.026)), g.mul(seep, 0.85))
     # Round 3B - big faces read as one flat white sheet: bedding strata (warped horizontal bands, 1.5-5 m),
     # darker vertical crevices / joints, and shrubs clinging to ledges and cracks in streaks.
     warp = g.mul(g.sub((n_mid, "G"), 0.5), 380.0)
@@ -263,6 +268,22 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
     # Even steep canyon slopes are grassed in the photos: bare rock only above ~68 deg.
     threshold = g.add(g.scalar("RockSlopeThreshold", 0.62), g.mul(g.sub((n_mid, "R"), 0.5), 0.25))
     rock = remap_mask(g, up, threshold, 6.0, invert=True)
+    # Round 6B - the karst look: grey limestone outcrops poke through the thin soil on every slope (they were
+    # only on the cliffs, the hills read as smooth grassland): weathered pale tops with yellow-green and black
+    # lichen, dark solution joints, and a ring of red-brown earth where the soil thins out around them.
+    slope = g.saturate(g.mul(g.sub(0.985, up), 5.0))
+    out_n = g.add(g.add(g.mul((n_mid, "R"), 0.62), g.mul((n_fine, "G"), 0.28)), g.mul((n_far, "R"), 0.22))
+    # (first pass too timid: specks only) - clustered by the 32 m macro noise, frequent on any slope
+    out_th = g.sub(g.sub(0.88, g.mul((n_far, "B"), 0.1)), g.mul(slope, g.mul(0.17, g.sub(1.0, g.mul(lush_w, 0.6)))))
+    outcrop = g.saturate(g.mul(g.sub(out_n, out_th), 12.0))
+    soil_ring = g.saturate(g.sub(g.saturate(g.mul(g.sub(out_n, g.sub(out_th, 0.045)), 12.0)), outcrop))
+    out_col = g.mul(g.color("OutcropLime", (0.215, 0.212, 0.2)), g.add(0.68, g.mul((n_fine, "R"), 0.45)))
+    out_col = g.lerp(out_col, g.color("LichenYellow", (0.16, 0.16, 0.08)), g.mul(g.saturate(g.mul(g.sub((n_fine, "B"), 0.62), 4.0)), 0.7))
+    out_col = g.lerp(out_col, g.color("LichenBlack", (0.035, 0.035, 0.032)), g.mul(g.saturate(g.mul(g.sub(0.26, (n_fine, "R")), 6.0)), 0.8))
+    out_col = g.lerp(out_col, g.color("Joint", (0.03, 0.028, 0.025)), g.mul(crev, 0.9))
+    earth = g.mul(g.color("RedEarth", (0.19, 0.095, 0.058)), g.add(0.8, g.mul((n_fine, "G"), 0.35)))
+    ground = g.lerp(ground, earth, g.mul(soil_ring, 0.85))
+    ground = g.lerp(ground, out_col, outcrop)
     base = g.lerp(ground, rock_col, rock)
 
     # Reservoir draw-down band: bare ochre rock/soil from the water line up ~4.5 m.
@@ -300,8 +321,9 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         stones = g.saturate(g.mul(g.sub(0.3, (n_fine, "B")), 6.0))
         gravel = g.lerp(g.lerp(gravel, g.mul(lime, 0.8), g.mul(chips, 0.6)), g.color("DarkStone", (0.07, 0.065, 0.06)), g.mul(stones, 0.6))
         base = g.lerp(base, gravel, verge)
-    rough = g.lerp(g.lerp(0.92, 0.95, plots), 0.78, rock)
-    normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rock, 0.6), 0.4)))
+    rocky = g.saturate(g.add(rock, outcrop))
+    rough = g.lerp(g.lerp(0.92, 0.95, plots), 0.78, rocky)
+    normal = g.normalize(g.lerp(g.const3((0.0, 0.0, 1.0)), rock_n, g.add(g.mul(rocky, 0.6), 0.4)))
     g.out(base, unreal.MaterialProperty.MP_BASE_COLOR)
     g.out(rough, unreal.MaterialProperty.MP_ROUGHNESS)
     g.out(normal, unreal.MaterialProperty.MP_NORMAL)
@@ -343,12 +365,21 @@ def wet_asphalt(tex) -> unreal.Material:
     g.link(g.sub((n, "G"), 0.5), crack_d)
     crack = g.mul(g.saturate(g.mul(g.sub(0.012, crack_d), 60.0)), g.saturate(g.mul(g.sub((broad, "B"), 0.45), 4.0)))
     base = g.lerp(base, g.color("CrackSeal", (0.03, 0.03, 0.03)), g.mul(crack, 0.8))
+    # Round 6B: potholes (rare, in the wheel paths), dark wet-looking hollows with a pale gravel rim.
+    hole_n = g.add((n, "B"), g.mul((fine, "G"), 0.08))
+    # (rare: only where the broad noise marks a worn stretch, and only the noise peaks - the first pass read
+    # as puddles all over the lanes)
+    worn = g.saturate(g.mul(g.sub((broad, "G"), 0.62), 5.0))
+    hole = g.mul(g.mul(g.saturate(g.mul(g.sub(hole_n, 0.965), 40.0)), g.saturate(g.mul(tracks, 2.0))), worn)
+    rim = g.mul(g.mul(g.saturate(g.mul(g.sub(hole_n, 0.945), 40.0)), g.sub(1.0, hole)), worn)
+    base = g.lerp(base, g.color("HoleGravel", (0.2, 0.17, 0.13)), g.mul(rim, g.saturate(g.mul(tracks, 2.0))))
+    base = g.lerp(base, g.color("Hole", (0.03, 0.028, 0.025)), hole)
     # Pale dust along the edges (gravel shoulders).
     edge_dust = g.saturate(g.mul(g.sub(du, 0.44), 14.0))
     base = g.lerp(base, g.color("EdgeDust", (0.24, 0.2, 0.15)), g.mul(edge_dust, g.add(0.3, g.mul((n, "R"), 0.5))))
 
     rough = g.add(g.scalar("DryRoughness", 0.78), g.mul((fine, "R"), 0.16))
-    rough = g.lerp(rough, 0.6, g.mul(tracks, 0.6))
+    rough = g.lerp(rough, 0.5, g.mul(tracks, 0.7))   # 6B: tyre-polished wheel paths
     flat = g.const3((0.0, 0.0, 1.0))
     normal = g.normalize(g.lerp(agg_n, flat, g.add(g.mul(tracks, 0.25), 0.45)))
 
@@ -428,6 +459,12 @@ def concrete_road(tex) -> unreal.Material:
     joint_c = g.saturate(g.mul(g.sub(g.add(0.009, chip), du), 220.0))
     joint = g.saturate(g.add(joint_t, joint_c))
     base = g.lerp(base, g.color("Joint", (0.05, 0.045, 0.04)), joint)
+    # Round 6B: spalled holes where a slab corner broke (near joints, in the wheel paths) with loose gravel.
+    spall_n = g.add((n, "B"), g.mul(g.sub(1.0, g.saturate(g.mul(g.sub(dv, 0.4), 10.0))), -0.12))
+    spall = g.mul(g.mul(g.saturate(g.mul(g.sub(spall_n, 0.9), 30.0)), g.saturate(g.mul(tracks, 2.5))),
+                  g.saturate(g.mul(g.sub((broad, "G"), 0.55), 4.0)))
+    base = g.lerp(base, g.color("Spall", (0.07, 0.06, 0.05)), spall)
+    base = g.lerp(base, g.color("Crack", (0.08, 0.075, 0.07)), g.mul(g.saturate(g.mul(g.sub(0.014, cd), 60.0)), 0.35))
     # Red-ochre dust blown onto the edges and into the joints.
     edge = g.saturate(g.mul(g.sub(du, 0.44), 14.0))                    # last ~25 cm only
     base = g.lerp(base, g.color("Dust", (0.3, 0.2, 0.13)), g.mul(edge, g.add(0.2, g.mul((n, "R"), 0.4))))

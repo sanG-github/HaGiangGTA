@@ -11,7 +11,7 @@ namespace
 	using FLC = FLinearColor;
 
 	enum class ELower : uint8 { Trousers, Shorts, Skirt };
-	enum class EHead : uint8 { Bare, NonLa, HalfHelmet, DuckBill, FullHelmet, OpenHelmet, Cap, Wrap };
+	enum class EHead : uint8 { Bare, NonLa, HalfHelmet, DuckBill, FullHelmet, OpenHelmet, Cap, Wrap, DaoRed };
 
 	// Tho cam (brocade) palette: the woven bags and scarves sold all along the loop.
 	const FLC ThoCam[6] = { FLC(0.6f, 0.03f, 0.05f), FLC(0.75f, 0.48f, 0.02f), FLC(0.04f, 0.3f, 0.1f),
@@ -43,6 +43,9 @@ namespace
 		bool bStar = false;
 		bool bBaby = false;         // baby carried on the back in a sling (Hmong mothers)
 		bool bCollar = false;       // Hmong embroidered collar flap
+		bool bEmbSleeve = false;    // Round 6B: bright embroidered bands on the forearms (Hmong / Dao women)
+		bool bSash = false;         // Round 6B: cloth sash knotted at the waist (Hmong men)
+		FLC SashColor = FLC(0.05f, 0.25f, 0.12f);
 		int32 ScarfSeed = 0;
 		FLC Skirt[4] = { FLC(0.02f, 0.025f, 0.08f), FLC(0.1f, 0.13f, 0.32f), FLC(0.55f, 0.04f, 0.12f), FLC(0.6f, 0.45f, 0.05f) };
 	};
@@ -74,6 +77,18 @@ namespace
 			O.bBaby = V == 2;
 			O.bBag = V == 1 || V == 3;
 			O.bCollar = true;
+			O.bEmbSleeve = true;
+			O.Top = (V == 1) ? FLC(0.012f, 0.012f, 0.016f) : FLC(0.02f, 0.025f, 0.075f);   // black or indigo
+			O.Sleeve = O.Top;
+			if (V == 3)
+			{
+				// Red Dao: black clothes, red embroidered collar band, the big red headdress with pom-poms.
+				O.Top = FLC(0.012f, 0.012f, 0.015f);
+				O.Sleeve = O.Top;
+				O.Cuff = FLC(0.55f, 0.03f, 0.03f);
+				O.Head = EHead::DaoRed;
+				O.HeadGear = FLC(0.55f, 0.025f, 0.025f);
+			}
 			const FLC Mid[4] = { FLC(0.1f, 0.13f, 0.32f), FLC(0.5f, 0.05f, 0.1f), FLC(0.3f, 0.06f, 0.3f), FLC(0.05f, 0.06f, 0.18f) };
 			const FLC Band[4] = { FLC(0.6f, 0.05f, 0.14f), FLC(0.7f, 0.4f, 0.05f), FLC(0.08f, 0.35f, 0.4f), FLC(0.65f, 0.1f, 0.3f) };
 			O.Skirt[1] = Mid[V];
@@ -91,6 +106,16 @@ namespace
 			O.Lower = V == 1 ? FLC(0.03f, 0.03f, 0.035f) : FLC(0.06f, 0.06f, 0.065f);
 			O.Shoes = V == 2 ? FLC(0.05f, 0.12f, 0.05f) : FLC(0.02f, 0.02f, 0.02f);   // green army canvas shoes
 			O.Head = V == 0 ? EHead::Cap : ((V & 1) ? EHead::NonLa : EHead::Bare);
+			if (V & 1)
+			{
+				// Round 6B: Hmong man - black / indigo tunic and wide trousers, coloured sash.
+				O.Top = V == 1 ? FLC(0.012f, 0.012f, 0.016f) : FLC(0.02f, 0.03f, 0.08f);
+				O.Sleeve = O.Top;
+				O.Cuff = O.Top;
+				O.Lower = FLC(0.015f, 0.015f, 0.02f);
+				O.bSash = true;
+				O.SashColor = V == 1 ? FLC(0.05f, 0.28f, 0.12f) : FLC(0.5f, 0.05f, 0.08f);
+			}
 			O.HeadGear = V == 0 ? FLC(0.02f, 0.02f, 0.025f) : FLC(0.7f, 0.6f, 0.36f);
 			O.bBag = V == 2;
 			break;
@@ -278,15 +303,38 @@ namespace
 		K.Ellipsoid(El, FVector(4.3f), FRotator::ZeroRotator, 6, 4);
 		K.Tube(El, Wr, 4.2f, 3.4f, 8, false);
 		const FVector D = (Wr - El).GetSafeNormal();
+		if (O.bEmbSleeve)
+		{
+			// Hmong / Dao sleeves: stacked bright embroidered bands from the elbow to the cuff.
+			const FLC Bands[5] = { FLC(0.6f, 0.03f, 0.05f), FLC(0.7f, 0.15f, 0.35f), FLC(0.7f, 0.5f, 0.03f), FLC(0.04f, 0.3f, 0.12f), FLC(0.05f, 0.1f, 0.45f) };
+			for (int32 b = 0; b < 5; ++b)
+			{
+				const float T0 = 0.18f + b * 0.15f;
+				K.Paint(Bands[(b + O.ScarfSeed) % 5]);
+				K.Tube(FMath::Lerp(El, Wr, T0), FMath::Lerp(El, Wr, T0 + 0.1f), FMath::Lerp(4.4f, 3.6f, T0), FMath::Lerp(4.4f, 3.6f, T0 + 0.1f), 8, false);
+			}
+			K.Paint(FLC(0.6f, 0.03f, 0.05f));
+			K.Tube(FMath::Lerp(Sh, El, 0.15f), FMath::Lerp(Sh, El, 0.25f), 5.3f, 5.1f, 8, false);   // shoulder band
+		}
 		if (!O.bShortSleeves)
 		{
 			K.Paint(O.Cuff);
 			K.Tube(Wr - D * 5.f, Wr, 4.f, 3.8f, 8, false);
 		}
 		K.Paint(O.Skin);
-		K.Ellipsoid(Wr + D * 4.5f, FVector(2.4f, 3.6f, 5.f), AlongZ(D), 6, 4);                 // palm + fingers
+		K.Ellipsoid(Wr + D * 3.8f, FVector(1.9f, 3.4f, 3.9f), AlongZ(D), 8, 5);                 // palm
 		const FVector Side = FVector::CrossProduct(D, FVector::UpVector).GetSafeNormal();
-		K.Tube(Wr + D * 1.5f + Side * 2.4f, Wr + D * 5.5f + Side * 3.6f + FVector(0.f, 0.f, 0.5f), 1.2f, 0.9f, 5, true);   // thumb
+		const FVector Palm = FVector::CrossProduct(Side, D).GetSafeNormal();
+		K.Tube(Wr + D * 1.5f + Side * 2.4f, Wr + D * 5.5f + Side * 3.6f + Palm * 1.2f, 1.15f, 0.85f, 5, true);   // thumb
+		// Round 6B: four slightly curled fingers (the mitten read as a mannequin hand).
+		const float Len[4] = { 3.6f, 4.2f, 3.9f, 3.1f };
+		for (int32 i = 0; i < 4; ++i)
+		{
+			const FVector Base = Wr + D * 7.0f + Side * (1.7f - i * 1.15f);
+			const FVector Mid = Base + D * Len[i] * 0.6f + Palm * 0.5f;
+			K.Tube(Base, Mid, 0.72f, 0.66f, 5, false);
+			K.Tube(Mid, Mid + D * Len[i] * 0.45f + Palm * 1.1f, 0.66f, 0.55f, 5, true);
+		}
 	}
 
 	void AddLeg(FHGMeshKit& K, const FOutfit& O, const FVector& Hip, const FVector& Knee, const FVector& Ankle, bool bStanding)
@@ -314,10 +362,18 @@ namespace
 			K.Tube(bSkirt ? FMath::Lerp(Hip, Knee, 0.6f) : Knee, Ankle, 6.f, 4.4f, 8, false);
 			if (bSkirt)
 			{
-				// Hmong leg wraps: pale bands round the indigo.
+				// Hmong leg wraps (Round 6B): overlapping indigo turns spiralling down the shin, tied at the top and
+				// the ankle with pale cords.
+				for (int32 k = 0; k < 7; ++k)
+				{
+					const float T0 = 0.06f + k * 0.125f;
+					K.Paint(k % 2 ? FLC(0.02f, 0.025f, 0.07f) : FLC(0.035f, 0.04f, 0.11f));
+					const FVector A = FMath::Lerp(Knee, Ankle, T0), B = FMath::Lerp(Knee, Ankle, T0 + 0.11f);
+					K.Tube(A + FVector(0.f, 0.f, 1.2f), B - FVector(0.f, 0.f, 1.2f), FMath::Lerp(6.4f, 5.f, T0), FMath::Lerp(6.3f, 4.9f, T0 + 0.1f), 8, false);
+				}
 				K.Paint(FLC(0.45f, 0.42f, 0.38f));
-				K.Tube(FMath::Lerp(Knee, Ankle, 0.15f), FMath::Lerp(Knee, Ankle, 0.2f), 6.3f, 6.1f, 8, false);
-				K.Tube(FMath::Lerp(Knee, Ankle, 0.85f), FMath::Lerp(Knee, Ankle, 0.9f), 5.f, 4.9f, 8, false);
+				K.Tube(FMath::Lerp(Knee, Ankle, 0.08f), FMath::Lerp(Knee, Ankle, 0.11f), 6.6f, 6.5f, 8, false);
+				K.Tube(FMath::Lerp(Knee, Ankle, 0.9f), FMath::Lerp(Knee, Ankle, 0.93f), 5.1f, 5.f, 8, false);
 			}
 		}
 		K.Paint(O.Shoes);
@@ -330,25 +386,70 @@ namespace
 	{
 		const FVector NB = J.NeckB - J.NeckA;
 		const FVector H = J.HeadC - J.NeckA;
+		// Round 6B face (the round-2 egg + black dots read as a mannequin at 2-3 m): cranium + jaw, cheekbones,
+		// shaded eye sockets with whites, irises and lid lines, a modelled nose with nostrils, two lips with a
+		// mouth line, shaped ears with a dark inner bowl, arched two-part brows.
+		const FLC Socket = O.Skin * 0.72f;
+		const FLC Cheek = O.Skin * FLC(1.02f, 0.9f, 0.86f, 1.f);
+		const FLC Lip = FLC(O.Skin.R * 0.62f, O.Skin.G * 0.33f, O.Skin.B * 0.31f, 1.f);
 		K.Paint(O.Skin);
 		K.Tube(FVector(0.f, 0.f, -2.f), NB, 5.f, 4.6f, 8, false);
-		K.Ellipsoid(H, FVector(9.6f, 8.3f, 11.2f), FRotator::ZeroRotator, 12, 8);
-		K.Box(H + FVector(9.3f, 0.f, -1.5f), FVector(2.6f, 2.4f, 4.f), FRotator(-10.f, 0.f, 0.f));
-		K.Ellipsoid(H + FVector(0.f, -8.f, 0.f), FVector(2.f, 1.f, 3.f), FRotator::ZeroRotator, 5, 3);
-		K.Ellipsoid(H + FVector(0.f, 8.f, 0.f), FVector(2.f, 1.f, 3.f), FRotator::ZeroRotator, 5, 3);
-		K.Paint(FLC(0.01f, 0.01f, 0.01f));
-		K.Ellipsoid(H + FVector(8.2f, -3.3f, 1.8f), FVector(1.2f, 1.4f, 0.9f), FRotator::ZeroRotator, 5, 3);
-		K.Ellipsoid(H + FVector(8.2f, 3.3f, 1.8f), FVector(1.2f, 1.4f, 0.9f), FRotator::ZeroRotator, 5, 3);
-		K.Paint(FLC(0.25f, 0.1f, 0.08f));
-		K.Box(H + FVector(8.6f, 0.f, -5.2f), FVector(1.f, 4.f, 0.8f));                                         // mouth
-		K.Paint(FLC(0.02f, 0.015f, 0.012f));
-		K.Box(H + FVector(8.4f, -3.4f, 4.3f), FVector(1.f, 3.4f, 0.7f), FRotator(0.f, 0.f, -6.f));             // eyebrows
-		K.Box(H + FVector(8.4f, 3.4f, 4.3f), FVector(1.f, 3.4f, 0.7f), FRotator(0.f, 0.f, 6.f));
+		K.Ellipsoid(H + FVector(-0.6f, 0.f, 0.8f), FVector(9.3f, 8.2f, 10.6f), FRotator::ZeroRotator, 14, 10);   // cranium
+		K.Ellipsoid(H + FVector(3.0f, 0.f, -5.2f), FVector(6.6f, 6.8f, 5.8f), FRotator(-8.f, 0.f, 0.f), 12, 6);  // jaw + chin
+		K.Paint(Cheek);
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Ellipsoid(H + FVector(5.2f, S * 4.4f, -1.8f), FVector(2.0f, 2.2f, 1.6f), FRotator::ZeroRotator, 8, 5);
+		}
+		K.Paint(O.Skin);
+		K.Ellipsoid(H + FVector(9.2f, 0.f, -0.9f), FVector(1.8f, 1.4f, 3.1f), FRotator(-10.f, 0.f, 0.f), 8, 5);   // nose bridge
+		K.Ellipsoid(H + FVector(10.1f, 0.f, -3.3f), FVector(1.4f, 2.1f, 1.2f), FRotator::ZeroRotator, 8, 5);    // tip + wings
+		K.Paint(O.Skin * 0.32f);
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Ellipsoid(H + FVector(10.0f, S * 0.9f, -4.15f), FVector(0.5f, 0.55f, 0.32f), FRotator::ZeroRotator, 5, 3);   // nostrils
+		}
+		for (const float S : { -1.f, 1.f })
+		{
+			K.Paint(Socket);
+			K.Ellipsoid(H + FVector(7.1f, S * 3.3f, 1.5f), FVector(1.9f, 2.3f, 1.6f), FRotator::ZeroRotator, 8, 5);
+			K.Paint(FLC(0.5f, 0.47f, 0.43f));
+			K.Ellipsoid(H + FVector(7.9f, S * 3.3f, 1.5f), FVector(1.0f, 1.55f, 0.82f), FRotator::ZeroRotator, 8, 5);   // eye white
+			K.Paint(FLC(0.028f, 0.016f, 0.01f));
+			K.Ellipsoid(H + FVector(8.65f, S * 3.2f, 1.5f), FVector(0.42f, 0.72f, 0.72f), FRotator::ZeroRotator, 6, 4);  // iris
+			K.Paint(FLC(0.012f, 0.01f, 0.009f));
+			K.Box(H + FVector(8.45f, S * 3.3f, 2.25f), FVector(0.45f, 2.5f, 0.3f), FRotator(0.f, 0.f, S * 5.f));        // upper lid
+			K.Paint(FLC(O.Hair.R * 1.2f + 0.008f, O.Hair.G * 1.2f + 0.006f, O.Hair.B * 1.2f + 0.005f, 1.f));
+			K.Box(H + FVector(8.3f, S * 2.4f, 4.2f), FVector(1.0f, 1.9f, 0.85f), FRotator(0.f, 0.f, S * 4.f));       // brow (inner)
+			K.Box(H + FVector(7.9f, S * 4.3f, 4.35f), FVector(1.0f, 2.2f, 0.65f), FRotator(0.f, 0.f, -S * 14.f));    // brow (outer, arched)
+			K.Paint(O.Skin);
+			K.Ellipsoid(H + FVector(-0.6f, S * 8.3f, -0.4f), FVector(2.3f, 1.1f, 3.4f), FRotator(0.f, -S * 14.f, 0.f), 8, 5);   // ear
+			K.Paint(O.Skin * 0.55f);
+			K.Ellipsoid(H + FVector(-0.2f, S * 9.0f, -0.4f), FVector(1.25f, 0.5f, 2.1f), FRotator(0.f, -S * 14.f, 0.f), 6, 4);
+		}
+		K.Paint(Lip);
+		K.Ellipsoid(H + FVector(8.7f, 0.f, -5.5f), FVector(0.9f, 2.6f, 0.6f), FRotator::ZeroRotator, 8, 4);    // upper lip
+		K.Ellipsoid(H + FVector(8.5f, 0.f, -6.6f), FVector(1.0f, 2.3f, 0.75f), FRotator::ZeroRotator, 8, 4);   // lower lip
+		K.Paint(FLC(0.07f, 0.025f, 0.02f));
+		K.Box(H + FVector(9.2f, 0.f, -6.05f), FVector(0.3f, 4.4f, 0.25f));                                     // mouth line
 		const bool bHelmet = O.Head == EHead::FullHelmet || O.Head == EHead::OpenHelmet || O.Head == EHead::HalfHelmet || O.Head == EHead::DuckBill;
 		if (!bHelmet)
 		{
 			K.Paint(O.Hair);
 			K.Ellipsoid(H + FVector(-1.6f, 0.f, 1.6f), FVector(9.8f, 8.9f, 10.8f), FRotator::ZeroRotator, 12, 6, -0.05f);
+			// Round 6B: hairline / fringe over the forehead and short sideburns (no bald egg at 2 m).
+			K.Ellipsoid(H + FVector(5.2f, 0.f, 6.6f), FVector(4.6f, 7.6f, 2.6f), FRotator(-24.f, 0.f, 0.f), 10, 4);
+			if (O.Head != EHead::Wrap && O.Head != EHead::DaoRed)
+			{
+				for (const float S : { -1.f, 1.f })
+				{
+					K.Box(H + FVector(3.6f, S * 7.7f, 1.6f), FVector(1.6f, 0.7f, 3.0f));   // short sideburns
+				}
+			}
+			if (O.Head == EHead::Wrap || O.Head == EHead::DaoRed)
+			{
+				K.Ellipsoid(H + FVector(-9.2f, 0.f, -1.5f), FVector(4.0f, 5.2f, 4.4f), FRotator::ZeroRotator, 8, 5);   // bun under the wrap
+			}
 		}
 		auto Straps = [&]()
 		{
@@ -369,11 +470,58 @@ namespace
 			K.Box(H + FVector(10.f, 0.f, 3.4f), FVector(7.f, 14.f, 1.f), FRotator(-8.f, 0.f, 0.f));
 			break;
 		case EHead::Wrap:
+		{
+			// Round 6B: the big wound head cloth of the Dong Van / Meo Vac Hmong women - several folded turns
+			// (tilted rings), a checked band, the cloth end tucked at the side with tassels.
 			K.Paint(O.HeadGear);
-			K.Frustum(FTransform(H + FVector(-0.8f, 0.f, 2.f)), FVector2D(10.4f, 9.6f), FVector2D(11.6f, 10.6f), 5.f, 14, false);
-			K.Paint(O.HeadGear * 0.6f);
-			K.Frustum(FTransform(H + FVector(-0.8f, 0.f, 7.f)), FVector2D(11.6f, 10.6f), FVector2D(10.8f, 9.8f), 4.f, 14, true);
+			K.Frustum(FTransform(H + FVector(-1.f, 0.f, 2.f)), FVector2D(10.6f, 9.8f), FVector2D(12.4f, 11.4f), 7.f, 16, true);
+			for (int32 t = 0; t < 4; ++t)
+			{
+				K.Paint(t % 2 ? O.HeadGear * 0.82f : O.HeadGear);
+				K.Torus(FTransform(FRotator((t % 2 ? 3.f : -2.5f), 0.f, 90.f), H + FVector(-1.f, 0.f, 3.f + t * 1.7f)),
+					11.4f + (t == 1 ? 0.4f : 0.f), 1.9f, 16, 5);
+			}
+			K.Paint(FLC(0.6f, 0.58f, 0.52f));
+			for (int32 c = 0; c < 10; ++c)
+			{
+				const float A = FMath::DegreesToRadians(c * 36.f + 18.f);
+				K.Box(H + FVector(-1.f + FMath::Cos(A) * 12.6f, FMath::Sin(A) * 11.6f, 6.4f), FVector(1.f, 2.2f, 1.6f),
+					FRotator(0.f, c * 36.f + 18.f, 0.f));                                                   // check squares
+			}
+			K.Paint(O.HeadGear * 0.8f);
+			K.Box(H + FVector(-2.f, 11.5f, 4.f), FVector(6.f, 2.f, 9.f), FRotator(0.f, 0.f, 12.f));         // tucked end
+			K.Paint(FLC(0.65f, 0.5f, 0.08f));
+			for (int32 q = 0; q < 4; ++q)
+			{
+				K.Tube(H + FVector(-4.f + q * 1.8f, 12.6f, 0.f), H + FVector(-4.f + q * 1.8f, 13.2f, -6.f - (q % 2) * 2.f), 0.45f, 0.35f, 4, false);
+			}
 			break;
+		}
+		case EHead::DaoRed:
+		{
+			// Red Dao headdress: tall wound red cloth, a crown of red pom-poms and tassels down the back.
+			K.Paint(O.HeadGear);
+			K.Frustum(FTransform(H + FVector(-1.f, 0.f, 2.f)), FVector2D(10.8f, 10.f), FVector2D(13.5f, 12.5f), 12.f, 16, true);
+			K.Paint(O.HeadGear * 1.2f);
+			for (int32 q = 0; q < 10; ++q)
+			{
+				const float A = q * 2.f * PI / 10.f;
+				K.Ellipsoid(H + FVector(-1.f + FMath::Cos(A) * 11.f, FMath::Sin(A) * 10.f, 14.5f), FVector(3.4f), FRotator::ZeroRotator, 6, 4);
+			}
+			K.Ellipsoid(H + FVector(-1.f, 0.f, 16.5f), FVector(4.f), FRotator::ZeroRotator, 6, 4);
+			K.Paint(FLC(0.45f, 0.42f, 0.38f), HGSurf::Chrome);   // silver coins on the band
+			for (int32 q = 0; q < 8; ++q)
+			{
+				const float A = (q - 3.5f) * 0.32f;
+				K.Tube(H + FVector(-1.f + FMath::Cos(A) * 11.4f, FMath::Sin(A) * 10.6f, 4.f), H + FVector(-1.f + FMath::Cos(A) * 11.8f, FMath::Sin(A) * 11.f, 4.f), 1.2f, 1.2f, 6, true);
+			}
+			K.Paint(O.HeadGear);
+			for (int32 q = 0; q < 5; ++q)
+			{
+				K.Tube(H + FVector(-11.f, -4.f + q * 2.f, 4.f), H + FVector(-13.f, -4.f + q * 2.f, -14.f), 0.6f, 0.5f, 4, false);
+			}
+			break;
+		}
 		case EHead::HalfHelmet:
 		case EHead::DuckBill:
 			K.Paint(O.HeadGear, HGSurf::Gloss);
@@ -422,6 +570,19 @@ namespace
 		}
 		K.Paint(FLC(0.85f, 0.8f, 0.6f));
 		K.Frustum(FTransform(FVector(0, 0, 63.f * s)), R(63.f * s) * 1.075f, R(64.f * s) * 1.075f, 1.f * s, 24, false);
+		// Round 6B: rows of small embroidered lozenges on the batik band and a cross-stitch row on the hem band.
+		for (int32 Row = 0; Row < 2; ++Row)
+		{
+			const float Zr = (Row ? 55.f : 78.f) * s;
+			const FVector2D Rr = R(Zr) * 1.085f;
+			for (int32 i = 0; i < 20; ++i)
+			{
+				const float A = (i + 0.5f * Row) * 2.f * PI / 20.f;
+				K.Paint((i + Row) % 3 == 0 ? FLC(0.7f, 0.6f, 0.08f) : (Row ? FLC(0.75f, 0.72f, 0.65f) : FLC(0.55f, 0.05f, 0.12f)));
+				K.Box(FVector(FMath::Cos(A) * Rr.X, FMath::Sin(A) * Rr.Y, Zr), FVector(0.8f, 2.4f, 2.4f),
+					FRotator(0.f, FMath::RadiansToDegrees(A), 45.f));
+			}
+		}
 		K.Paint(FLC(0.015f, 0.015f, 0.04f));
 		const float Flare = FMath::RadiansToDegrees(FMath::Atan2(13.f, Z[0] - Z[4]));
 		K.Box(FVector(R(74.f * s).X * 1.08f + 1.f, 0.f, 74.f * s), FVector(1.2f, 20.f, 44.f * s), FRotator(Flare, 0.f, 0.f));
@@ -477,6 +638,59 @@ namespace
 		K.Paint(O.Top);
 		K.Frustum(Xf, R0, R1, J.TorsoH, 14, false);
 		K.Ellipsoid(At(0.f, 0.f, J.TorsoH - 2.f), FVector(10.5f * w, 19.f * w, 6.5f), Lean, 12, 6);
+		// Round 6B cloth detail: side seams, a turned hem, soft folds at the waist, shoulder seams.
+		{
+			const FLC Seam = O.Top * 0.55f, Fold = O.Top * 0.75f;
+			K.Paint(Seam);
+			for (const float S : { -1.f, 1.f })
+			{
+				const float Ym = (R0.Y + R1.Y) * 0.5f + 0.15f;
+				K.Box(At(0.f, S * Ym, J.TorsoH * 0.5f), FVector(0.9f, 0.5f, J.TorsoH * 0.92f), Lean);
+				K.Box(At(0.f, S * 13.f * w, J.TorsoH + 2.4f), FVector(9.f, 0.5f, 0.5f), Lean + FRotator(0.f, 0.f, -S * 18.f));
+			}
+			K.Paint(Fold);
+			K.Frustum(FTransform(Lean, At(0.f, 0.f, 0.5f)), R0 + FVector2D(0.5f), R0 + FVector2D(0.6f), 2.5f, 14, false);   // hem
+			for (int32 k = 0; k < 3; ++k)
+			{
+				K.Box(At(R0.X + 0.15f, -6.f + k * 6.f, 7.f + (k % 2) * 2.5f), FVector(0.6f, 7.f, 0.7f), Lean + FRotator(0.f, 0.f, (k - 1) * 14.f));
+			}
+			if (!O.bCollar && Look != EHGPersonLook::Backpacker)
+			{
+				// Jacket placket with buttons and two chest pockets with flaps.
+				K.Paint(O.Top * 0.6f);
+				K.Box(At(R0.X + 0.5f, 0.6f, J.TorsoH * 0.5f), FVector(0.6f, 1.6f, J.TorsoH * 0.95f), Lean);
+				K.Paint(FLC(0.12f, 0.1f, 0.08f), HGSurf::Satin);
+				for (int32 b = 0; b < 4; ++b)
+				{
+					K.Ellipsoid(At(R0.X + 0.9f, 0.6f, 8.f + b * 9.f), FVector(0.5f, 0.8f, 0.8f), Lean, 5, 3);
+				}
+				if (Look == EHGPersonLook::Player || Look == EHGPersonLook::Police)
+				{
+					for (const float S : { -1.f, 1.f })
+					{
+						K.Paint(O.Top * 0.82f);
+						K.Box(At(R1.X * 0.95f + 0.4f, S * 7.f, J.TorsoH * 0.72f), FVector(0.8f, 8.f, 8.f), Lean);
+						K.Paint(O.Top * 0.6f);
+						K.Box(At(R1.X * 0.95f + 0.9f, S * 7.f, J.TorsoH * 0.72f + 3.6f), FVector(0.6f, 8.4f, 2.2f), Lean);
+					}
+				}
+			}
+			if (O.bSash)
+			{
+				K.Paint(O.SashColor);
+				K.Frustum(FTransform(Lean, At(0.f, 0.f, -4.f)), R0 + FVector2D(1.2f), R0 + FVector2D(1.f), 7.f, 14, false);
+				K.Tube(At(R0.X * 0.6f, R0.Y * 0.55f, -2.f), At(R0.X * 0.75f, R0.Y * 0.6f, -26.f), 2.6f, 2.f, 6, true);   // hanging ends
+				K.Tube(At(R0.X * 0.55f, R0.Y * 0.7f, -2.f), At(R0.X * 0.6f, R0.Y * 0.8f, -22.f), 2.4f, 1.8f, 6, true);
+			}
+			else if (O.Legs != ELower::Skirt)
+			{
+				// Belt with a buckle.
+				K.Paint(FLC(0.03f, 0.022f, 0.016f), HGSurf::Satin);
+				K.Frustum(FTransform(Lean, At(0.f, 0.f, -2.5f)), R0 + FVector2D(0.7f), R0 + FVector2D(0.7f), 3.f, 14, false);
+				K.Paint(FLC(0.45f, 0.42f, 0.35f), HGSurf::Chrome);
+				K.Box(At(R0.X + 1.f, 0.f, -1.f), FVector(0.6f, 3.4f, 2.6f), Lean);
+			}
+		}
 		if (O.bCollar)
 		{
 			K.Paint(O.Cuff);
@@ -527,11 +741,23 @@ namespace
 			K.Box(C + Xf.TransformVectorNoScale(FVector(-8.f, 0.f, -6.f)), FVector(4.f, 22.f, 16.f), Lean);
 			K.Paint(FLC(0.35f, 0.3f, 0.12f), HGSurf::Satin);
 			K.Box(C + Xf.TransformVectorNoScale(FVector(0.f, 0.f, -21.f)), FVector(13.f, 31.f, 7.f), Lean);   // rolled mat
-			K.Paint(O.Pack * 0.5f, HGSurf::Satin);
-			for (const float Y : { -9.f, 9.f })
+			// Round 6B: real straps - over the shoulders and down the chest to the hip belt, a sternum strap with
+			// a buckle, compression straps and a bottle in the side pocket.
+			K.Paint(O.Pack * 0.45f, HGSurf::Satin);
+			for (const float Y : { -9.5f, 9.5f })
 			{
-				K.Box(At(R0.X * 0.6f, Y, J.TorsoH - 6.f), FVector(16.f, 3.f, 1.5f), Lean + FRotator(-30.f, 0.f, 0.f));
+				const FVector Top = At(-R1.X - 1.f, Y, J.TorsoH - 1.f), Over = At(1.f, Y * 1.05f, J.TorsoH + 3.f);
+				const FVector Chest = At(R1.X + 0.8f, Y * 0.95f, J.TorsoH * 0.62f), Hip = At(R0.X + 0.8f, Y * 1.2f, 4.f);
+				K.Tube(Top, Over, 1.1f, 1.1f, 5, false);
+				K.Tube(Over, Chest, 1.1f, 1.f, 5, false);
+				K.Tube(Chest, Hip, 0.5f, 0.5f, 4, false);
+				K.Box(C + Xf.TransformVectorNoScale(FVector(-7.8f, Y * 0.8f, 2.f)), FVector(1.f, 2.f, 30.f), Lean);   // compression strap
 			}
+			K.Box(At(R1.X + 1.f, 0.f, J.TorsoH * 0.66f), FVector(1.f, 19.f, 1.4f), Lean);                              // sternum strap
+			K.Paint(FLC(0.02f, 0.02f, 0.02f), HGSurf::Satin);
+			K.Box(At(R1.X + 1.6f, 0.f, J.TorsoH * 0.66f), FVector(1.2f, 3.2f, 2.f), Lean);
+			K.Paint(FLC(0.08f, 0.22f, 0.45f), HGSurf::Gloss);
+			K.Tube(C + Xf.TransformVectorNoScale(FVector(0.f, 15.5f, -14.f)), C + Xf.TransformVectorNoScale(FVector(0.f, 15.5f, 6.f)), 3.4f, 3.f, 8, true);  // bottle
 		}
 		if (O.bBaby && bStanding)
 		{
@@ -735,18 +961,48 @@ void FHGPersonRig::Animate(AActor* Owner, float DeltaSeconds)
 		}
 		else
 		{
-			// Idle: weight shift from foot to foot, look around now and then, hands drift.
+			// Idle: weight shift from foot to foot, look around now and then, hands drift, breathing.
 			BodyRoll = 1.6f * FMath::Sin(T * 0.45f);
+			BodyZ = 0.35f * FMath::Sin(T * 1.7f);
 			HeadYawNow += 32.f * FMath::Sin(T * 0.21f) * FMath::Clamp(FMath::Sin(T * 0.07f + 1.f) * 2.f, -1.f, 1.f);
 			HeadPitch = 4.f * FMath::Sin(T * 0.33f);
 			D[0] = (Rest[0] + FVector(0.05f * FMath::Sin(T * 0.8f), 0.f, 0.f)).GetSafeNormal();
 			D[1] = (Rest[1] + FVector(0.05f * FMath::Sin(T * 0.7f + 2.f), 0.f, 0.f)).GetSafeNormal();
+			// Round 6B: each person keeps one of a few natural rest poses (everybody standing with arms hanging
+			// read as a mannequin crowd): hands behind the back, a hand on the chest / bag strap, arms folded,
+			// or loose; plus a cocked-hip stance (weight on one leg).
+			const int32 Style = int32(IdleSeed * 7.f) % 5;
+			const float Drift = 0.03f * FMath::Sin(T * 0.6f);
+			switch (Style)
+			{
+			case 1:   // hands behind the back
+				D[0] = FVector(-0.5f + Drift, 0.22f, -1.f).GetSafeNormal();
+				D[1] = FVector(-0.5f - Drift, -0.22f, -1.f).GetSafeNormal();
+				break;
+			case 2:   // right hand on the chest / strap
+				D[1] = FVector(0.62f + Drift, -0.42f, -0.55f).GetSafeNormal();
+				break;
+			case 3:   // arms folded
+				D[0] = FVector(0.66f, 0.5f, -0.42f + Drift).GetSafeNormal();
+				D[1] = FVector(0.6f, -0.52f, -0.36f - Drift).GetSafeNormal();
+				HeadPitch -= 3.f;
+				break;
+			default:
+				break;
+			}
+			if (Style != 0)
+			{
+				BodyRoll += (int32(IdleSeed) & 1) ? 2.2f : -2.2f;   // weight on one leg
+			}
 		}
+		// Relaxed knee on the free leg while standing (Round 6B).
+		const float Relax = (WalkSpeed <= 5.f && (int32(IdleSeed * 7.f) % 5) != 0) ? 5.f : 0.f;
+		const int32 Free = (int32(IdleSeed) & 1) ? 0 : 1;
 		for (int32 s = 0; s < 2; ++s)
 		{
 			if (Leg[s])
 			{
-				Leg[s]->SetRelativeRotation(FRotator(s ? -LegPitch : LegPitch, 0.f, 0.f));
+				Leg[s]->SetRelativeRotation(FRotator((s ? -LegPitch : LegPitch) + (s == Free ? Relax : 0.f), 0.f, s == Free ? (s ? 3.f : -3.f) * (Relax > 0.f) : 0.f));
 			}
 		}
 		if (bPhoto)

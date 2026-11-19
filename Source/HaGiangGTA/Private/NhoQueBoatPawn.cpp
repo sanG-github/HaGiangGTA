@@ -676,23 +676,51 @@ namespace HGCanoKit
 				K.Tube(FVector(X, S * 96.f, 45.f), FVector(X, S * 92.f, 222.f), 2.6f, 2.2f, 6, true);
 			}
 		}
-		K.Paint(FC(0.13f, 0.012f, 0.01f), HGSurf::Satin);   // deep maroon: the brighter red read salmon in the sun
-		K.Box(FVector(15.f, 0.f, 226.f), FVector(650.f, 196.f, 3.f));
-		K.Box(FVector(15.f, 0.f, 231.f), FVector(650.f, 120.f, 6.f));      // shallow camber ridge
+		// Round 6B: sun-faded red canvas instead of a satin slab (it blew out to salmon in strong sun): matte cloth
+		// draped from a ridge pole in two slopes, sewn panels with darker seams and weathered streaks.
+		K.Paint(FC(0.06f, 0.05f, 0.04f), HGSurf::Satin);
+		K.Tube(FVector(-310.f, 0.f, 236.f), FVector(340.f, 0.f, 236.f), 2.2f, 2.2f, 6, true);            // ridge pole
+		for (int32 Pn = 0; Pn < 8; ++Pn)
+		{
+			const float X0 = -310.f + Pn * 81.25f;
+			const float Fade = (Pn % 3 == 0) ? 1.12f : ((Pn % 3 == 1) ? 0.94f : 1.f);
+			K.Paint(FC(0.032f * Fade, 0.062f * Fade, 0.095f * Fade), HGSurf::Matte);   // sun-faded blue canvas (red read salmon)
+			for (const float S : { -1.f, 1.f })
+			{
+				K.Box(FVector(X0 + 40.6f, S * 49.f, 230.f), FVector(80.5f, 101.f, 2.f), FRotator(0.f, 0.f, S * 7.f));
+			}
+			K.Paint(FC(0.018f, 0.032f, 0.05f), HGSurf::Matte);
+			for (const float S : { -1.f, 1.f })
+			{
+				K.Box(FVector(X0 + 0.4f, S * 49.f, 231.2f), FVector(1.6f, 101.f, 2.f), FRotator(0.f, 0.f, S * 7.f));   // seam
+			}
+		}
+		K.Paint(FC(0.07f, 0.09f, 0.1f), HGSurf::Matte);
+		for (int32 k = 0; k < 5; ++k)
+		{
+			const float X = -260.f + k * 130.f;
+			K.Box(FVector(X, -60.f + k * 25.f, 232.f), FVector(60.f, 9.f, 2.2f), FRotator(0.f, 8.f * k - 16.f, (k % 2 ? 7.f : -7.f)));  // bleached streaks
+		}
 		K.Paint(FC(0.75f, 0.75f, 0.72f), HGSurf::Gloss);
 		K.Box(FVector(15.f, -99.f, 222.f), FVector(654.f, 3.f, 10.f));
 		K.Box(FVector(15.f, 99.f, 222.f), FVector(654.f, 3.f, 10.f));
 		K.Box(FVector(341.f, 0.f, 222.f), FVector(3.f, 200.f, 10.f));
 		K.Box(FVector(-311.f, 0.f, 222.f), FVector(3.f, 200.f, 10.f));
-		K.Paint(FC(1.f, 0.78f, 0.f), HGSurf::Satin);
-		const FVector StarC(15.f, 0.f, 235.f);
-		for (int32 i = 0; i < 5; ++i)
+		// Faded yellow star painted on each canvas slope (Round 6B: lies on the cloth, not over the ridge pole).
+		K.Paint(FC(0.5f, 0.04f, 0.03f), HGSurf::Matte);   // red star on the blue
+		for (const float Sd : { -1.f, 1.f })
 		{
-			const float A = FMath::DegreesToRadians(90.f + 72.f * i);
-			const FVector Dir(FMath::Sin(A), FMath::Cos(A), 0.f);
-			K.Box(StarC + Dir * 22.f, FVector(44.f, 16.f, 2.f), FRotator(0.f, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)), 0.f));
+			const FQuat Tilt = FRotator(0.f, 0.f, Sd * 7.f).Quaternion();
+			const FVector StarC(15.f, Sd * 48.f, 231.5f);
+			for (int32 i = 0; i < 5; ++i)
+			{
+				const float A = FMath::DegreesToRadians(90.f + 72.f * i);
+				const FVector Dir(FMath::Sin(A), FMath::Cos(A), 0.f);
+				const FQuat Q = Tilt * FRotator(0.f, FMath::RadiansToDegrees(FMath::Atan2(Dir.Y, Dir.X)), 0.f).Quaternion();
+				K.Box(StarC + Tilt.RotateVector(Dir * 15.f), FVector(30.f, 11.f, 1.2f), Q.Rotator());
+			}
+			K.Box(StarC, FVector(20.f, 20.f, 1.2f), (Tilt * FRotator(0.f, 36.f, 0.f).Quaternion()).Rotator());
 		}
-		K.Box(StarC, FVector(30.f, 30.f, 2.f), FRotator(0.f, 36.f, 0.f));
 		// Long-tail outboard (Round 4B: bigger, raised on its pivot so it shows over the transom from behind):
 		// red-capped engine block, exhaust, long shaft angled down into the water, prop.
 		K.Paint(FC(0.06f, 0.06f, 0.065f), HGSurf::Satin);
