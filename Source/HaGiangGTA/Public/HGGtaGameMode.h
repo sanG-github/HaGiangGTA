@@ -71,6 +71,11 @@ private:
 	bool bPlayShrunk = false;
 	FIntPoint PlayInitialRes = FIntPoint::ZeroValue;
 	int32 PlayResFixes = 0;
+	double LastResFixTime = -10.0;
+	FIntPoint LastSeenRes = FIntPoint::ZeroValue;
+	FIntPoint LastRefitRes = FIntPoint::ZeroValue;
+	float SteadyTime = 0.f;
+	int32 SameRefits = 0;
 	int32 PlayMoneyMark = 0;
 	int32 PlayBoatHireStep = 0;
 	int32 PlayBoatStuckStreak = 0;
@@ -125,6 +130,11 @@ private:
 	double LastShotRequestTime = -10.0;
 	bool bPerfQuitPending = false;
 	bool bPlayProfileChecked = false;
+	UPROPERTY(Transient) TObjectPtr<UAudioComponent> KhenAudio;
+	UPROPERTY(Transient) TObjectPtr<UAudioComponent> LapAudio;
+	UPROPERTY(Transient) TObjectPtr<UAudioComponent> EchoAudio;
+	TArray<FVector> MusicSpots;
+	float KhenVol = 0.f, LapVol = 0.f, EchoVol = 0.f, EchoPitch = 1.f, EchoCheck = 0.f, Enclosure = 0.f;
 	bool bPlayBoatJobLogged = false;
 	bool bPlayBoatReturn = false;
 	float PlayReturnStart = 0.f;

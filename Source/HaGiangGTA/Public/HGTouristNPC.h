@@ -44,6 +44,20 @@ public:
 	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tourist")
 	bool bWander = true;
 
+	/** Round 6A: a local walking along the road shoulder between hamlets (follows the road spline at its
+	 *  current offset, ShoulderWalkM metres each way). */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tourist")
+	bool bShoulderWalker = false;
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tourist")
+	float ShoulderWalkM = 60.f;
+
+	/** Round 6A: a child (smaller) who waves at every rider passing within 25 m. */
+	UPROPERTY(EditAnywhere, BlueprintReadWrite, Category = "Tourist")
+	bool bKid = false;
+
+	/** Session count of kids waving at riders (playtest log). */
+	static int32 KidWaves;
+
 protected:
 	virtual void BeginPlay() override;
 
@@ -69,4 +83,8 @@ private:
 	float WalkPause = 0.f;
 	float GroundTimer = 0.f;
 	float GroundZ = 0.f;
+	TWeakObjectPtr<class AHGRoadSplineActor> ShoulderRoad;
+	float ShoulderHome = 0.f;
+	float ShoulderLat = 0.f;
+	float KidCheck = 0.f;
 };

@@ -581,6 +581,57 @@ def make_ambience(rng, sr=44100):
     tyre = roll / (np.abs(roll).max() + 1e-6) + 0.35 * thump
     _loop_wav(out / "SW_HG_Tyre_Loop.wav", np.tanh(tyre) * 0.7, sr)
 
+    # Round 6A: horn (two-tone moped beep, x2), khen-like reed drone for the hamlets / viewpoints, river lapping.
+    hn = int(0.62 * sr)
+    th = np.arange(hn) / sr
+    horn = np.zeros(hn)
+    for t0 in (0.0, 0.34):
+        m = (th >= t0) & (th < t0 + 0.24)
+        tt = th[m] - t0
+        env = np.minimum(1.0, tt / 0.01) * np.minimum(1.0, (0.24 - tt) / 0.02)
+        tone = np.sign(np.sin(2 * np.pi * 415.0 * tt)) * 0.5 + np.sign(np.sin(2 * np.pi * 520.0 * tt)) * 0.5
+        horn[m] = env * _lowpass(tone, 2500.0, sr) if len(tone) > 8 else 0.0
+    _write_wav(out / "SW_HG_Horn.wav", horn / (np.abs(horn).max() + 1e-6) * 0.8, sr)
+    # Khen: free-reed mouth organ - a drone (D) under a slow pentatonic line, reedy odd harmonics, breath noise.
+    n8 = int(8.0 * sr)
+    t8 = np.arange(n8) / sr
+    def reed(f, a=1.0):
+        return a * (np.sin(2 * np.pi * f * t8) + 0.45 * np.sin(2 * np.pi * 3 * f * t8) + 0.2 * np.sin(2 * np.pi * 5 * f * t8))
+    drone = reed(146.8, 0.5) + reed(220.0, 0.3)
+    line = np.zeros(n8)
+    notes = [293.7, 329.6, 440.0, 392.0, 329.6, 293.7, 261.6, 293.7]   # D E A G E D C D (pentatonic)
+    for k, f in enumerate(notes):
+        i0, i1 = int(k * sr), int((k + 1) * sr)
+        tt = np.arange(i1 - i0) / sr
+        env = np.minimum(1.0, tt / 0.08) * np.minimum(1.0, (1.0 - tt) / 0.12)
+        line[i0:i1] = env * (np.sin(2 * np.pi * f * tt) + 0.4 * np.sin(2 * np.pi * 3 * f * tt)) * (1.0 + 0.03 * np.sin(2 * np.pi * 5.5 * tt))
+    breath = 0.04 * _lowpass(rng.normal(size=n8), 4000.0, sr)
+    khen = drone + 0.8 * line + breath
+    _loop_wav(out / "SW_HG_Khen_Loop.wav", np.tanh(khen / (np.abs(khen).max() + 1e-6) * 1.3) * 0.6, sr)
+    # Round 6B: village dog bark (two sharp barks: noisy formant burst with a falling pitch).
+    bn = int(0.7 * sr)
+    bark = np.zeros(bn)
+    for t0 in (0.0, 0.32):
+        m = int(0.17 * sr)
+        i0 = int(t0 * sr)
+        tt = np.arange(m) / sr
+        f0 = 520.0 * (1.0 - 1.6 * tt)
+        env = np.minimum(1.0, tt / 0.006) * np.exp(-tt / 0.06)
+        voiced = np.sign(np.sin(2 * np.pi * np.cumsum(f0) / sr)) * 0.6 + 0.4 * rng.normal(size=m)
+        burst = _lowpass(voiced, 2600.0, sr) - 0.6 * _lowpass(voiced, 350.0, sr)
+        bark[i0:i0 + m] += env * burst
+    _write_wav(out / "SW_HG_DogBark.wav", bark / (np.abs(bark).max() + 1e-6) * 0.85, sr)
+    # Water lapping on the hull / banks: low-passed noise in soft irregular slaps.
+    slap = np.zeros(n)
+    for _ in range(18):
+        i0 = int(rng.uniform(0.0, 5.7) * sr)
+        m = int(rng.uniform(0.15, 0.35) * sr)
+        if i0 + m < n:
+            tt = np.arange(m) / m
+            slap[i0:i0 + m] += np.sin(np.pi * tt) ** 2 * rng.uniform(0.4, 1.0)
+    lap = _lowpass(rng.normal(size=n), 700.0, sr) * (0.25 + slap)
+    _loop_wav(out / "SW_HG_WaterLap_Loop.wav", lap / (np.abs(lap).max() + 1e-6) * 0.7, sr)
+
 
 # ---------------------------------------------------------------------------
 # Trees (reference photos): bombax / kapok (hoa gao, red), broadleaf, pine.

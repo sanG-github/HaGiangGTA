@@ -5,6 +5,10 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "Components/SplineComponent.h"
+#include "HGRoadSplineActor.h"
+#include "HGVehicleBase.h"
 
 namespace
 {
@@ -85,6 +89,31 @@ void AHGTouristNPC::BeginPlay()
 	WalkPause = float(Hash % 5);
 	PhotoTimer = 1.f + float(Hash % 70) * 0.1f;
 	WaveTimer = 5.f + float(Hash % 13);
+	if (bKid)
+	{
+		SetActorScale3D(FVector(0.62f));
+		SetActorLocation(GetActorLocation() - FVector(0.f, 0.f, HalfHeight * 0.38f));
+	}
+	if (bShoulderWalker)
+	{
+		// Find the road and remember where along it (and how far off its centre) we stand.
+		float Best = BIG_NUMBER;
+		for (TActorIterator<AHGRoadSplineActor> It(GetWorld()); It; ++It)
+		{
+			const float D = It->GetDistanceAlongRoad(Home);
+			const FVector P = It->GetSpline()->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World);
+			const float Off = FVector::Dist2D(P, Home);
+			if (Off < Best)
+			{
+				Best = Off;
+				ShoulderRoad = *It;
+				ShoulderHome = D;
+				const FVector T = It->GetSpline()->GetDirectionAtDistanceAlongSpline(D, ESplineCoordinateSpace::World).GetSafeNormal2D();
+				ShoulderLat = FVector::DotProduct(Home - P, FVector::CrossProduct(FVector::UpVector, T));
+			}
+		}
+		bWalker = ShoulderRoad.IsValid();
+	}
 }
 
 void AHGTouristNPC::StepWalk(float DeltaSeconds)
@@ -97,16 +126,27 @@ void AHGTouristNPC::StepWalk(float DeltaSeconds)
 		SetActorRotation(FMath::RInterpTo(GetActorRotation(), FRotator(0.f, Face, 0.f), DeltaSeconds, 3.f));
 		return;
 	}
-	const float Speed = 85.f;
+	const float Speed = bKid ? 70.f : 85.f;
 	WalkPos += WalkDir * Speed * DeltaSeconds;
-	if (FMath::Abs(WalkPos) > WalkRange)
+	const float Range = ShoulderRoad.IsValid() ? ShoulderWalkM * 100.f : WalkRange;
+	if (FMath::Abs(WalkPos) > Range)
 	{
-		WalkPos = FMath::Clamp(WalkPos, -WalkRange, WalkRange);
+		WalkPos = FMath::Clamp(WalkPos, -Range, Range);
 		WalkDir = -WalkDir;
 		WalkPause = FMath::FRandRange(2.f, 6.f);   // stop, look at the view, then turn back
 	}
 	Rig.WalkSpeed = Speed;
 	FVector Target = Home + WalkAxis * WalkPos;
+	FVector WalkDirVec = WalkAxis * WalkDir;
+	if (const AHGRoadSplineActor* Road = ShoulderRoad.Get())
+	{
+		// Along the shoulder at the same offset from the road centre (bends included), facing the way we walk.
+		const USplineComponent* Sp = Road->GetSpline();
+		const float D = FMath::Clamp(ShoulderHome + WalkPos, 0.f, Sp->GetSplineLength());
+		const FVector T = Sp->GetDirectionAtDistanceAlongSpline(D, ESplineCoordinateSpace::World).GetSafeNormal2D();
+		Target = Sp->GetLocationAtDistanceAlongSpline(D, ESplineCoordinateSpace::World) + FVector::CrossProduct(FVector::UpVector, T) * ShoulderLat;
+		WalkDirVec = T * WalkDir;
+	}
 	GroundTimer -= DeltaSeconds;
 	if (GroundTimer <= 0.f)
 	{
@@ -115,13 +155,15 @@ void AHGTouristNPC::StepWalk(float DeltaSeconds)
 		FCollisionQueryParams Params(SCENE_QUERY_STAT(HGTouristGround), false, this);
 		if (GetWorld()->LineTraceSingleByChannel(Hit, Target + FVector(0, 0, 150.f), Target - FVector(0, 0, 400.f), ECC_Visibility, Params))
 		{
-			GroundZ = Hit.ImpactPoint.Z + HalfHeight;
+			GroundZ = Hit.ImpactPoint.Z + HalfHeight * GetActorScale3D().Z;
 		}
 	}
 	Target.Z = FMath::FInterpTo(GetActorLocation().Z, GroundZ, DeltaSeconds, 8.f);
 	SetActorLocation(Target);
-	SetActorRotation(FMath::RInterpTo(GetActorRotation(), FRotator(0.f, (WalkAxis * WalkDir).Rotation().Yaw, 0.f), DeltaSeconds, 5.f));
+	SetActorRotation(FMath::RInterpTo(GetActorRotation(), FRotator(0.f, WalkDirVec.Rotation().Yaw, 0.f), DeltaSeconds, 5.f));
 }
+
+int32 AHGTouristNPC::KidWaves = 0;
 
 void AHGTouristNPC::Tick(float DeltaSeconds)
 {
@@ -149,6 +191,29 @@ void AHGTouristNPC::Tick(float DeltaSeconds)
 	{
 		WaveTimer = FMath::FRandRange(12.f, 25.f);
 		WaveLeft = PhotoLeft > 0.f ? 0.f : FMath::FRandRange(1.5f, 2.5f);
+	}
+	if (bKid)
+	{
+		// Kids wave at every rider who passes close (Ha Giang's "hello!" from the roadside).
+		KidCheck -= DeltaSeconds;
+		if (KidCheck <= 0.f)
+		{
+			KidCheck = 0.3f;
+			for (TActorIterator<AHGVehicleBase> It(GetWorld()); It; ++It)
+			{
+				if (FMath::Abs(It->GetSpeedKmh()) > 12.f && FVector::DistSquared(It->GetActorLocation(), GetActorLocation()) < FMath::Square(2500.f))
+				{
+					if (WaveLeft <= 0.f)
+					{
+						++KidWaves;
+					}
+					WaveLeft = 2.5f;
+					const FVector To = It->GetActorLocation() - GetActorLocation();
+					SetActorRotation(FRotator(0.f, To.Rotation().Yaw, 0.f));
+					break;
+				}
+			}
+		}
 	}
 	WaveLeft = FMath::Max(0.f, WaveLeft - DeltaSeconds);
 	Rig.bPhoto = PhotoLeft > 0.f;

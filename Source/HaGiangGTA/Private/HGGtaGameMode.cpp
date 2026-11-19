@@ -34,12 +34,16 @@
 #include "Misc/Paths.h"
 #include "HGPlayerCharacter.h"
 #include "HGViewpointActor.h"
+#include "HGTouristNPC.h"
+#include "HGDogActor.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/CommandLine.h"
 #include "RenderCore.h"
 #include "RHI.h"
 #include "HAL/IConsoleManager.h"
+#include "GameFramework/GameUserSettings.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Misc/ConfigCacheIni.h"
 #include "Components/InstancedStaticMeshComponent.h"
 #include "UObject/UObjectIterator.h"
@@ -214,6 +218,17 @@ void AHGGtaGameMode::StartAmbientAudio()
 	WindAudio = Make(TEXT("SW_HG_Wind_Loop"));
 	BirdsAudio = Make(TEXT("SW_HG_Birds_Loop"));
 	TyreAudio = Make(TEXT("SW_HG_Tyre_Loop"));
+	// Round 6A: khen near H'Mong hamlets and at the viewpoints, river lapping on the boat, engine echo in the gorge.
+	KhenAudio = Make(TEXT("SW_HG_Khen_Loop"));
+	LapAudio = Make(TEXT("SW_HG_WaterLap_Loop"));
+	EchoAudio = Make(TEXT("SW_HG_BikeEngine_Loop"));
+	for (TActorIterator<AActor> It(GetWorld()); It; ++It)
+	{
+		if (It->GetActorNameOrLabel().Contains(TEXT("HmongHouse")) || It->IsA<AHGViewpointActor>())
+		{
+			MusicSpots.Add(It->GetActorLocation());
+		}
+	}
 }
 
 void AHGGtaGameMode::UpdateAmbientAudio(float DeltaSeconds)
@@ -249,14 +264,56 @@ void AHGGtaGameMode::UpdateAmbientAudio(float DeltaSeconds)
 	if (WindAudio) { WindAudio->SetVolumeMultiplier(WindVol); WindAudio->SetPitchMultiplier(0.85f + 0.4f * SpeedWind); }
 	if (BirdsAudio) { BirdsAudio->SetVolumeMultiplier(BirdsVol); }
 	if (TyreAudio) { TyreAudio->SetVolumeMultiplier(TyreVol); TyreAudio->SetPitchMultiplier(TyrePitch); }
+
+	// Khen: within ~150 m of a hamlet house or a viewpoint, softer at speed (you hear it as you pass).
+	const FVector PLoc = Pawn->GetActorLocation();
+	float Nearest = BIG_NUMBER;
+	for (const FVector& M : MusicSpots)
+	{
+		Nearest = FMath::Min(Nearest, FVector::Dist(M, PLoc));
+	}
+	const float KhenTarget = 0.3f * FMath::Clamp((15000.f - Nearest) / 10000.f, 0.f, 1.f) * (1.f - 0.6f * FMath::Clamp(Kmh / 50.f, 0.f, 1.f));
+	KhenVol = FMath::FInterpTo(KhenVol, KhenTarget, DeltaSeconds, 0.8f);
+	if (KhenAudio) { KhenAudio->SetVolumeMultiplier(KhenVol); }
+	// Lapping: on the water, louder when idling / slow.
+	const bool bBoat = Veh && Veh->IsWaterVehicle();
+	const float LapTarget = bBoat ? 0.25f + 0.25f * (1.f - FMath::Clamp(Kmh / 40.f, 0.f, 1.f)) : 0.f;
+	LapVol = FMath::FInterpTo(LapVol, LapTarget, DeltaSeconds, 1.5f);
+	if (LapAudio) { LapAudio->SetVolumeMultiplier(LapVol); }
+	// Echo: walls within 80 m on both sides (the Tu San gorge, the Ma Pi Leng cuttings) return the engine a beat
+	// later - a second, quieter copy of our engine note lagging the real one.
+	EchoCheck -= DeltaSeconds;
+	if (EchoCheck <= 0.f)
+	{
+		EchoCheck = 0.5f;
+		int32 Walls = 0;
+		const FVector Right = Pawn->GetActorRightVector().GetSafeNormal2D();
+		FCollisionQueryParams Q(SCENE_QUERY_STAT(HGEcho), false, Pawn);
+		for (const float Side : { 1.f, -1.f })
+		{
+			FHitResult H;
+			if (GetWorld()->LineTraceSingleByChannel(H, PLoc + FVector(0, 0, 300.f), PLoc + FVector(0, 0, 1500.f) + Right * Side * 8000.f, ECC_Visibility, Q)) { ++Walls; }
+		}
+		Enclosure = Walls / 2.f;
+	}
+	const float EchoTarget = Veh ? 0.35f * Enclosure * Veh->GetEngineVolumeNow() : 0.f;
+	EchoVol = FMath::FInterpTo(EchoVol, EchoTarget, DeltaSeconds, 1.5f);
+	if (EchoAudio)
+	{
+		EchoPitch = FMath::FInterpTo(EchoPitch, Veh ? Veh->GetEnginePitch() : 1.f, DeltaSeconds, 2.5f);   // lags the engine
+		EchoAudio->SetVolumeMultiplier(EchoVol);
+		EchoAudio->SetPitchMultiplier(FMath::Max(EchoPitch, 0.3f));
+	}
 }
 
 FString AHGGtaGameMode::AudioState() const
 {
 	const APlayerController* PC = UGameplayStatics::GetPlayerController(this, 0);
 	const AHGVehicleBase* Veh = PC ? Cast<AHGVehicleBase>(PC->GetPawn()) : nullptr;
-	return FString::Printf(TEXT("audio: engine %s | wind %.2f%s | birds %.2f%s | tyres %.2f%s"),
-		Veh ? *FString::Printf(TEXT("pitch %.2f vol %.2f"), Veh->GetEnginePitch(), Veh->GetEngineVolumeNow()) : TEXT("-"),
+	return FString::Printf(TEXT("audio: engine %s | khen %.2f | lap %.2f | echo %.2f | doppler %.2f..%.2f, %d horns | wind %.2f%s | birds %.2f%s | tyres %.2f%s"),
+		Veh ? *FString::Printf(TEXT("pitch %.2f vol %.2f%s"), Veh->GetEnginePitch(), Veh->GetEngineVolumeNow(),
+			Veh->IsWaterVehicle() ? TEXT("") : *FString::Printf(TEXT(" gear %d rpm %.2f, %d shifts"), Veh->GetGear(), Veh->GetRpm(), AHGVehicleBase::ShiftCount)) : TEXT("-"),
+		KhenVol, LapVol, EchoVol, AHGVehicleBase::DopplerMin, AHGVehicleBase::DopplerMax, AHGVehicleBase::HornCount,
 		WindVol, WindAudio && WindAudio->IsPlaying() ? TEXT("") : TEXT(" (not playing)"),
 		BirdsVol, BirdsAudio && BirdsAudio->IsPlaying() ? TEXT("") : TEXT(" (not playing)"),
 		TyreVol, TyreAudio && TyreAudio->IsPlaying() ? TEXT("") : TEXT(" (not playing)"));
@@ -280,8 +337,8 @@ void AHGGtaGameMode::PlayResetStageStats()
 FString AHGGtaGameMode::PlayTrafficSummary() const
 {
 	const AHGGroundVehicle::FTrafficStats& T = AHGGroundVehicle::TrafficStats;
-	return FString::Printf(TEXT("traffic: %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | session AI: %d overtakes, %d yields, %d go-arounds, %d unsticks (re-placements), %d U-turns (longest wait %.0f s)%s"),
-		PlayNearMiss, PlayStops, PlayOncoming, PlayOvertookUs, T.Overtakes, T.Yields, T.GoArounds, T.Unsticks, T.UTurns, T.LongestTurnWait,
+	return FString::Printf(TEXT("traffic: %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | session AI: %d overtakes, %d yields, %d go-arounds, %d unsticks (re-placements), %d U-turns (longest wait %.0f s), %d viewpoint stops, %d kid waves, dogs %d chases / %d barks%s"),
+		PlayNearMiss, PlayStops, PlayOncoming, PlayOvertookUs, T.Overtakes, T.Yields, T.GoArounds, T.Unsticks, T.UTurns, T.LongestTurnWait, AHGGroundVehicle::ViewpointStops, AHGTouristNPC::KidWaves, AHGDogActor::Chases, AHGDogActor::Barks,
 		PlayLaneSamples > 0 ? *FString::Printf(TEXT(" | lane error mean %.2f m, max %.2f m"), PlayLaneErrSum / PlayLaneSamples / 100.0, PlayLaneErrMax / 100.f) : TEXT(""));
 }
 
@@ -332,7 +389,7 @@ void AHGGtaGameMode::PlayTrafficTick(float DeltaSeconds)
 		// at a turn-round spot for the road to clear, or in line behind one, counts after 20 s).
 		float& Stop = PlayStopTime.FindOrAdd(Key);
 		const float Before = Stop;
-		const float Limit = V->IsWaitingForTurn() ? 20.f : 4.f;
+		const float Limit = V->IsViewpointStopping() ? 30.f : V->IsWaitingForTurn() ? 20.f : 4.f;
 		Stop = (FMath::Abs(V->GetSpeed()) < 50.f && !V->IsYielding()) ? Stop + DeltaSeconds : 0.f;
 		if (Before < Limit && Stop >= Limit)
 		{
@@ -600,41 +657,88 @@ void AHGGtaGameMode::PlayDriveBoatKeys(float DeltaSeconds)
 
 bool AHGGtaGameMode::EnforceViewport(float DeltaSeconds)
 {
-	// The test window sometimes shrinks (another Unreal instance starting on the same desktop): put it back,
-	// so screenshots and FPS are always measured at the same resolution.
+	// Round 6A: the game window keeps the size the player chose (or -resx/-resy in scripted runs). When something
+	// outside the game shrinks it - another Unreal instance starting on the same desktop re-fitted our window to
+	// 676 px - it is put back through the game user settings (the engine's own resolution path, in pixels), as
+	// soon as the change is seen. A resize made by the player while the window is focused becomes the new size.
 	PlayResCheck -= DeltaSeconds;
-	if (PlayResCheck <= 0.f && GEngine && GEngine->GameViewport && GEngine->GameViewport->Viewport)
+	if (PlayResCheck > 0.f || !GEngine || !GEngine->GameViewport || !GEngine->GameViewport->Viewport)
 	{
-		PlayResCheck = 1.f;
-		const FIntPoint Size = GEngine->GameViewport->Viewport->GetSizeXY();
-		if (PlayInitialRes.X == 0 && Size.X > 0)
+		return false;
+	}
+	PlayResCheck = 0.25f;
+	const FIntPoint Size = GEngine->GameViewport->Viewport->GetSizeXY();
+	if (Size.X <= 0)
+	{
+		return false;
+	}
+	if (PlayInitialRes.X == 0)
+	{
+		// Hold the size the window SETTLES at: on this Mac a -resx=1280 window is fitted to 1019x573 by the OS
+		// at start-up every time, and asking for 1280 again only loops (seen: 12 refits in 25 s). Wait until the
+		// size has been steady for 2 s, then keep that one.
+		if (Size != LastSeenRes)
 		{
-			// The window comes up at a different pixel size from run to run on this Mac (676, 1019 or 1280 px wide
-			// for the same -resx=1280); 1019x573 is the size macOS settles a 1280x720 window at (it pulls a 1280 px
-			// viewport back to it) and what rounds 1-2 measured at: hold the viewport there so FPS and shots compare.
-			PlayInitialRes = FIntPoint(1019, 573);
-		}
-		// Any change (it was shrunk to 679 px and grown to 1280 px by something outside the game): resize the
-		// window by the difference so the viewport is back to the start size (FPS comparable, shots alike).
-		// Never resize while a screenshot is pending or its readback may still be in flight: the resize recreates
-		// the backbuffer under the readback (SIGSEGV seen by agent B). Check again a little later instead.
-		if (FScreenshotRequest::IsScreenshotRequested() || FPlatformTime::Seconds() - LastShotRequestTime < 1.0)
-		{
-			PlayResCheck = 0.25f;
+			LastSeenRes = Size;
+			SteadyTime = 0.f;
 			return false;
 		}
-		const TSharedPtr<SWindow> Win = GEngine->GameViewport->GetWindow();
-		if (Win.IsValid() && PlayInitialRes.X > 0 && (FMath::Abs(Size.X - PlayInitialRes.X) > 8 || FMath::Abs(Size.Y - PlayInitialRes.Y) > 8)
-			&& PlayResFixes < 20)
+		SteadyTime += 0.25f;
+		if (SteadyTime < 2.f)
 		{
-			++PlayResFixes;   // never fight the OS in a loop
-			const FVector2D Want = Win->GetSizeInScreen() + FVector2D(PlayInitialRes - Size);
-			UE_LOG(LogHaGiang, Display, TEXT("[HG_PLAY]    viewport changed to %dx%d: restoring %dx%d"), Size.X, Size.Y, PlayInitialRes.X, PlayInitialRes.Y);
-			Win->Resize(Want);
-			return true;
+			return false;
 		}
+		PlayInitialRes = Size;
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_VIEW] window size held at %dx%d"), PlayInitialRes.X, PlayInitialRes.Y);
 	}
-	return false;
+	if (FMath::Abs(Size.X - PlayInitialRes.X) <= 8 && FMath::Abs(Size.Y - PlayInitialRes.Y) <= 8)
+	{
+		return false;
+	}
+	const bool bScripted = bPlayTest || bPerfRun;
+	if (!bScripted && FSlateApplication::IsInitialized() && FSlateApplication::Get().IsActive())
+	{
+		// The player resized the focused window: that is the size to keep from now on.
+		PlayInitialRes = Size;
+		if (UGameUserSettings* GUS = GEngine->GetGameUserSettings())
+		{
+			GUS->SetScreenResolution(Size);
+			GUS->SaveSettings();
+		}
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_VIEW] player resized the window to %dx%d"), Size.X, Size.Y);
+		return false;
+	}
+	// Never resize while a screenshot is pending or its readback may still be in flight: the resize recreates
+	// the backbuffer under the readback (SIGSEGV seen by agent B). Check again a little later instead.
+	if (FScreenshotRequest::IsScreenshotRequested() || FPlatformTime::Seconds() - LastShotRequestTime < 1.0)
+	{
+		return false;
+	}
+	if (FPlatformTime::Seconds() - LastResFixTime < 2.0)
+	{
+		return false;   // let the last fix land before judging again
+	}
+	// The same refit coming back three times after our fix: the OS insists (display change) - adopt it rather
+	// than fight in a loop.
+	SameRefits = (Size == LastRefitRes) ? SameRefits + 1 : 0;
+	LastRefitRes = Size;
+	if (SameRefits >= 3)
+	{
+		UE_LOG(LogHaGiang, Display, TEXT("[HG_VIEW] the OS keeps the window at %dx%d: adopting it"), Size.X, Size.Y);
+		PlayInitialRes = Size;
+		SameRefits = 0;
+		return false;
+	}
+	LastResFixTime = FPlatformTime::Seconds();
+	++PlayResFixes;
+	UE_LOG(LogHaGiang, Display, TEXT("[HG_VIEW] viewport changed to %dx%d from outside: restoring %dx%d (fix %d)"), Size.X, Size.Y, PlayInitialRes.X, PlayInitialRes.Y, PlayResFixes);
+	if (UGameUserSettings* GUS = GEngine->GetGameUserSettings())
+	{
+		GUS->SetFullscreenMode(EWindowMode::Windowed);
+		GUS->SetScreenResolution(PlayInitialRes);
+		GUS->ApplyResolutionSettings(false);
+	}
+	return true;
 }
 
 void AHGGtaGameMode::TickPlayTest(float DeltaSeconds)
@@ -1461,6 +1565,10 @@ void AHGGtaGameMode::Tick(float DeltaSeconds)
 	Super::Tick(DeltaSeconds);
 	UpdateAmbientAudio(DeltaSeconds);
 	UpdateWaterGITier(DeltaSeconds);
+	if (!bPlayTest && !bPerfRun)
+	{
+		EnforceViewport(DeltaSeconds);   // players: an outside app must not shrink the window either
+	}
 	if (bPlayTest)
 	{
 		TickPlayTest(DeltaSeconds);

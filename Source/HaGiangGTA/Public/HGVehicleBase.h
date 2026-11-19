@@ -69,6 +69,17 @@ public:
 
 	/** Engine loop state (playtest audio log). */
 	float GetEnginePitch() const { return EnginePitch; }
+	/** Round 6A: 4-speed box (bikes): current gear, engine rpm fraction 0..1 and Doppler factor applied. */
+	int32 GetGear() const { return Gear; }
+	float GetRpm() const { return Rpm; }
+	float GetDoppler() const { return DopplerNow; }
+	/** Session counters for the playtest log. */
+	static int32 ShiftCount;
+	static int32 HornCount;
+	static float DopplerMin;
+	static float DopplerMax;
+	/** Short two-tone horn (AI at blind hairpins; the player has none bound yet). */
+	void SoundHorn();
 	float GetEngineVolumeNow() const;
 
 	/** Scripted playtest: off except while it tests the orbit, so stray OS mouse deltas on the test machine don't
@@ -145,6 +156,15 @@ protected:
 
 	UPROPERTY(Transient) TObjectPtr<UAudioComponent> EngineAudio;
 	float EnginePitch = 1.f;
+	/** Gear tops (km/h) of a manual box; empty = the old continuous pitch (trucks, boats). Honda Win 110: 4 speeds. */
+	TArray<float> GearTopsKmh;
+	int32 Gear = 1;
+	float Rpm = 0.f;
+	float ShiftDip = 0.f;
+	float DopplerNow = 1.f;
+	FVector PrevAudioLoc = FVector::ZeroVector;
+	bool bAudioLocValid = false;
+	double LastHornTime = -100.0;
 
 	// ---- Shared driving input ----
 	UPROPERTY(Transient) TObjectPtr<UInputMappingContext> DrivingContext;

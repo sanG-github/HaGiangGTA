@@ -99,6 +99,9 @@ public:
 	bool IsWaitingForTurn() const { return TurnState == EHGTurnState::Waiting || bQueuedForTurn; }
 	/** AI: in the middle of a U-turn (kinematic arc across the road). */
 	bool IsTurningAround() const { return TurnState == EHGTurnState::Turning; }
+	/** Round 6A: an Easy Rider convoy pulled over at a viewpoint (riders off, photos), or in line behind one. */
+	bool IsViewpointStopping() const { return ViewpointStopTime > 0.f; }
+	static int32 ViewpointStops;
 	/** AI: what set the target speed last tick ("probe:<actor>", "leader", "curve", "yield", "cruise"). */
 	const FString& GetSpeedReason() const { return SpeedReason; }
 
@@ -226,6 +229,23 @@ private:
 	void TickFarLOD(float DeltaSeconds);
 	bool bFarHandbrakeScratch = false;
 	float CowWaitTime = 0.f;
+	float ParkedRestTime = 0.f;
+	float ViewpointStopTime = 0.f;
+	int32 LastViewpointStop = INDEX_NONE;
+	TArray<float> ViewpointRoadD;
+	TArray<FVector> ViewpointLook;
+	bool bViewpointsCached = false;
+protected:
+	/** Tour convoys stop at the viewpoints (bikes with a tour group). */
+	virtual bool WantsViewpointStops() const { return false; }
+	/** Riders get off for photos (bStart) / back on. LookAt = the view. */
+	virtual void OnViewpointStop(bool bStart, const FVector& LookAt) {}
+private:
+	float ShakeClock = 0.f;
+public:
+	float LastShakeAmp = 0.f;
+	EHGSurface GetSurfaceNow() const { return Surface; }
+private:
 	FVector TurnPathPoint(float S, FVector* OutTangent) const;
 	/** Road whose centreline is closest to Location (2D), and that distance (cm). */
 	AHGRoadSplineActor* FindNearestRoad(const FVector& Location, float& OutLateralCm, float& OutDistanceCm) const;
