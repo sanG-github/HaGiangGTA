@@ -269,7 +269,9 @@ def terrain(tex, water_z_cm=42000.0, half_cm=201600.0, lush_center_cm=None, lush
         # Scanned dry grass: near (3 m) and far (14 m) tiling blended by camera distance, palette-tinted.
         # (budget: one sample at 4.5 m; the n_far / n_mid macro tints already break up the repeat)
         gd = g.scan(scan["grass"]["diff"], g.world_uv(wp, 450.0))
-        dry = g.scanned(dry, gd, 0.245, g.scalar("GrassScanMix", 0.45), "GrassScanGain")
+        dry = g.scanned(dry, gd, 0.245, g.scalar("GrassScanMix", 0.6), "GrassScanGain")
+        # The shrubby / lush green carries the same scanned grass detail (it read as flat procedural blotches).
+        green = g.mul(green, g.lerp(1.0, g.mul(g.lum(gd), 1.0 / 0.245), 0.8))
     if "ground" in scan:
         # Thin rocky soil showing through on the slopes.
         sl = g.saturate(g.mul(g.sub(0.97, up), 4.0))
