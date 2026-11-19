@@ -262,7 +262,7 @@ def spawn_scan_scatter(label, gen_mesh, pieces, instances, tag, folder, cull=(0.
     """Round 7A: place Poly Haven scan pieces where the scatter data has instances of a generated mesh.
 
     Instances are dealt round-robin over the pieces. Each piece is fitted to the generated mesh it stands in for
-    (mode "size": largest extent, "height": z extent, "axes": per axis within 0.5-2.5x of the uniform fit), keeps
+    (mode "size": largest extent, "height": z extent, "axes": per axis within 0.6-1.8x of the uniform fit), keeps
     its own (re-tinted) materials, and is re-centred: multi-piece glTF sets lay their pieces out in a row away from
     the origin, so the rotated piece offset is taken off the instance position and its base is put on the ground
     (generated meshes have their pivot at the ground). `sink` buries that share of the piece's height."""
@@ -280,7 +280,7 @@ def spawn_scan_scatter(label, gen_mesh, pieces, instances, tag, folder, cull=(0.
             f = (gdim[2] / sdim[2],) * 3
         elif mode == "axes":
             u = max(gdim[0], gdim[1]) / max(sdim[0], sdim[1])
-            f = tuple(min(max(g / sd, u * 0.5), u * 2.5) for g, sd in zip(gdim, sdim))
+            f = tuple(min(max(g / sd, u * 0.6), u * 1.8) for g, sd in zip(gdim, sdim))   # limit texel smear
         else:
             u = max(gdim) / max(sdim)
             f = (u, u, u)
@@ -346,7 +346,7 @@ def build_scatter(scatter, meshes, mats, tag, folder):
     boulders = [meshes[f"SM_HG_Boulder_0{i}"] for i in range(1, 4)]
     for v, mesh in enumerate(boulders):
         if sc["boulder"]:
-            spawn_scan_scatter(f"Scatter_boulders_{v + 1}", mesh, sc["boulder"][v * 2:v * 2 + 2],
+            spawn_scan_scatter(f"Scatter_boulders_{v + 1}", mesh, sc["boulder"][v::3],
                                scatter["boulders"][v::3], tag, folder, cull=(45000.0, 60000.0), sink=0.3)
         else:
             spawn_scatter(f"Scatter_boulders_{v + 1}", mesh, mats["rock"], scatter["boulders"][v::3], tag, folder,
