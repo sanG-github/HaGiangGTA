@@ -192,7 +192,7 @@ namespace HGDressingKit
 			}
 			for (int32 m = 0; m < 7; ++m)
 			{
-				K.Paint(R.FRand() < 0.5f ? FColorL(0.05f, 0.07f, 0.025f) : FColorL(0.09f, 0.1f, 0.04f), HGSurf::Matte);
+				K.Paint(R.FRand() < 0.5f ? FColorL(0.03f, 0.04f, 0.018f) : FColorL(0.045f, 0.055f, 0.022f), HGSurf::Matte);
 				K.Ellipsoid(FVector(R.FRandRange(-HL, HL), 0.f, RidgeZ) + Up * 10.f + Down * R.FRandRange(SlopeW * 0.4f, SlopeW - 15.f),
 					FVector(R.FRandRange(25.f, 60.f), R.FRandRange(15.f, 35.f), 2.5f), SlopeRot, 8, 3);
 			}
@@ -232,12 +232,12 @@ namespace HGDressingKit
 		{
 			for (int32 y = 0; y < 9; ++y)
 			{
-				K.Paint(FColorL(0.25f, 0.135f, 0.075f) * R.FRandRange(0.82f, 1.1f), HGSurf::Matte);
+				K.Paint(FColorL(0.15f, 0.085f, 0.052f) * R.FRandRange(0.85f, 1.12f), HGSurf::Matte);
 				K.Ellipsoid(FVector(R.FRandRange(-HL + 60.f, HL - 60.f), HW + R.FRandRange(150.f, 650.f), -1.f),
-					FVector(R.FRandRange(150.f, 260.f), R.FRandRange(110.f, 200.f), 3.5f), FRotator(0.f, R.FRandRange(0.f, 180.f), 0.f), 10, 3, 0.f);
+					FVector(R.FRandRange(150.f, 260.f), R.FRandRange(110.f, 200.f), 1.6f), FRotator(0.f, R.FRandRange(0.f, 180.f), 0.f), 12, 3, 0.f);
 			}
-			K.Paint(FColorL(0.14f, 0.08f, 0.05f), HGSurf::Matte);
-			K.Ellipsoid(FVector(0.f, HW + 120.f, 0.f), FVector(120.f, 70.f, 3.7f), FRotator::ZeroRotator, 10, 3, 0.f);
+			K.Paint(FColorL(0.09f, 0.055f, 0.035f), HGSurf::Matte);
+			K.Ellipsoid(FVector(0.f, HW + 120.f, 0.f), FVector(120.f, 70.f, 1.8f), FRotator::ZeroRotator, 12, 3, 0.f);
 		}
 		// Dry-stone yard wall in front (gate gap at the door).
 		if (bFence)
