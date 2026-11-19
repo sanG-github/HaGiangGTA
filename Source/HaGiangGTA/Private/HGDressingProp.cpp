@@ -113,8 +113,32 @@ namespace HGDressingKit
 		const FColorL Tile(0.06f, 0.058f, 0.055f), TileLight(0.095f, 0.09f, 0.085f);
 		const float HL = 500.f, HW = 310.f, WallTop = 300.f;
 		// Stone platform (hillside plots: it reaches 2.6 m down so the downhill side never floats).
-		K.Paint(FColorL(0.17f, 0.165f, 0.155f));
+		// Round 6B: dry-stone faced (the smooth pale box read as concrete): dark core + coursed weathered blocks.
+		K.Paint(FColorL(0.045f, 0.042f, 0.038f));
 		K.Box(FVector(0.f, 0.f, -110.f), FVector(2 * HL + 60.f, 2 * HW + 60.f, 300.f));
+		for (int32 Row = 0; Row < 9; ++Row)
+		{
+			const float Z = 25.f - Row * 31.f;
+			for (const float S : { -1.f, 1.f })
+			{
+				for (float X = -HL - 30.f + (Row % 2) * 22.f; X < HL + 30.f;)
+				{
+					const float L = R.FRandRange(36.f, 70.f), G = R.FRandRange(0.06f, 0.14f);
+					K.Paint(FColorL(G, G * 0.97f, G * 0.9f), HGSurf::Matte);
+					K.Box(FVector(FMath::Min(X + L * 0.5f, HL + 30.f - 8.f), S * (HW + 32.f + R.FRandRange(-1.5f, 1.5f)), Z),
+						FVector(L - 3.f, 8.f, R.FRandRange(24.f, 30.f)), FRotator(R.FRandRange(-3.f, 3.f), 0.f, R.FRandRange(-3.f, 3.f)));
+					X += L;
+				}
+				for (float Y = -HW - 30.f + (Row % 2) * 22.f; Y < HW + 30.f;)
+				{
+					const float L = R.FRandRange(36.f, 70.f), G = R.FRandRange(0.06f, 0.14f);
+					K.Paint(FColorL(G, G * 0.97f, G * 0.9f), HGSurf::Matte);
+					K.Box(FVector(S * (HL + 32.f + R.FRandRange(-1.5f, 1.5f)), FMath::Min(Y + L * 0.5f, HW + 30.f - 8.f), Z),
+						FVector(8.f, L - 3.f, R.FRandRange(24.f, 30.f)), FRotator(R.FRandRange(-3.f, 3.f), 0.f, R.FRandRange(-3.f, 3.f)));
+					Y += L;
+				}
+			}
+		}
 		// Walls.
 		K.Paint(bStone ? Stone : Earth);
 		K.Box(FVector(0.f, 0.f, 40.f + (WallTop - 40.f) * 0.5f), FVector(2 * HL, 2 * HW, WallTop - 40.f));
@@ -192,7 +216,7 @@ namespace HGDressingKit
 			}
 			for (int32 m = 0; m < 7; ++m)
 			{
-				K.Paint(R.FRand() < 0.5f ? FColorL(0.03f, 0.04f, 0.018f) : FColorL(0.045f, 0.055f, 0.022f), HGSurf::Matte);
+				K.Paint(R.FRand() < 0.5f ? FColorL(0.018f, 0.024f, 0.012f) : FColorL(0.026f, 0.032f, 0.014f), HGSurf::Matte);
 				K.Ellipsoid(FVector(R.FRandRange(-HL, HL), 0.f, RidgeZ) + Up * 10.f + Down * R.FRandRange(SlopeW * 0.4f, SlopeW - 15.f),
 					FVector(R.FRandRange(25.f, 60.f), R.FRandRange(15.f, 35.f), 2.5f), SlopeRot, 8, 3);
 			}
@@ -232,7 +256,7 @@ namespace HGDressingKit
 		{
 			for (int32 y = 0; y < 9; ++y)
 			{
-				K.Paint(FColorL(0.15f, 0.085f, 0.052f) * R.FRandRange(0.85f, 1.12f), HGSurf::Matte);
+				K.Paint(FColorL(0.105f, 0.07f, 0.05f) * R.FRandRange(0.85f, 1.12f), HGSurf::Matte);   // packed brown-red earth, sun-bleached
 				K.Ellipsoid(FVector(R.FRandRange(-HL + 60.f, HL - 60.f), HW + R.FRandRange(150.f, 650.f), -1.f),
 					FVector(R.FRandRange(150.f, 260.f), R.FRandRange(110.f, 200.f), 1.6f), FRotator(0.f, R.FRandRange(0.f, 180.f), 0.f), 12, 3, 0.f);
 			}
