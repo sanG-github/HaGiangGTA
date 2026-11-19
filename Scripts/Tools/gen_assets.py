@@ -570,6 +570,19 @@ def make_ambience(rng, sr=44100):
     breath = 0.04 * _lowpass(rng.normal(size=n8), 4000.0, sr)
     khen = drone + 0.8 * line + breath
     _loop_wav(out / "SW_HG_Khen_Loop.wav", np.tanh(khen / (np.abs(khen).max() + 1e-6) * 1.3) * 0.6, sr)
+    # Round 6B: village dog bark (two sharp barks: noisy formant burst with a falling pitch).
+    bn = int(0.7 * sr)
+    bark = np.zeros(bn)
+    for t0 in (0.0, 0.32):
+        m = int(0.17 * sr)
+        i0 = int(t0 * sr)
+        tt = np.arange(m) / sr
+        f0 = 520.0 * (1.0 - 1.6 * tt)
+        env = np.minimum(1.0, tt / 0.006) * np.exp(-tt / 0.06)
+        voiced = np.sign(np.sin(2 * np.pi * np.cumsum(f0) / sr)) * 0.6 + 0.4 * rng.normal(size=m)
+        burst = _lowpass(voiced, 2600.0, sr) - 0.6 * _lowpass(voiced, 350.0, sr)
+        bark[i0:i0 + m] += env * burst
+    _write_wav(out / "SW_HG_DogBark.wav", bark / (np.abs(bark).max() + 1e-6) * 0.85, sr)
     # Water lapping on the hull / banks: low-passed noise in soft irregular slaps.
     slap = np.zeros(n)
     for _ in range(18):

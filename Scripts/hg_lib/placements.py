@@ -743,7 +743,57 @@ def roadside_life(ctx):
         "kids": [p for at in (link_mid + 70.0, descent_mid + 90.0, rim_mid) for p in shoulder_spots(ctx, at, 2, rng)],
         "walkers": [p for at in (link_mid - 150.0, rim_mid - 300.0, rim_mid + 400.0, descent_mid - 120.0)
                     for p in shoulder_spots(ctx, at, 1, rng)],
+        "dogs": village_dogs(ctx, rng),
+        "milestones": milestones(ctx),
     }
+
+
+def milestones(ctx):
+    """Round 6B: QL4C kilometre stones every ~1.5 km on the right shoulder, distance counting down towards the
+    next town along the route (Dong Van over the pass, Meo Vac past Ma Pi Leng). [(x, y, z, yaw, town, km)].
+    The route here is ~19 km of compressed real road: the numbers follow the real distances at the landmarks."""
+    road = ctx.road
+    L = road.length_m
+    mpl = ctx.viewpoint_road_m("ma_pi_leng")
+    out = []
+    m = 120.0
+    while m < L - 400.0:
+        x0, y0, z0, fx, fy, rx, ry = road.frame(m)
+        lat = road.half_width_at(m) + 70.0
+        x, y = x0 + rx * lat, y0 + ry * lat
+        if ctx.ground_ok(x, y, max_slope=30.0, foot_cm=40.0, ref_z=z0, max_dz=120.0, road_clear_cm=40.0) is None:
+            if m < mpl:
+                town, km = "ĐỒNG VĂN", max(1, int(round(22.0 * (mpl - m) / max(mpl, 1.0)))) + 4
+            else:
+                town, km = "MÈO VẠC", max(1, int(round(22.0 * (L - m) / max(L - mpl, 1.0))))
+            out.append((x, y, ctx.terrain.z(x, y), math.degrees(math.atan2(fy, fx)) + 90.0, town, km))
+        m += 1500.0
+    return out
+
+
+def village_dogs(ctx, rng):
+    """Round 6B: dogs lying by the houses near the road and trotting the shoulder by the hamlets.
+    [(x, y, z, yaw, mode)] with mode 'lie' / 'trot'."""
+    out = []
+    road = ctx.road
+    for items in ctx.scatter.get("houses", {}).values() if ctx.scatter else []:
+        for h in items:
+            hx, hy = h[0], h[1]
+            if road.edge_clearance(hx, hy) > 6000.0 or rng.random() < 0.45:
+                continue
+            for _ in range(20):
+                a = rng.uniform(0, 2 * math.pi)
+                r = rng.uniform(500.0, 800.0)
+                x, y = hx + math.cos(a) * r, hy + math.sin(a) * r
+                if ctx.ground_ok(x, y, max_slope=25.0, foot_cm=60.0, road_clear_cm=150.0) is None:
+                    out.append((x, y, ctx.terrain.z(x, y) + 5.0, rng.uniform(0, 360), "lie"))
+                    break
+    mpl = ctx.viewpoint_road_m("ma_pi_leng")
+    for at in (0.5 * (ctx.sec_m("tham_ma") + ctx.sec_m("link")), mpl + 600.0,
+               0.5 * (ctx.sec_m("rim") + ctx.sec_m("descent")), ctx.sec_m("tham_ma") + 200.0):
+        for (x, y, z, yaw) in shoulder_spots(ctx, at, 2, rng, lat_min=120.0, lat_max=220.0):
+            out.append((x, y, z - 90.0, yaw, "trot"))
+    return out
 
 
 def pickup_near(ctx, center, rng, r_min=300.0, r_max=700.0, max_dz=150.0):

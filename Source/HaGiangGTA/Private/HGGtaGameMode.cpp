@@ -35,6 +35,7 @@
 #include "HGPlayerCharacter.h"
 #include "HGViewpointActor.h"
 #include "HGTouristNPC.h"
+#include "HGDogActor.h"
 #include "Kismet/GameplayStatics.h"
 #include "Kismet/KismetSystemLibrary.h"
 #include "Misc/CommandLine.h"
@@ -336,8 +337,8 @@ void AHGGtaGameMode::PlayResetStageStats()
 FString AHGGtaGameMode::PlayTrafficSummary() const
 {
 	const AHGGroundVehicle::FTrafficStats& T = AHGGroundVehicle::TrafficStats;
-	return FString::Printf(TEXT("traffic: %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | session AI: %d overtakes, %d yields, %d go-arounds, %d unsticks (re-placements), %d U-turns (longest wait %.0f s), %d viewpoint stops, %d kid waves%s"),
-		PlayNearMiss, PlayStops, PlayOncoming, PlayOvertookUs, T.Overtakes, T.Yields, T.GoArounds, T.Unsticks, T.UTurns, T.LongestTurnWait, AHGGroundVehicle::ViewpointStops, AHGTouristNPC::KidWaves,
+	return FString::Printf(TEXT("traffic: %d near misses, %d AI dead stops, %d oncoming met, %d overtook us | session AI: %d overtakes, %d yields, %d go-arounds, %d unsticks (re-placements), %d U-turns (longest wait %.0f s), %d viewpoint stops, %d kid waves, dogs %d chases / %d barks%s"),
+		PlayNearMiss, PlayStops, PlayOncoming, PlayOvertookUs, T.Overtakes, T.Yields, T.GoArounds, T.Unsticks, T.UTurns, T.LongestTurnWait, AHGGroundVehicle::ViewpointStops, AHGTouristNPC::KidWaves, AHGDogActor::Chases, AHGDogActor::Barks,
 		PlayLaneSamples > 0 ? *FString::Printf(TEXT(" | lane error mean %.2f m, max %.2f m"), PlayLaneErrSum / PlayLaneSamples / 100.0, PlayLaneErrMax / 100.f) : TEXT(""));
 }
 

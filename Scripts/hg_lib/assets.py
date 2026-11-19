@@ -20,6 +20,12 @@ MESHES = ["SM_HG_KarstCliff_01", "SM_HG_KarstCliff_02", "SM_HG_KarstCliff_03", "
 # Round 3B: layered distant ranges (Scripts/Tools/gen_ranges.py) replace the single SM_HG_DistantRanges ring.
 RANGE_LAYERS = [f"SM_HG_RangeLayer_{i}" for i in range(3)]
 MESHES += RANGE_LAYERS + ["SM_HG_FarTerrain"]
+# Round 6B (agent A): karst vegetation species (Scripts/Tools/gen_vegetation.py), when generated.
+try:
+    from . import vegetation as _veg
+    MESHES += _veg.mesh_names()
+except Exception:   # outside the editor (validate_layout imports placements only) or no json yet
+    pass
 PROPS = ("SM_HG_RoadPost", "SM_HG_RoadStrip", "SM_HG_Guardrail", "SM_HG_DistantRanges", "SM_HG_DistantApron", "SM_HG_Chevron",
          "SM_HG_UtilityPole", "SM_HG_HouseWalls", "SM_HG_HouseRoof", "SM_HG_StoneWall", "SM_HG_Monument",
          *RANGE_LAYERS, "SM_HG_FarTerrain")
@@ -226,7 +232,7 @@ def import_sfx(force: bool = False) -> dict:
 
 LOOPS = ("SW_HG_BikeEngine_Loop", "SW_HG_TruckEngine_Loop", "SW_HG_BoatMotor_Loop", "SW_HG_Siren_Loop", "SW_HG_Heli_Loop",
          "SW_HG_Wind_Loop", "SW_HG_Birds_Loop", "SW_HG_Tyre_Loop", "SW_HG_Khen_Loop", "SW_HG_WaterLap_Loop")
-ONESHOTS = ("SW_HG_Horn",)
+ONESHOTS = ("SW_HG_Horn", "SW_HG_DogBark")
 
 
 def import_loops(force: bool = False) -> dict:

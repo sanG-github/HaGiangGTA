@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import unreal
 
+from . import vegetation
 from . import assets, dressing, materials, placements, world
 from . import editor_utils as hg
 
@@ -63,6 +64,7 @@ def build_photoreal_world(level_path: str, tag: str, prefix: str, task=None, vie
 
     step("Scatter: cliffs, summits, boulders, shrubs, posts")
     world.build_scatter(scatter, meshes, mats, tag, f"{prefix}/Scatter")
+    vegetation.build(meshes, mats, tag, f"{prefix}/Vegetation")
 
     step("Golden hour atmosphere")
     world.build_golden_hour(tag, f"{prefix}/Lighting")
@@ -171,7 +173,21 @@ def build_roadside_life(ctx, tag, prefix):
         w = hg.spawn_actor(unreal.HGTouristNPC, f"ShoulderWalker_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Roadside")
         w.set_editor_property("style", unreal.HGTouristStyle.LOCAL)
         w.set_editor_property("shoulder_walker", True)
-    hg.log(f"Roadside life: {len(life['goats'])} goats, {len(life['kids'])} kids, {len(life['walkers'])} shoulder walkers")
+    # Round 6B: village dogs - vang (tan), den (black), ven (brindle brown), a white one now and then.
+    if hasattr(unreal, "HGDogActor"):
+        coats = [unreal.LinearColor(0.62, 0.4, 0.17, 1), unreal.LinearColor(0.04, 0.035, 0.03, 1),
+                 unreal.LinearColor(0.3, 0.2, 0.11, 1), unreal.LinearColor(0.7, 0.5, 0.26, 1), unreal.LinearColor(0.78, 0.75, 0.68, 1)]
+        for i, (x, y, z, yaw, mode) in enumerate(life["dogs"]):
+            d = hg.spawn_actor(unreal.HGDogActor, f"Dog_{mode}_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Dogs")
+            d.set_editor_property("coat_color", coats[i % len(coats)])
+            d.set_editor_property("mode", unreal.HGDogMode.TROT if mode == "trot" else unreal.HGDogMode.LIE)
+    if hasattr(unreal, "HGMilestoneActor"):
+        for i, (x, y, z, yaw, town, km) in enumerate(life["milestones"]):
+            ms = hg.spawn_actor(unreal.HGMilestoneActor, f"Milestone_{i}", (x, y, z), (0, yaw, 0), tag, f"{prefix}/Milestones")
+            ms.set_editor_property("town", town)
+            ms.set_editor_property("km", int(km))
+    hg.log(f"Roadside life: {len(life['goats'])} goats, {len(life['kids'])} kids, {len(life['walkers'])} shoulder walkers, "
+           f"{len(life['dogs'])} dogs, {len(life['milestones'])} milestones")
 
 
 def build_happy_water(ctx, rng, tag, prefix):
