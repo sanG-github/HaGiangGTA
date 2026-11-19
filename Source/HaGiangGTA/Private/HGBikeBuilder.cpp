@@ -528,6 +528,20 @@ namespace
 			K.Paint(Brocade[(Seed + i) % 5]);
 			K.Box(FVector(-80.f, 0.f, 134.f + i * 2.2f), FVector(16.f, 20.f, 2.2f));
 		}
+		// Round 6B: the Ha Giang tour-bike look - the guest's big bag in a bright rain cover on top of the rack,
+		// held down by a black elastic cargo net.
+		{
+			const FLC Cover = (Seed & 1) ? FLC(0.04f, 0.14f, 0.45f) : FLC(0.7f, 0.25f, 0.02f);
+			K.Paint(Cover, HGSurf::Satin);
+			K.Ellipsoid(FVector(-80.f, 0.f, 126.f), FVector(17.f, 17.f, 12.f), FRotator(0.f, 10.f, 0.f), 12, 6);
+			K.Paint(FLC(0.015f, 0.015f, 0.015f), HGSurf::Satin);
+			for (int32 k = -2; k <= 2; ++k)
+			{
+				K.Tube(FVector(-66.f, k * 6.f, 110.f), FVector(-94.f, k * 6.f, 110.f) + FVector(0.f, 0.f, 0.f), 0.35f, 0.35f, 4, false);
+				K.Tube(FVector(-80.f + k * 6.f, -18.f, 112.f), FVector(-80.f + k * 6.f, 0.f, 138.5f), 0.35f, 0.35f, 4, false);
+				K.Tube(FVector(-80.f + k * 6.f, 0.f, 138.5f), FVector(-80.f + k * 6.f, 18.f, 112.f), 0.35f, 0.35f, 4, false);
+			}
+		}
 		// Round 6B: strapped, not glued - criss-crossed bungee cords over the packs hooked onto the rack rails,
 		// cam-strap webbing round each dry bag and its frame.
 		const FLC Bungee[2] = { FLC(0.5f, 0.03f, 0.03f), FLC(0.02f, 0.02f, 0.025f) };
